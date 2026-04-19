@@ -38,6 +38,8 @@
 
 - 슬라이드 1: 에이전트의 3가지 구성 요소 (LLM + Tool + Loop)
 - 슬라이드 2: 데모 — wiki-agent 실제 동작 시연
+  - `@wiki 배포 프로세스 알려줘` → OrchestratorAgent가 confluenceSearch 선택 → 결과 반환
+  - RAG 활성화 시: LLM이 confluenceSearch + vectorSearch 두 Tool 중 선택하는 과정 시각화
 - 슬라이드 3: "이게 Koog로 만들어졌다"
 
 ### 2부 — Koog가 뭔가 (30분)
@@ -47,18 +49,29 @@
 - 슬라이드 6: 핵심 개념 — AIAgent / Tool / A2A Protocol
 - 슬라이드 7: Provider 교체 한 줄 — "Claude로 만들고 Gemini로 배포"
 - 슬라이드 8: Orchestrator + Specialist 패턴
+  - 설계 다이어그램 → 실제 코드로 연결
+  - `ToolRegistry { tool(confluenceTool::confluenceSearch) }` 한 줄이 Tool 등록의 전부
+  - `rag.enabled=true` 시 `tool(vectorSearchTool::vectorSearch)` 한 줄 추가 → LLM이 알아서 선택
 
 ### 3부 — 내 에이전트 어떻게 설계하나 (60분)
 
 - 슬라이드 9: 에이전트 설계 3단계 (반복업무 → Tool → 프롬프트) — wiki-agent 사례로 설명
 - 슬라이드 10: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리 (wiki-agent OrchestratorAgent 프롬프트)
+  - OrchestratorAgent 시스템 프롬프트 실제 코드 제시
+  - "검색 없이 직접 답변하지 마세요" — Tool 호출 강제 원칙의 실전 예
 - 슬라이드 11: 프롬프트 설계 원칙 2 — 컨텍스트 범위 제어 (ConfluenceSearchAgent 프롬프트)
 - 슬라이드 12: 프롬프트 설계 원칙 3 — Tool 호출 유도 vs 직접 답변
 - 슬라이드 13: before/after 프롬프트 실제 예시 (wiki-agent 기반)
 - 슬라이드 14: 직군별 에이전트 아이디어 (PM/HR/개발자/마케터) — wiki-agent 확장 가능성
-- 슬라이드 15: 워크숍 — wiki-agent config.yml 설정 → Slack에서 직접 질문 → 결과 확인 (20분)
+- 슬라이드 15: 워크숍 — wiki-agent 설정 → Slack에서 직접 질문 → 결과 확인 (20분)
+  - 기본: `.env.example` 복사 → 토큰 입력 → `./gradlew run` → `@wiki` 질문
+  - 심화(선택): `docker run chromadb/chroma` → `rag.enabled=true` → `/wiki reindex` → 벡터 검색 비교
 
 ### 4부 — 마무리 (15분)
 
-- 슬라이드 16: 로컬 시작 방법 (Claude Code → config.yml → 실행)
+- 슬라이드 16: 로컬 시작 방법
+  1. `cp .env.example .env` → 토큰 입력 (Slack Bot Token, App Token, Confluence Token)
+  2. `config.yml` — baseUrl, spaces 설정
+  3. `./gradlew run`
+  4. (선택) `docker run -p 8000:8000 chromadb/chroma` → `rag.enabled=true` → `/wiki reindex`
 - 슬라이드 17: Q&A
