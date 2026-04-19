@@ -83,22 +83,21 @@ object ConfigLoader {
             appendLine("model:")
             appendLine("  provider: ${config.model.provider}")
             config.model.name?.let { appendLine("  name: $it") }
-            config.model.apiKey?.let { appendLine("  apiKey: $it") }
+            // apiKey is a secret managed by SecretLoader — not written to disk
             appendLine("confluence:")
             appendLine("  baseUrl: ${config.confluence.baseUrl}")
-            appendLine("  token: ${config.confluence.token}")
+            // token is a secret managed by SecretLoader — not written to disk
             if (config.confluence.spaces.isNotEmpty()) {
                 appendLine("  spaces:")
                 appendLine(spaces)
             }
             appendLine("slack:")
-            appendLine("  botToken: ${config.slack.botToken}")
-            appendLine("  appToken: ${config.slack.appToken}")
+            // botToken and appToken are secrets managed by SecretLoader — not written to disk
             appendLine("rag:")
             appendLine("  enabled: ${config.rag.enabled}")
             appendLine("  chromaUrl: ${config.rag.chromaUrl}")
             appendLine("  embeddingMode: ${config.rag.embeddingMode}")
-            config.rag.googleApiKey?.let { appendLine("  googleApiKey: $it") }
+            // googleApiKey is a secret managed by SecretLoader — not written to disk
         }
         File(path).writeText(yaml)
     }

@@ -25,7 +25,7 @@ class OrchestratorAgent(
         for ((index, model) in fallbackModels.withIndex()) {
             val result = runCatching { buildAgent(model).run(question) }
             val ex = result.exceptionOrNull()
-            if (ex == null) return result.getOrThrow() ?: "답변을 생성하지 못했습니다."
+            if (ex == null) return result.getOrThrow()
             if (index < fallbackModels.lastIndex) {
                 log.warn("Retrying with {}", fallbackModels[index + 1].id)
                 continue

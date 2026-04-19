@@ -31,14 +31,22 @@ fun main() {
     val confluenceToken = SecretLoader.resolve("CONFLUENCE_TOKEN", config.confluence.token)
     val slackBotToken = SecretLoader.resolve("SLACK_BOT_TOKEN", config.slack.botToken)
     val slackAppToken = SecretLoader.resolve("SLACK_APP_TOKEN", config.slack.appToken)
+    val resolvedModelApiKey = when (config.model.provider) {
+        io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
+            SecretLoader.resolveNullable("ANTHROPIC_API_KEY", config.model.apiKey)
+        io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
+            SecretLoader.resolveNullable("GOOGLE_API_KEY", config.model.apiKey)
+        else -> config.model.apiKey
+    }
+    val resolvedModelConfig = config.model.copy(apiKey = resolvedModelApiKey)
 
     val confluenceClient = ConfluenceClient(
         baseUrl = config.confluence.baseUrl,
         token = confluenceToken,
     )
 
-    val executor = LLMExecutorBuilder.build(config.model)
-    val model = LLMExecutorBuilder.defaultModel(config.model)
+    val executor = LLMExecutorBuilder.build(resolvedModelConfig)
+    val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
     val confluenceSearchAgent = ConfluenceSearchAgent(
         confluenceClient = confluenceClient,
