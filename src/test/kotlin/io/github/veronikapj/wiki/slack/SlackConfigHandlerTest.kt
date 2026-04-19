@@ -39,4 +39,21 @@ class SlackConfigHandlerTest {
         val result = handler.handle("/wikiq unknown")
         assertTrue(result.contains("사용법") || result.contains("help") || result.contains("config"))
     }
+
+    @Test
+    fun `handle reindex calls indexer`() {
+        var indexCalled = false
+        val handler = SlackConfigHandler(makeConfig(), onReindex = { indexCalled = true; 42 })
+        val result = handler.handle("/wiki reindex")
+        assertTrue(indexCalled)
+        assertTrue(result.contains("42"))
+    }
+
+    @Test
+    fun `handle reindex status returns last index info`() {
+        val handler = SlackConfigHandler(makeConfig(), onReindex = { 0 })
+        handler.handle("/wiki reindex")
+        val result = handler.handle("/wiki reindex status")
+        assertTrue(result.contains("마지막") || result.contains("문서"))
+    }
 }

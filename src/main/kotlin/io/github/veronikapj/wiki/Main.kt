@@ -3,6 +3,8 @@
 package io.github.veronikapj.wiki
 
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.agent.OrchestratorAgent
+import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
@@ -26,6 +28,16 @@ fun main() {
         spaces = config.confluence.spaces,
     )
 
+    val confluenceTool = ConfluenceTool(searchAgent)
+
+    val executor = LLMExecutorBuilder.build(config.model)
+
+    val orchestrator = OrchestratorAgent(
+        confluenceTool = confluenceTool,
+        vectorSearchTool = null,
+        executor = executor,
+    )
+
     val configHandler = SlackConfigHandler(
         config = config,
         persistOnChange = true,
@@ -33,7 +45,7 @@ fun main() {
 
     val gateway = SlackBotGateway(
         slackConfig = config.slack,
-        searchAgent = searchAgent,
+        orchestrator = orchestrator,
         configHandler = configHandler,
     )
 
