@@ -1,15 +1,15 @@
-package io.github.veronikapj.wikiq.slack
+package io.github.veronikapj.wiki.slack
 
-import io.github.veronikapj.wikiq.config.ConfigLoader
-import io.github.veronikapj.wikiq.config.WikiqConfig
+import io.github.veronikapj.wiki.config.ConfigLoader
+import io.github.veronikapj.wiki.config.WikiConfig
 import org.slf4j.LoggerFactory
 
 class SlackConfigHandler(
-    private var config: WikiqConfig,
+    private var config: WikiConfig,
     private val configPath: String = ".wikiq/config.yml",
     private val persistOnChange: Boolean = false,
 ) {
-    fun currentConfig(): WikiqConfig = config
+    fun currentConfig(): WikiConfig = config
 
     fun handle(command: String): String {
         val parts = command.trim().split(" ")

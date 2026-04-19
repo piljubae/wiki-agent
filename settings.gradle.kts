@@ -1,1 +1,1 @@
-rootProject.name = "wikiq-agent"
+rootProject.name = "wiki-agent"

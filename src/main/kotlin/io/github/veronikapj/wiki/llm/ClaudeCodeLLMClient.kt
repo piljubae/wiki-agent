@@ -1,4 +1,4 @@
-package io.github.veronikapj.wikiq.llm
+package io.github.veronikapj.wiki.llm
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.dsl.ModerationResult

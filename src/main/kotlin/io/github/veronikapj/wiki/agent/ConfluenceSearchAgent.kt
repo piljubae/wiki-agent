@@ -1,6 +1,6 @@
-package io.github.veronikapj.wikiq.agent
+package io.github.veronikapj.wiki.agent
 
-import io.github.veronikapj.wikiq.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import org.slf4j.LoggerFactory
 
 class ConfluenceSearchAgent(

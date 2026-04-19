@@ -1,4 +1,4 @@
-package io.github.veronikapj.wikiq.confluence
+package io.github.veronikapj.wiki.confluence
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

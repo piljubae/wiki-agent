@@ -1,4 +1,4 @@
-package io.github.veronikapj.wikiq.config
+package io.github.veronikapj.wiki.config
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

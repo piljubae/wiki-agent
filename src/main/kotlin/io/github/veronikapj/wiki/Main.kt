@@ -1,16 +1,16 @@
 @file:OptIn(ai.koog.agents.core.annotation.ExperimentalAgentsApi::class)
 
-package io.github.veronikapj.wikiq
+package io.github.veronikapj.wiki
 
-import io.github.veronikapj.wikiq.agent.ConfluenceSearchAgent
-import io.github.veronikapj.wikiq.config.ConfigLoader
-import io.github.veronikapj.wikiq.confluence.ConfluenceClient
-import io.github.veronikapj.wikiq.llm.LLMExecutorBuilder
-import io.github.veronikapj.wikiq.slack.SlackBotGateway
-import io.github.veronikapj.wikiq.slack.SlackConfigHandler
+import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.config.ConfigLoader
+import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
+import io.github.veronikapj.wiki.slack.SlackBotGateway
+import io.github.veronikapj.wiki.slack.SlackConfigHandler
 import org.slf4j.LoggerFactory
 
-private val log = LoggerFactory.getLogger("wikiq.Main")
+private val log = LoggerFactory.getLogger("wiki.Main")
 
 fun main() {
     val config = ConfigLoader.load()

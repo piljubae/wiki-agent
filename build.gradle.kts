@@ -36,7 +36,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("io.github.veronikapj.wikiq.MainKt")
+    mainClass.set("io.github.veronikapj.wiki.MainKt")
     applicationDefaultJvmArgs = listOf("-Xmx2g")
 }
 

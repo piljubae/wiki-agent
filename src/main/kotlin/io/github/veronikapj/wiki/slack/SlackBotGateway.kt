@@ -1,9 +1,9 @@
-package io.github.veronikapj.wikiq.slack
+package io.github.veronikapj.wiki.slack
 
 import com.slack.api.bolt.App
 import com.slack.api.bolt.socket_mode.SocketModeApp
-import io.github.veronikapj.wikiq.agent.ConfluenceSearchAgent
-import io.github.veronikapj.wikiq.config.SlackConfig
+import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.config.SlackConfig
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 

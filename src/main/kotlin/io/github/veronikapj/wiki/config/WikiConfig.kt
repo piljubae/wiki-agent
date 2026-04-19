@@ -1,8 +1,8 @@
-package io.github.veronikapj.wikiq.config
+package io.github.veronikapj.wiki.config
 
 enum class ModelProvider { ANTHROPIC, GOOGLE, CLAUDE_CODE }
 
-data class WikiqConfig(
+data class WikiConfig(
     val model: ModelConfig = ModelConfig(),
     val confluence: ConfluenceConfig = ConfluenceConfig(),
     val slack: SlackConfig = SlackConfig(),

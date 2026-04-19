@@ -1,7 +1,7 @@
-package io.github.veronikapj.wikiq.llm
+package io.github.veronikapj.wiki.llm
 
-import io.github.veronikapj.wikiq.config.ModelConfig
-import io.github.veronikapj.wikiq.config.ModelProvider
+import io.github.veronikapj.wiki.config.ModelConfig
+import io.github.veronikapj.wiki.config.ModelProvider
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 

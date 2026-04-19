@@ -1,4 +1,4 @@
-package io.github.veronikapj.wikiq.slack
+package io.github.veronikapj.wiki.slack
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

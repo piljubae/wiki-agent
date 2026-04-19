@@ -1,8 +1,8 @@
-package io.github.veronikapj.wikiq.agent
+package io.github.veronikapj.wiki.agent
 
-import io.github.veronikapj.wikiq.confluence.ConfluenceClient
-import io.github.veronikapj.wikiq.confluence.ConfluencePage
-import io.github.veronikapj.wikiq.confluence.ConfluencePageRef
+import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.confluence.ConfluencePage
+import io.github.veronikapj.wiki.confluence.ConfluencePageRef
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest

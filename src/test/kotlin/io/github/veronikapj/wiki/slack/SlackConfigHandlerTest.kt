@@ -1,17 +1,17 @@
-package io.github.veronikapj.wikiq.slack
+package io.github.veronikapj.wiki.slack
 
-import io.github.veronikapj.wikiq.config.ConfluenceConfig
-import io.github.veronikapj.wikiq.config.ModelConfig
-import io.github.veronikapj.wikiq.config.ModelProvider
-import io.github.veronikapj.wikiq.config.SlackConfig
-import io.github.veronikapj.wikiq.config.WikiqConfig
+import io.github.veronikapj.wiki.config.ConfluenceConfig
+import io.github.veronikapj.wiki.config.ModelConfig
+import io.github.veronikapj.wiki.config.ModelProvider
+import io.github.veronikapj.wiki.config.SlackConfig
+import io.github.veronikapj.wiki.config.WikiConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SlackConfigHandlerTest {
 
-    private fun makeConfig(spaces: List<String> = emptyList()) = WikiqConfig(
+    private fun makeConfig(spaces: List<String> = emptyList()) = WikiConfig(
         model = ModelConfig(ModelProvider.CLAUDE_CODE),
         confluence = ConfluenceConfig("https://co.atlassian.net", "tok", spaces),
         slack = SlackConfig("xoxb-test", "xapp-test"),

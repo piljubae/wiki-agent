@@ -1,13 +1,13 @@
-package io.github.veronikapj.wikiq.config
+package io.github.veronikapj.wiki.config
 
 import java.io.File
 
 object ConfigLoader {
 
-    fun load(path: String = ".wikiq/config.yml"): WikiqConfig =
+    fun load(path: String = ".wikiq/config.yml"): WikiConfig =
         fromString(File(path).readText())
 
-    fun fromString(yaml: String): WikiqConfig {
+    fun fromString(yaml: String): WikiConfig {
         val lines = yaml.lines()
         var provider = ModelProvider.CLAUDE_CODE
         var modelName: String? = null
@@ -53,14 +53,14 @@ object ConfigLoader {
             }
         }
 
-        return WikiqConfig(
+        return WikiConfig(
             model = ModelConfig(provider, modelName, apiKey),
             confluence = ConfluenceConfig(baseUrl, token, spaces),
             slack = SlackConfig(botToken, appToken),
         )
     }
 
-    fun save(config: WikiqConfig, path: String = ".wikiq/config.yml") {
+    fun save(config: WikiConfig, path: String = ".wikiq/config.yml") {
         val spaces = config.confluence.spaces.joinToString("\n") { "    - $it" }
         val yaml = buildString {
             appendLine("model:")

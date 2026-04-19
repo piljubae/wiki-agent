@@ -1,4 +1,4 @@
-package io.github.veronikapj.wikiq.confluence
+package io.github.veronikapj.wiki.confluence
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO

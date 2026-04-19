@@ -1,6 +1,6 @@
 @file:OptIn(ai.koog.agents.core.annotation.ExperimentalAgentsApi::class)
 
-package io.github.veronikapj.wikiq.llm
+package io.github.veronikapj.wiki.llm
 
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
@@ -8,8 +8,8 @@ import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
-import io.github.veronikapj.wikiq.config.ModelConfig
-import io.github.veronikapj.wikiq.config.ModelProvider
+import io.github.veronikapj.wiki.config.ModelConfig
+import io.github.veronikapj.wiki.config.ModelProvider
 
 object LLMExecutorBuilder {
 
