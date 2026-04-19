@@ -21,13 +21,19 @@ object ConfigLoader {
         var inConfluence = false
         var inSpaces = false
         var inSlack = false
+        var ragEnabled = false
+        var chromaUrl = "http://localhost:8000"
+        var embeddingMode = EmbeddingMode.LLM_EXPAND
+        var ragGoogleApiKey: String? = null
+        var inRag = false
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
             when {
-                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false }
-                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false }
-                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false }
+                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false }
+                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false }
+                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false }
+                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
@@ -50,6 +56,16 @@ object ConfigLoader {
                     botToken = trimmed.substringAfter("botToken:").trim()
                 inSlack && trimmed.startsWith("appToken:") ->
                     appToken = trimmed.substringAfter("appToken:").trim()
+                inRag && trimmed.startsWith("enabled:") ->
+                    ragEnabled = trimmed.substringAfter("enabled:").trim() == "true"
+                inRag && trimmed.startsWith("chromaUrl:") ->
+                    chromaUrl = trimmed.substringAfter("chromaUrl:").trim()
+                inRag && trimmed.startsWith("embeddingMode:") ->
+                    embeddingMode = runCatching {
+                        EmbeddingMode.valueOf(trimmed.substringAfter("embeddingMode:").trim().uppercase())
+                    }.getOrDefault(EmbeddingMode.LLM_EXPAND)
+                inRag && trimmed.startsWith("googleApiKey:") ->
+                    ragGoogleApiKey = trimmed.substringAfter("googleApiKey:").trim().ifEmpty { null }
             }
         }
 
@@ -57,6 +73,7 @@ object ConfigLoader {
             model = ModelConfig(provider, modelName, apiKey),
             confluence = ConfluenceConfig(baseUrl, token, spaces),
             slack = SlackConfig(botToken, appToken),
+            rag = RagConfig(ragEnabled, chromaUrl, embeddingMode, ragGoogleApiKey),
         )
     }
 
