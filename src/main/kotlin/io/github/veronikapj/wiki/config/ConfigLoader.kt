@@ -94,6 +94,11 @@ object ConfigLoader {
             appendLine("slack:")
             appendLine("  botToken: ${config.slack.botToken}")
             appendLine("  appToken: ${config.slack.appToken}")
+            appendLine("rag:")
+            appendLine("  enabled: ${config.rag.enabled}")
+            appendLine("  chromaUrl: ${config.rag.chromaUrl}")
+            appendLine("  embeddingMode: ${config.rag.embeddingMode}")
+            config.rag.googleApiKey?.let { appendLine("  googleApiKey: $it") }
         }
         File(path).writeText(yaml)
     }

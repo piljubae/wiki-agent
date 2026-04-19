@@ -83,4 +83,24 @@ class ConfigLoaderTest {
         assertEquals(false, config.rag.enabled)
         assertEquals(EmbeddingMode.LLM_EXPAND, config.rag.embeddingMode)
     }
+
+    @Test
+    fun `save and reload preserves rag config`() {
+        val config = WikiConfig(
+            model = ModelConfig(provider = ModelProvider.CLAUDE_CODE),
+            confluence = ConfluenceConfig(baseUrl = "https://x.atlassian.net", token = "tok"),
+            slack = SlackConfig(),
+            rag = RagConfig(enabled = true, chromaUrl = "http://chroma:8000", embeddingMode = EmbeddingMode.GOOGLE_EMBEDDING),
+        )
+        val tmpFile = java.io.File.createTempFile("config-test", ".yml")
+        try {
+            ConfigLoader.save(config, tmpFile.absolutePath)
+            val reloaded = ConfigLoader.load(tmpFile.absolutePath)
+            assertEquals(true, reloaded.rag.enabled)
+            assertEquals("http://chroma:8000", reloaded.rag.chromaUrl)
+            assertEquals(EmbeddingMode.GOOGLE_EMBEDDING, reloaded.rag.embeddingMode)
+        } finally {
+            tmpFile.delete()
+        }
+    }
 }
