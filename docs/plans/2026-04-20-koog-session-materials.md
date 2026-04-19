@@ -90,14 +90,17 @@ git commit -m "docs: 세션 자료 파일 초기화"
 ```
 [슬랙 멘션 수신]
     ↓
-OrchestratorAgent — 질문 의도 파악
-    ↓
-ConfluenceSearchAgent — CQL로 위키 검색
+OrchestratorAgent (Koog AIAgent) — 질문 의도 파악 + Tool 선택
+    ├── confluenceSearch → ConfluenceSearchAgent → CQL 검색 결과
+    └── vectorSearch (RAG 활성화 시) → VectorSearchAgent → ChromaDB 의미 검색
     ↓
 검색 결과 요약 + 페이지 링크
     ↓
 [슬랙 스레드로 답변]
 ```
+
+**포인트:** OrchestratorAgent가 LLM을 통해 "어떤 Tool을 쓸지" 직접 결정한다.  
+RAG 활성화 시 confluenceSearch + vectorSearch 중 하나 또는 둘 다 선택하는 과정을 시각화.
 
 *데모 영상 또는 라이브 시연*
 
@@ -165,19 +168,28 @@ git commit -m "docs: 세션 1부 슬라이드 작성"
 
 **① AIAgent**
 ```kotlin
-val agent = AIAgent(
-    executor = llmExecutor,
-    systemPrompt = "당신은 Confluence 검색 전문가입니다.",
-    tools = listOf(confluenceSearchTool),
+AIAgent(
+    promptExecutor = executor,
+    agentConfig = AIAgentConfig(
+        prompt = prompt("orchestrator") { system(systemPrompt) },
+        model = AnthropicModels.Haiku_4_5,
+        maxAgentIterations = 10,
+    ),
+    toolRegistry = ToolRegistry {
+        tool(confluenceTool::confluenceSearch)
+    },
 )
 ```
 
-**② Tool**
+**② Tool — `@Tool` 어노테이션으로 등록**
 ```kotlin
-class ConfluenceSearchTool : Tool<SearchInput, SearchOutput> {
-    override suspend fun execute(input: SearchInput): SearchOutput {
-        // CQL 검색 실행
-    }
+class ConfluenceTool(private val searchAgent: ConfluenceSearchAgent) {
+
+    @Tool("confluenceSearch")
+    @LLMDescription("Confluence 위키에서 CQL로 검색합니다.")
+    fun confluenceSearch(
+        @LLMDescription("검색 키워드") query: String
+    ): String = runBlocking { searchAgent.search(query) }
 }
 ```
 
@@ -217,18 +229,26 @@ model:
 ## 슬라이드 8: Orchestrator + Specialist 패턴
 
 ```
-OrchestratorAgent
-├── 역할: 의도 파악, 어떤 Specialist를 쓸지 결정
+OrchestratorAgent (AIAgent)
+├── 역할: 의도 파악, 어떤 Tool을 쓸지 LLM이 결정
 └── 직접 답변 안 함
 
-ConfluenceSearchAgent (Specialist)
-├── 역할: Confluence CQL 검색 + 요약
-└── 한 가지 일만 잘함
+Tool (Koog @Tool)
+├── ConfluenceTool → ConfluenceSearchAgent (CQL 검색)
+└── VectorSearchTool → VectorSearchAgent (RAG, 선택)
 ```
 
-- **Orchestrator**: 교통정리만
+**코드로 보면 이게 전부:**
+```kotlin
+toolRegistry = ToolRegistry {
+    tool(confluenceTool::confluenceSearch)          // 항상
+    if (ragEnabled) tool(vectorSearchTool::vectorSearch)  // rag.enabled=true 시
+}
+```
+
+- **Orchestrator**: 교통정리만 — LLM이 Tool 선택
 - **Specialist**: 하나의 도메인에 집중
-- 장점: 각각 독립적으로 개선 가능, 병렬 실행 가능
+- RAG 확장: `rag.enabled=true` 한 줄 → LLM이 알아서 두 Tool 중 선택
 
 ---
 ```
@@ -282,20 +302,20 @@ wiki-agent 예시:
 사용자 질문에 답해줘: {question}
 ```
 
-**좋은 프롬프트:**
+**좋은 프롬프트 (wiki-agent OrchestratorAgent 실제 코드):**
+```kotlin
+buildString {
+    appendLine("당신은 Confluence 위키 검색 전문가입니다.")
+    appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
+    appendLine("검색 없이 직접 답변하지 마세요.")
+    if (ragEnabled) {
+        appendLine("confluenceSearch로 먼저 검색하고, 결과가 부족하면 vectorSearch도 사용하세요.")
+    }
+    appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
+}
 ```
-당신은 Confluence 문서 검색 전문가입니다.
 
-역할:
-- 사용자의 질문에서 핵심 검색 키워드를 추출하세요
-- 관련 문서를 찾아 요약하세요
-
-출력 형식:
-- 각 문서: 제목, 한 줄 요약, 링크
-- 찾지 못한 경우: "관련 문서를 찾을 수 없습니다" 로 응답
-```
-
-> 핵심: 역할(누구인지) + 출력 형식(어떻게 줄지)를 명확히 분리
+> 핵심: 역할(누구인지) + Tool 호출 강제 + 출력 형식(링크 포함)을 명확히 분리
 
 ---
 
@@ -418,38 +438,51 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 - wiki-agent 레포 클론
 - Claude Code CLI 설치 (API 키 불필요)
 - Slack Bot 토큰 + App 토큰
-- Confluence API 토큰
+- Confluence API 토큰 (base64: `echo -n "email:token" | base64`)
 
 **실습 순서:**
 
-**① config.yml 설정 (5분)**
+**① 시크릿 설정 (3분)**
+```bash
+cp .env.example .env
+# .env 파일 열어서 토큰 입력
+```
+```
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+CONFLUENCE_TOKEN=<base64 email:api-token>
+```
+
+**② config.yml 설정 (2분)**
 ```yaml
 model:
   provider: CLAUDE_CODE
 confluence:
   baseUrl: https://yourcompany.atlassian.net
-  token: <base64 email:token>
   spaces:
     - DEV
-slack:
-  botToken: xoxb-...
-  appToken: xapp-...
 ```
 
-**② 실행 (1분)**
+**③ 실행 (1분)**
 ```bash
 ./gradlew run
 ```
 
-**③ 슬랙에서 질문 (5분)**
+**④ 슬랙에서 질문 (5분)**
 ```
 @wiki 배포 프로세스 알려줘
 @wiki 온보딩 체크리스트
 /wiki config space DEV,PM
 ```
 
-**④ 결과 공유 + 토론 (9분)**
-- 어떤 답변이 나왔는가?
+**⑤ (심화, 선택) RAG 활성화 (추가 5분)**
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+`config.yml`에서 `rag.enabled: true` → `/wiki reindex` → 같은 질문 다시 해보기
+
+**⑥ 결과 공유 + 토론 (4분)**
+- CQL 검색 vs RAG 검색 결과 차이?
 - 프롬프트를 어떻게 바꾸면 더 나아질까?
 - 내 팀에서 이 구조로 만들고 싶은 에이전트는?
 
@@ -482,16 +515,22 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 **필요한 것:**
 1. Claude Code CLI 설치 (https://claude.ai/code)
 2. wiki-agent 레포 클론
-3. `.wikiq/config.yml` 작성
-4. `./gradlew run`
+3. `.env.example` → `.env` 복사 후 토큰 입력
+4. `.wikiq/config.yml` — baseUrl, spaces 설정
+5. `./gradlew run`
+
+**(선택) RAG까지 쓰려면:**
+6. `docker run -p 8000:8000 chromadb/chroma`
+7. `config.yml`에서 `rag.enabled: true`
+8. `/wiki reindex`
 
 **3가지 실행 모드:**
 
 | 모드 | 설정 | 비용 |
 |------|------|------|
 | 로컬 개인 | `CLAUDE_CODE` | Claude 구독만 있으면 무료 |
-| 팀 서버 (Claude) | `ANTHROPIC` + API 키 | Anthropic API 비용 |
-| 팀 서버 (Gemini) | `GOOGLE` + API 키 | Google API 비용 |
+| 팀 서버 (Claude) | `ANTHROPIC` + `ANTHROPIC_API_KEY` | Anthropic API 비용 |
+| 팀 서버 (Gemini) | `GOOGLE` + `GOOGLE_API_KEY` | Google API 비용 |
 
 **다음 단계:**
 - wiki-agent 레포: [링크]
