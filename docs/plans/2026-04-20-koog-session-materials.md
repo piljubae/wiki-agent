@@ -85,19 +85,27 @@ git commit -m "docs: 세션 자료 파일 초기화"
 
 ## 슬라이드 2: 데모 — wiki-agent 실제 동작
 
-**시나리오:** 슬랙에서 `@wiki 배포 프로세스 알려줘` 입력
+**시나리오 A:** `@wiki 배포 프로세스 알려줘`
 
 ```
 [슬랙 멘션 수신]
     ↓
 OrchestratorAgent — 질문 의도 파악
-    ↓
+    ↓ confluenceSearch 선택
 ConfluenceSearchAgent — CQL로 위키 검색
     ↓
-검색 결과 요약 + 페이지 링크
-    ↓
-[슬랙 스레드로 답변]
+검색 결과 요약 + 페이지 링크 → [슬랙 스레드로 답변]
 ```
+
+**시나리오 B (GitHub Wiki 활성화 시):** `@wiki 백엔드 API 설계 가이드`
+
+```
+OrchestratorAgent
+    ├── confluenceSearch → 내부 위키
+    └── githubWikiSearch → GitHub 레포 Wiki
+```
+
+LLM이 질문 유형에 따라 적절한 소스를 선택하거나 두 소스 모두 활용
 
 *데모 영상 또는 라이브 시연*
 
@@ -218,17 +226,28 @@ model:
 
 ```
 OrchestratorAgent
-├── 역할: 의도 파악, 어떤 Specialist를 쓸지 결정
+├── 역할: 의도 파악, 어떤 Tool(Specialist)을 쓸지 결정
 └── 직접 답변 안 함
 
-ConfluenceSearchAgent (Specialist)
-├── 역할: Confluence CQL 검색 + 요약
-└── 한 가지 일만 잘함
+ConfluenceSearchAgent (Specialist) — 항상 활성
+GitHubWikiSearchAgent (Specialist) — github.enabled=true 시
+VectorSearchAgent     (Specialist) — rag.enabled=true 시
 ```
+
+**실제 코드 — Tool 등록:**
+```kotlin
+toolRegistry = ToolRegistry {
+    tool(confluenceTool::confluenceSearch)
+    if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
+    if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
+}
+```
+
+`config.yml` 한 줄로 Tool 추가/제거 → LLM이 어떤 Tool을 쓸지 스스로 판단
 
 - **Orchestrator**: 교통정리만
 - **Specialist**: 하나의 도메인에 집중
-- 장점: 각각 독립적으로 개선 가능, 병렬 실행 가능
+- 장점: 각각 독립적으로 개선 가능, Tool만 추가하면 기능 확장
 
 ---
 ```
@@ -408,11 +427,15 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 | **개발자** | 빌드 실패 → 로그 분석 + 원인 추정 | 파일 읽기 + GitHub API |
 | **마케터** | 캠페인 데이터 → 성과 요약 초안 | 파일 읽기 + Slack API |
 
+**wiki-agent 확장 예시 (이미 구현됨):**
+- `github.repos: [myorg/backend]` → GitHub Wiki에서 API 설계 가이드 검색
+- 온보딩 봇: Confluence(사내 프로세스) + GitHub Wiki(기술 문서) 동시 검색
+
 > 핵심: Orchestrator + Specialist 구조는 같다. Tool과 프롬프트만 바꾼다.
 
 ---
 
-## 슬라이드 15: 워크숍 — wiki-agent 직접 실행해보기 (20분)
+## 슬라이드 15: 워크숍 — wiki-agent 직접 실행해보기 (35분)
 
 **준비물 (미리 배포):**
 - wiki-agent 레포 클론
@@ -420,35 +443,62 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 - Slack Bot 토큰 + App 토큰
 - Confluence API 토큰
 
-**실습 순서:**
+**기본 실습 (15분)**
 
-**① config.yml 설정 (5분)**
+**① .env 설정 (3분)**
+```bash
+cp .env.example .env
+# 편집: SLACK_BOT_TOKEN, SLACK_APP_TOKEN, CONFLUENCE_TOKEN
+```
+
+**② config.yml 설정 (2분)**
 ```yaml
 model:
   provider: CLAUDE_CODE
 confluence:
   baseUrl: https://yourcompany.atlassian.net
-  token: <base64 email:token>
   spaces:
     - DEV
-slack:
-  botToken: xoxb-...
-  appToken: xapp-...
 ```
 
-**② 실행 (1분)**
+**③ 실행 (1분)**
 ```bash
 ./gradlew run
 ```
 
-**③ 슬랙에서 질문 (5분)**
+**④ 슬랙에서 질문 (9분)**
 ```
 @wiki 배포 프로세스 알려줘
 @wiki 온보딩 체크리스트
 /wiki config space DEV,PM
 ```
 
-**④ 결과 공유 + 토론 (9분)**
+---
+
+**심화 A — GitHub Wiki 연결 (선택, 10분)**
+
+`.env`에 `GITHUB_TOKEN` 추가, `config.yml`에:
+```yaml
+github:
+  enabled: true
+  repos:
+    - myorg/myproject
+```
+
+→ 재시작 후 기술 문서 관련 질문에서 GitHub Wiki 결과 비교
+
+---
+
+**심화 B — RAG 벡터 검색 (선택, 10분)**
+
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+`config.yml`에 `rag.enabled: true` → 재시작 → `/wiki reindex` → 의미 기반 검색 비교
+
+---
+
+**마무리 토론 (10분)**
 - 어떤 답변이 나왔는가?
 - 프롬프트를 어떻게 바꾸면 더 나아질까?
 - 내 팀에서 이 구조로 만들고 싶은 에이전트는?
@@ -479,24 +529,53 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 
 ## 슬라이드 16: 로컬에서 시작하는 방법
 
-**필요한 것:**
-1. Claude Code CLI 설치 (https://claude.ai/code)
-2. wiki-agent 레포 클론
-3. `.wikiq/config.yml` 작성
-4. `./gradlew run`
+**① 필수 설정**
+```bash
+cp .env.example .env
+# SLACK_BOT_TOKEN, SLACK_APP_TOKEN, CONFLUENCE_TOKEN 입력
+```
+`.wikiq/config.yml`:
+```yaml
+model:
+  provider: CLAUDE_CODE
+confluence:
+  baseUrl: https://yourcompany.atlassian.net
+  spaces: [DEV]
+```
+```bash
+./gradlew run
+```
+
+**② GitHub Wiki 연결 (선택)**
+```yaml
+github:
+  enabled: true
+  repos:
+    - owner/repo
+```
+`.env`에 `GITHUB_TOKEN=ghp_...` (public repo는 없어도 됨)
+
+**③ RAG 벡터 검색 (선택)**
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+```yaml
+rag:
+  enabled: true
+```
+Slack에서 `/wiki reindex`
 
 **3가지 실행 모드:**
 
 | 모드 | 설정 | 비용 |
 |------|------|------|
 | 로컬 개인 | `CLAUDE_CODE` | Claude 구독만 있으면 무료 |
-| 팀 서버 (Claude) | `ANTHROPIC` + API 키 | Anthropic API 비용 |
-| 팀 서버 (Gemini) | `GOOGLE` + API 키 | Google API 비용 |
+| 팀 서버 (Claude) | `ANTHROPIC` + `ANTHROPIC_API_KEY` | Anthropic API 비용 |
+| 팀 서버 (Gemini) | `GOOGLE` + `GOOGLE_API_KEY` | Google API 비용 |
 
 **다음 단계:**
-- wiki-agent 레포: [링크]
+- wiki-agent 레포: github.com/Veronikapj/wiki-agent
 - Koog 공식 문서: github.com/JetBrains/koog
-- 세션 자료: [링크]
 
 ---
 
@@ -524,7 +603,7 @@ A. JVM/Kotlin 생태계에 자연스럽고, 타입 안전성이 높습니다. Py
 **Step 2: 최종 빌드 확인 — 문서 전체 검토**
 
 파일을 열어 목차 → 내용 흐름이 자연스러운지 확인:
-- 1부 (15분) → 2부 (30분) → 3부 (60분) → 4부 (15분) = 총 120분
+- 1부 (15분) → 2부 (15분) → 3부 (75분) → 4부 (15분) = 총 120분
 - 슬라이드 1~17 모두 존재하는지 확인
 
 **Step 3: 최종 커밋**
