@@ -26,17 +26,26 @@ object ConfigLoader {
         var embeddingMode = EmbeddingMode.LLM_EXPAND
         var ragGoogleApiKey: String? = null
         var inRag = false
+        var githubEnabled = false
+        var githubToken = ""
+        val githubRepos = mutableListOf<String>()
+        var inGithub = false
+        var inGithubRepos = false
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
             when {
-                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false }
-                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false }
-                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false }
-                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false }
+                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false }
+                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false }
+                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false }
+                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false }
+                line == "github:" -> { inGithub = true; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
+                inGithub && line.trimStart().startsWith("repos:") -> inGithubRepos = true
+                inGithubRepos && line.trimStart().startsWith("- ") -> githubRepos.add(line.trimStart().removePrefix("- ").trim())
+                !line.trimStart().startsWith("- ") && inGithubRepos && line.isNotBlank() -> inGithubRepos = false
             }
             val trimmed = line.trim()
             when {
@@ -66,6 +75,10 @@ object ConfigLoader {
                     }.getOrDefault(EmbeddingMode.LLM_EXPAND)
                 inRag && trimmed.startsWith("googleApiKey:") ->
                     ragGoogleApiKey = trimmed.substringAfter("googleApiKey:").trim().ifEmpty { null }
+                inGithub && trimmed.startsWith("enabled:") ->
+                    githubEnabled = trimmed.substringAfter("enabled:").trim() == "true"
+                inGithub && trimmed.startsWith("token:") ->
+                    githubToken = trimmed.substringAfter("token:").trim()
             }
         }
 
@@ -74,6 +87,7 @@ object ConfigLoader {
             confluence = ConfluenceConfig(baseUrl, token, spaces),
             slack = SlackConfig(botToken, appToken),
             rag = RagConfig(ragEnabled, chromaUrl, embeddingMode, ragGoogleApiKey),
+            github = GithubConfig(githubEnabled, githubToken, githubRepos),
         )
     }
 
@@ -98,6 +112,12 @@ object ConfigLoader {
             appendLine("  chromaUrl: ${config.rag.chromaUrl}")
             appendLine("  embeddingMode: ${config.rag.embeddingMode}")
             // googleApiKey is a secret managed by SecretLoader — not written to disk
+            appendLine("github:")
+            appendLine("  enabled: ${config.github.enabled}")
+            if (config.github.repos.isNotEmpty()) {
+                appendLine("  repos:")
+                config.github.repos.forEach { appendLine("    - $it") }
+            }
         }
         File(path).writeText(yaml)
     }

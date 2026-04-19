@@ -85,6 +85,25 @@ class ConfigLoaderTest {
     }
 
     @Test
+    fun `loads github config`() {
+        val yaml = """
+            model:
+              provider: CLAUDE_CODE
+            confluence:
+              baseUrl: https://example.atlassian.net
+              token: tok
+            github:
+              enabled: true
+              repos:
+                - owner/repo1
+                - owner/repo2
+        """.trimIndent()
+        val config = ConfigLoader.fromString(yaml)
+        assertEquals(true, config.github.enabled)
+        assertEquals(listOf("owner/repo1", "owner/repo2"), config.github.repos)
+    }
+
+    @Test
     fun `save and reload preserves rag config`() {
         val config = WikiConfig(
             model = ModelConfig(provider = ModelProvider.CLAUDE_CODE),

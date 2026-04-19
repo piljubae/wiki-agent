@@ -4,8 +4,11 @@ package io.github.veronikapj.wiki
 
 import ai.koog.prompt.dsl.prompt
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
+import io.github.veronikapj.wiki.github.GitHubWikiClient
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
+import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.EmbeddingMode
@@ -54,6 +57,15 @@ fun main() {
     )
     val confluenceTool = ConfluenceTool(confluenceSearchAgent)
 
+    val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
+    var githubWikiTool: GitHubWikiTool? = null
+    if (config.github.enabled && config.github.repos.isNotEmpty()) {
+        val githubClient = GitHubWikiClient(githubToken)
+        val githubWikiSearchAgent = GitHubWikiSearchAgent(githubClient, config.github.repos)
+        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent)
+        log.info("GitHub Wiki enabled: repos={}", config.github.repos)
+    }
+
     var vectorSearchTool: VectorSearchTool? = null
     var vectorIndexAgent: VectorIndexAgent? = null
 
@@ -78,7 +90,7 @@ fun main() {
         log.info("RAG enabled (mode={})", config.rag.embeddingMode)
     }
 
-    val orchestrator = OrchestratorAgent(confluenceTool, vectorSearchTool, executor)
+    val orchestrator = OrchestratorAgent(confluenceTool, githubWikiTool, vectorSearchTool, executor)
 
     val configHandler = SlackConfigHandler(
         config = config,

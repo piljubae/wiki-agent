@@ -8,6 +8,7 @@ data class WikiConfig(
     val confluence: ConfluenceConfig = ConfluenceConfig(),
     val slack: SlackConfig = SlackConfig(),
     val rag: RagConfig = RagConfig(),
+    val github: GithubConfig = GithubConfig(),
 )
 
 data class ModelConfig(
@@ -32,4 +33,10 @@ data class RagConfig(
     val chromaUrl: String = "http://localhost:8000",
     val embeddingMode: EmbeddingMode = EmbeddingMode.LLM_EXPAND,
     val googleApiKey: String? = null,
+)
+
+data class GithubConfig(
+    val enabled: Boolean = false,
+    val token: String = "",
+    val repos: List<String> = emptyList(),
 )

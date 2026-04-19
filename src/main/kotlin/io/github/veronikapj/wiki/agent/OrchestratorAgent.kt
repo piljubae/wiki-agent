@@ -11,11 +11,13 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
+import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import org.slf4j.LoggerFactory
 
 class OrchestratorAgent(
     private val confluenceTool: ConfluenceTool,
+    private val githubWikiTool: GitHubWikiTool? = null,
     private val vectorSearchTool: VectorSearchTool?,
     private val executor: MultiLLMPromptExecutor,
 ) {
@@ -38,11 +40,14 @@ class OrchestratorAgent(
 
     private fun buildAgent(model: LLModel): AIAgent<String, String> {
         val systemPrompt = buildString {
-            appendLine("당신은 Confluence 위키 검색 전문가입니다.")
+            appendLine("당신은 Confluence 위키와 GitHub Wiki 검색 전문가입니다.")
             appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
             appendLine("검색 없이 직접 답변하지 마세요.")
             if (vectorSearchTool != null) {
                 appendLine("confluenceSearch로 먼저 검색하고, 결과가 부족하면 vectorSearch도 사용하세요.")
+            }
+            if (githubWikiTool != null) {
+                appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
         }
@@ -58,6 +63,7 @@ class OrchestratorAgent(
             ),
             toolRegistry = ToolRegistry {
                 tool(confluenceTool::confluenceSearch)
+                if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
                 if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
             },
         )

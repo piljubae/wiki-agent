@@ -1,6 +1,7 @@
 package io.github.veronikapj.wiki.agent.tool
 
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
 import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -26,5 +27,14 @@ class ToolTest {
         val tool = VectorSearchTool(mockAgent)
         val result = tool.vectorSearch("배포")
         assertTrue(result.contains("RAG"))
+    }
+
+    @Test
+    fun `GitHubWikiTool delegates to GitHubWikiSearchAgent`() = runTest {
+        val mockAgent = mockk<GitHubWikiSearchAgent>()
+        coEvery { mockAgent.search("배포") } returns "GitHub Wiki 결과"
+        val tool = GitHubWikiTool(mockAgent)
+        val result = tool.githubWikiSearch("배포")
+        assertTrue(result.contains("GitHub Wiki"))
     }
 }
