@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+.wikiq/config.yml
