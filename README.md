@@ -13,13 +13,14 @@ SlackBotGateway (Bolt Socket Mode)
     ▼
 OrchestratorAgent (Koog AIAgent)
     ├── ConfluenceTool ──► ConfluenceSearchAgent ──► Confluence REST API (CQL)
-    └── VectorSearchTool ──► VectorSearchAgent ──► ChromaDB  (rag.enabled=true 시)
+    ├── GitHubWikiTool ──► GitHubWikiSearchAgent ──► GitHub Search API  (github.enabled=true 시)
+    └── VectorSearchTool ──► VectorSearchAgent ──► ChromaDB            (rag.enabled=true 시)
 
 VectorIndexAgent ◄── /wiki reindex  (Confluence 전체 페이지 → ChromaDB 인덱싱)
 ```
 
 OrchestratorAgent가 LLM을 통해 질문 의도를 파악하고 적절한 Tool을 선택합니다.  
-RAG는 `config.yml`의 `rag.enabled` 한 줄로 활성화/비활성화합니다.
+GitHub Wiki와 RAG는 각각 `config.yml` 한 줄로 활성화/비활성화합니다.
 
 ## 기술 스택
 
@@ -52,6 +53,10 @@ RAG는 `config.yml`의 `rag.enabled` 한 줄로 활성화/비활성화합니다.
 echo -n "your@email.com:your-api-token" | base64
 ```
 
+### 3. GitHub 토큰 (선택)
+
+GitHub Wiki 검색을 활성화하려면 [GitHub Personal Access Token](https://github.com/settings/tokens)을 생성하세요 (권한: `repo`). public 레포는 토큰 없이도 동작합니다.
+
 ## 설정
 
 ### 시크릿 관리
@@ -70,6 +75,7 @@ SLACK_APP_TOKEN=xapp-...
 CONFLUENCE_TOKEN=<base64 email:api-token>
 ANTHROPIC_API_KEY=sk-ant-...   # provider=ANTHROPIC 시
 GOOGLE_API_KEY=AIza...         # provider=GOOGLE 또는 rag.embeddingMode=GOOGLE_EMBEDDING 시
+GITHUB_TOKEN=ghp_...           # github.enabled=true 시 (public repo는 없어도 됨)
 ```
 
 ### config.yml
@@ -88,6 +94,12 @@ confluence:
 
 slack: {}
 
+github:
+  enabled: false
+  repos:
+    - owner/repo1
+    - owner/repo2
+
 rag:
   enabled: false
   chromaUrl: http://localhost:8000
@@ -101,6 +113,29 @@ rag:
 | 로컬 (Claude Code CLI) | `CLAUDE_CODE` | 없음 |
 | Claude API | `ANTHROPIC` + `name` | `ANTHROPIC_API_KEY` |
 | Gemini API | `GOOGLE` + `name` | `GOOGLE_API_KEY` |
+
+## GitHub Wiki (선택)
+
+GitHub 레포지토리 Wiki를 추가 문서 소스로 연결할 수 있습니다.
+
+### 활성화
+
+`config.yml`에서:
+
+```yaml
+github:
+  enabled: true
+  repos:
+    - owner/repo1        # wiki가 활성화된 GitHub 레포
+    - myorg/myproject
+```
+
+`GITHUB_TOKEN`은 환경변수 또는 `.env`에 설정합니다. public 레포는 토큰 없이도 동작합니다.
+
+### 동작 방식
+
+- OrchestratorAgent가 기술 문서 / 코드 관련 질문에서 `githubWikiSearch` Tool을 선택합니다
+- GitHub Search API로 `.wiki` 레포에서 관련 페이지를 찾고 내용을 요약합니다
 
 ## RAG (선택)
 
@@ -156,7 +191,7 @@ java -jar build/libs/wiki-agent-1.0.0-all.jar
 @wiki 배포 프로세스 알려줘
 ```
 
-봇이 OrchestratorAgent를 통해 Confluence를 검색(RAG 활성화 시 벡터 검색도 병행)하고, 관련 문서 목록과 링크를 스레드로 답변합니다.
+봇이 OrchestratorAgent를 통해 질문 의도를 파악하고, Confluence · GitHub Wiki · ChromaDB(RAG) 중 적절한 소스를 선택해 관련 문서 목록과 링크를 스레드로 답변합니다.
 
 슬래시 커맨드:
 
@@ -180,16 +215,20 @@ src/main/kotlin/io/github/veronikapj/wiki/
 ├── Main.kt
 ├── agent/
 │   ├── ConfluenceSearchAgent.kt    # CQL 검색 + 결과 포맷
+│   ├── GitHubWikiSearchAgent.kt    # GitHub Search API + 결과 포맷
 │   ├── OrchestratorAgent.kt        # Koog AIAgent (Tool 라우팅)
 │   └── tool/
 │       ├── ConfluenceTool.kt       # @Tool 래퍼 → ConfluenceSearchAgent
+│       ├── GitHubWikiTool.kt       # @Tool 래퍼 → GitHubWikiSearchAgent
 │       └── VectorSearchTool.kt     # @Tool 래퍼 → VectorSearchAgent
 ├── config/
-│   ├── WikiConfig.kt               # 설정 데이터 클래스 (RagConfig 포함)
+│   ├── WikiConfig.kt               # 설정 데이터 클래스 (RagConfig, GithubConfig 포함)
 │   ├── ConfigLoader.kt             # YAML 파서
 │   └── SecretLoader.kt             # env → .env → config 시크릿 로딩
 ├── confluence/
 │   └── ConfluenceClient.kt         # Confluence REST API (CQL)
+├── github/
+│   └── GitHubWikiClient.kt         # GitHub Search API + raw wiki 콘텐츠 조회
 ├── llm/
 │   ├── ClaudeCodeLLMClient.kt      # Claude Code CLI 기반 LLM
 │   └── LLMExecutorBuilder.kt       # LLM 프로바이더 팩토리

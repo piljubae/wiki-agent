@@ -85,7 +85,7 @@ git commit -m "docs: 세션 자료 파일 초기화"
 
 ## 슬라이드 2: 데모 — wiki-agent 실제 동작
 
-**시나리오:** 슬랙에서 `@wiki 배포 프로세스 알려줘` 입력
+**시나리오 A:** `@wiki 배포 프로세스 알려줘`
 
 ```
 [슬랙 멘션 수신]
@@ -94,13 +94,20 @@ OrchestratorAgent (Koog AIAgent) — 질문 의도 파악 + Tool 선택
     ├── confluenceSearch → ConfluenceSearchAgent → CQL 검색 결과
     └── vectorSearch (RAG 활성화 시) → VectorSearchAgent → ChromaDB 의미 검색
     ↓
-검색 결과 요약 + 페이지 링크
-    ↓
-[슬랙 스레드로 답변]
+검색 결과 요약 + 페이지 링크 → [슬랙 스레드로 답변]
 ```
 
-**포인트:** OrchestratorAgent가 LLM을 통해 "어떤 Tool을 쓸지" 직접 결정한다.  
-RAG 활성화 시 confluenceSearch + vectorSearch 중 하나 또는 둘 다 선택하는 과정을 시각화.
+**시나리오 B (GitHub Wiki 활성화 시):** `@wiki 백엔드 API 설계 가이드`
+
+```
+OrchestratorAgent
+    ├── confluenceSearch → 내부 위키
+    └── githubWikiSearch → GitHub 레포 Wiki
+```
+
+LLM이 질문 유형에 따라 적절한 소스를 선택하거나 두 소스 모두 활용
+
+**포인트:** OrchestratorAgent가 LLM을 통해 "어떤 Tool을 쓸지" 직접 결정한다.
 
 *데모 영상 또는 라이브 시연*
 
@@ -234,21 +241,23 @@ OrchestratorAgent (AIAgent)
 └── 직접 답변 안 함
 
 Tool (Koog @Tool)
-├── ConfluenceTool → ConfluenceSearchAgent (CQL 검색)
-└── VectorSearchTool → VectorSearchAgent (RAG, 선택)
+├── ConfluenceTool → ConfluenceSearchAgent (항상)
+├── GitHubWikiTool → GitHubWikiSearchAgent (github.enabled=true 시)
+└── VectorSearchTool → VectorSearchAgent (rag.enabled=true 시)
 ```
 
 **코드로 보면 이게 전부:**
 ```kotlin
 toolRegistry = ToolRegistry {
-    tool(confluenceTool::confluenceSearch)          // 항상
-    if (ragEnabled) tool(vectorSearchTool::vectorSearch)  // rag.enabled=true 시
+    tool(confluenceTool::confluenceSearch)
+    if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
+    if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
 }
 ```
 
 - **Orchestrator**: 교통정리만 — LLM이 Tool 선택
 - **Specialist**: 하나의 도메인에 집중
-- RAG 확장: `rag.enabled=true` 한 줄 → LLM이 알아서 두 Tool 중 선택
+- Tool 추가: config.yml 한 줄 → 코드 한 줄 → LLM이 알아서 선택
 
 ---
 ```
@@ -428,6 +437,10 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 | **개발자** | 빌드 실패 → 로그 분석 + 원인 추정 | 파일 읽기 + GitHub API |
 | **마케터** | 캠페인 데이터 → 성과 요약 초안 | 파일 읽기 + Slack API |
 
+**wiki-agent 확장 예시 (이미 구현됨):**
+- `github.repos: [myorg/backend]` → GitHub Wiki에서 API 설계 가이드 검색
+- 온보딩 봇: Confluence(사내 프로세스) + GitHub Wiki(기술 문서) 동시 검색
+
 > 핵심: Orchestrator + Specialist 구조는 같다. Tool과 프롬프트만 바꾼다.
 
 ---
@@ -475,14 +488,25 @@ confluence:
 /wiki config space DEV,PM
 ```
 
-**⑤ (심화, 선택) RAG 활성화 (추가 5분)**
+**⑤ (심화 A, 선택) GitHub Wiki 연결 (추가 5분)**
+`.env`에 `GITHUB_TOKEN=ghp_...` 추가 (public repo는 없어도 됨)
+`config.yml`에서:
+```yaml
+github:
+  enabled: true
+  repos:
+    - myorg/myproject
+```
+재시작 후 기술 문서 관련 질문 비교
+
+**⑥ (심화 B, 선택) RAG 활성화 (추가 5분)**
 ```bash
 docker run -p 8000:8000 chromadb/chroma
 ```
-`config.yml`에서 `rag.enabled: true` → `/wiki reindex` → 같은 질문 다시 해보기
+`config.yml`에서 `rag.enabled: true` → 재시작 → `/wiki reindex` → 같은 질문 다시 해보기
 
-**⑥ 결과 공유 + 토론 (4분)**
-- CQL 검색 vs RAG 검색 결과 차이?
+**⑦ 결과 공유 + 토론 (10분)**
+- 소스별 검색 결과 차이?
 - 프롬프트를 어떻게 바꾸면 더 나아질까?
 - 내 팀에서 이 구조로 만들고 싶은 에이전트는?
 
@@ -519,10 +543,14 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 4. `.wikiq/config.yml` — baseUrl, spaces 설정
 5. `./gradlew run`
 
-**(선택) RAG까지 쓰려면:**
-6. `docker run -p 8000:8000 chromadb/chroma`
-7. `config.yml`에서 `rag.enabled: true`
-8. `/wiki reindex`
+**(선택 A) GitHub Wiki 연결:**
+6. `.env`에 `GITHUB_TOKEN` 추가
+7. `config.yml`에 `github.enabled: true` + `repos` 설정
+
+**(선택 B) RAG까지 쓰려면:**
+8. `docker run -p 8000:8000 chromadb/chroma`
+9. `config.yml`에서 `rag.enabled: true`
+10. `/wiki reindex`
 
 **3가지 실행 모드:**
 
@@ -563,7 +591,7 @@ A. JVM/Kotlin 생태계에 자연스럽고, 타입 안전성이 높습니다. Py
 **Step 2: 최종 빌드 확인 — 문서 전체 검토**
 
 파일을 열어 목차 → 내용 흐름이 자연스러운지 확인:
-- 1부 (15분) → 2부 (30분) → 3부 (60분) → 4부 (15분) = 총 120분
+- 1부 (15분) → 2부 (15분) → 3부 (75분) → 4부 (15분) = 총 120분
 - 슬라이드 1~17 모두 존재하는지 확인
 
 **Step 3: 최종 커밋**
