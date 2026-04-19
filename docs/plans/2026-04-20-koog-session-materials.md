@@ -124,7 +124,7 @@ git commit -m "docs: 세션 1부 슬라이드 작성"
 
 ---
 
-## Task 3: 2부 — Koog가 뭔가 (슬라이드 4-8)
+## Task 3: 2부 — Koog가 뭔가 (슬라이드 4-8, 15분)
 
 **Files:**
 - Modify: `docs/session/koog-agent-session.md`
@@ -262,7 +262,7 @@ git commit -m "docs: 세션 2부 슬라이드 작성"
 
 ---
 
-## Task 4: 3부 — 에이전트 설계 (슬라이드 9-13)
+## Task 4: 3부 — 에이전트 설계 (슬라이드 9-13, 75분)
 
 **Files:**
 - Modify: `docs/session/koog-agent-session.md`
@@ -432,7 +432,7 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 
 ---
 
-## 슬라이드 15: 워크숍 — wiki-agent 직접 실행해보기 (20분)
+## 슬라이드 15: 워크숍 — wiki-agent 직접 실행해보기 (35분)
 
 **준비물 (미리 배포):**
 - wiki-agent 레포 클론

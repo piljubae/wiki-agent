@@ -42,7 +42,7 @@
   - RAG 활성화 시: LLM이 confluenceSearch + vectorSearch 두 Tool 중 선택하는 과정 시각화
 - 슬라이드 3: "이게 Koog로 만들어졌다"
 
-### 2부 — Koog가 뭔가 (30분)
+### 2부 — Koog가 뭔가 (15분)
 
 - 슬라이드 4: JetBrains가 만든 Kotlin-native 에이전트 프레임워크
 - 슬라이드 5: 다른 프레임워크와 비교 (LangChain, LlamaIndex)
@@ -53,7 +53,7 @@
   - `ToolRegistry { tool(confluenceTool::confluenceSearch) }` 한 줄이 Tool 등록의 전부
   - `rag.enabled=true` 시 `tool(vectorSearchTool::vectorSearch)` 한 줄 추가 → LLM이 알아서 선택
 
-### 3부 — 내 에이전트 어떻게 설계하나 (60분)
+### 3부 — 내 에이전트 어떻게 설계하나 (75분)
 
 - 슬라이드 9: 에이전트 설계 3단계 (반복업무 → Tool → 프롬프트) — wiki-agent 사례로 설명
 - 슬라이드 10: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리 (wiki-agent OrchestratorAgent 프롬프트)
