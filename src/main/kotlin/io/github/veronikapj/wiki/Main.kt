@@ -9,6 +9,7 @@ import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.github.GitHubWikiClient
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
+import io.github.veronikapj.wiki.agent.tool.SourceTracker
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.EmbeddingMode
@@ -46,6 +47,8 @@ fun main() {
     val executor = LLMExecutorBuilder.build(resolvedModelConfig)
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
+    val sourceTracker = SourceTracker()
+
     var confluenceTool: ConfluenceTool? = null
     var confluenceClient: ConfluenceClient? = null
     if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
@@ -57,7 +60,7 @@ fun main() {
             confluenceClient = confluenceClient,
             spaces = config.confluence.spaces,
         )
-        confluenceTool = ConfluenceTool(confluenceSearchAgent)
+        confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
         log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
     } else {
         log.info("Confluence disabled (baseUrl or token not set)")
@@ -68,7 +71,7 @@ fun main() {
     if (config.github.enabled && config.github.repos.isNotEmpty()) {
         val githubClient = GitHubWikiClient(githubToken)
         val githubWikiSearchAgent = GitHubWikiSearchAgent(githubClient, config.github.repos)
-        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent)
+        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent, sourceTracker)
         log.info("GitHub Wiki enabled: repos={}", config.github.repos)
     }
 
@@ -89,7 +92,7 @@ fun main() {
         else null
 
         val vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
-        vectorSearchTool = VectorSearchTool(vectorSearchAgent)
+        vectorSearchTool = VectorSearchTool(vectorSearchAgent, sourceTracker)
         if (confluenceClient != null) {
             vectorIndexAgent = VectorIndexAgent(
                 confluenceClient, chromaClient, llmExpandClient, googleEmbeddingClient, config.rag, config.confluence.spaces
@@ -135,11 +138,19 @@ fun main() {
             val input = readlnOrNull()?.trim() ?: break
             if (input == "q") break
             if (input.isBlank()) continue
-            println("$divider")
+            println(divider)
             println("검색 중...")
+            sourceTracker.reset()
             val result = kotlinx.coroutines.runBlocking { orchestrator.answer(input) }
             println()
             println(result)
+            println()
+            val sources = sourceTracker.sources
+            if (sources.isNotEmpty()) {
+                println("출처: ${sources.joinToString(" + ")}")
+            } else {
+                println("출처: 직접 답변 (tool 미사용)")
+            }
             println(divider)
         }
         println("종료합니다.")
