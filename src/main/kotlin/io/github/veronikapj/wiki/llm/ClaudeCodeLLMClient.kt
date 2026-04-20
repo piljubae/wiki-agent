@@ -32,16 +32,34 @@ class ClaudeCodeLLMClient(
         model: LLModel,
         tools: List<ToolDescriptor>,
     ): List<Message.Response> {
-        if (tools.isNotEmpty()) {
-            log.warn(
-                "ClaudeCodeLLMClient does not support tool calls — {} tool(s) will be ignored.",
-                tools.size,
-            )
+        val hasToolResults = prompt.messages.any { it is Message.Tool.Result }
+
+        val flatPrompt = if (tools.isNotEmpty() && !hasToolResults) {
+            buildPromptWithTools(prompt, tools)
+        } else {
+            flattenPrompt(prompt)
         }
-        val flatPrompt = flattenPrompt(prompt)
+
         val args = buildArgs(flatPrompt, model.id)
         log.debug("Executing claude CLI: {}", args.joinToString(" "))
         val output = runProcess(args)
+
+        if (tools.isNotEmpty() && !hasToolResults) {
+            val toolCall = parseToolCall(output)
+            if (toolCall != null) {
+                val (name, argsJson) = toolCall
+                log.info("Tool call detected: {} args={}", name, argsJson)
+                return listOf(
+                    Message.Tool.Call(
+                        id = "call-${System.currentTimeMillis()}",
+                        tool = name,
+                        content = argsJson,
+                        metaInfo = ResponseMetaInfo.create(Clock.System),
+                    )
+                )
+            }
+        }
+
         return listOf(Message.Assistant(output, ResponseMetaInfo.create(Clock.System)))
     }
 
@@ -60,6 +78,37 @@ class ClaudeCodeLLMClient(
         runProcess(listOf(claudePath, "auth", "status"))
     }
 
+    private fun buildPromptWithTools(prompt: Prompt, tools: List<ToolDescriptor>): String {
+        val sb = StringBuilder()
+        val toolDefs = tools.joinToString("\n") { tool ->
+            val params = (tool.requiredParameters + tool.optionalParameters).joinToString(", ") {
+                "${it.name}: ${it.description ?: it.type}"
+            }
+            "- ${tool.name}($params): ${tool.description}"
+        }
+
+        for (message in prompt.messages) {
+            when (message) {
+                is Message.System -> {
+                    sb.appendLine("[System]: ${message.content}")
+                    sb.appendLine()
+                    sb.appendLine("You have access to the following tools:")
+                    sb.appendLine(toolDefs)
+                    sb.appendLine()
+                    sb.appendLine("If you need to call a tool, respond ONLY with this exact format and nothing else:")
+                    sb.appendLine("<tool_call>{\"name\": \"toolName\", \"args\": {\"argName\": \"argValue\"}}</tool_call>")
+                    sb.appendLine("Otherwise respond normally.")
+                }
+                is Message.User -> sb.appendLine("[Human]: ${message.content}")
+                is Message.Assistant -> sb.appendLine("[Assistant]: ${message.content}")
+                is Message.Tool.Call -> sb.appendLine("[Tool Call]: ${message.tool}(${message.content})")
+                is Message.Tool.Result -> sb.appendLine("[Tool Result]: ${message.content}")
+                else -> sb.appendLine(message.content)
+            }
+        }
+        return sb.toString().trimEnd()
+    }
+
     private fun flattenPrompt(prompt: Prompt): String {
         val sb = StringBuilder()
         for (message in prompt.messages) {
@@ -67,10 +116,24 @@ class ClaudeCodeLLMClient(
                 is Message.System -> sb.appendLine("[System]: ${message.content}")
                 is Message.User -> sb.appendLine("[Human]: ${message.content}")
                 is Message.Assistant -> sb.appendLine("[Assistant]: ${message.content}")
+                is Message.Tool.Call -> sb.appendLine("[Tool Call]: ${message.tool}(${message.content})")
+                is Message.Tool.Result -> sb.appendLine("[Tool Result]: ${message.content}")
                 else -> sb.appendLine(message.content)
             }
         }
         return sb.toString().trimEnd()
+    }
+
+    private fun parseToolCall(output: String): Pair<String, String>? {
+        val match = TOOL_CALL_REGEX.find(output) ?: return null
+        return runCatching {
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(match.groupValues[1])
+                as? kotlinx.serialization.json.JsonObject ?: return null
+            val name = (json["name"] as? kotlinx.serialization.json.JsonPrimitive)
+                ?.content ?: return null
+            val args = json["args"]?.toString() ?: "{}"
+            name to args
+        }.getOrNull()
     }
 
     private fun buildArgs(flatPrompt: String, modelId: String): List<String> {
@@ -99,6 +162,7 @@ class ClaudeCodeLLMClient(
     companion object {
         private const val DEFAULT_CLAUDE_PATH = "claude"
         private const val TIMEOUT_SECONDS = 120L
+        private val TOOL_CALL_REGEX = Regex("<tool_call>(.*?)</tool_call>", RegexOption.DOT_MATCHES_ALL)
         private val log = LoggerFactory.getLogger(ClaudeCodeLLMClient::class.java)
     }
 }
