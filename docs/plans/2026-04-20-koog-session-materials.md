@@ -322,7 +322,7 @@ git commit -m "docs: 세션 2부 슬라이드 작성"
 
 ---
 
-## Task 4: 3부 — 에이전트 설계 (슬라이드 9-13, 75분)
+## Task 4: 3부 — 에이전트 설계 (슬라이드 10-14, 72분)
 
 **Files:**
 - Modify: `docs/session/koog-agent-session.md`
@@ -334,7 +334,7 @@ git commit -m "docs: 세션 2부 슬라이드 작성"
 
 ---
 
-## 슬라이드 9: 에이전트 설계 3단계
+## 슬라이드 10: 에이전트 설계 3단계
 
 **① 반복업무 찾기**
 > "매주 같은 질문을 받는다", "같은 문서를 여러 번 찾는다"
@@ -355,7 +355,7 @@ wiki-agent 예시:
 
 ---
 
-## 슬라이드 10: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리
+## 슬라이드 11: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리
 
 **나쁜 프롬프트:**
 ```
@@ -365,11 +365,14 @@ wiki-agent 예시:
 **좋은 프롬프트 (wiki-agent OrchestratorAgent 실제 코드):**
 ```kotlin
 buildString {
-    appendLine("당신은 Confluence 위키 검색 전문가입니다.")
+    appendLine("당신은 Confluence 위키와 GitHub Wiki 검색 전문가입니다.")
     appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
     appendLine("검색 없이 직접 답변하지 마세요.")
-    if (ragEnabled) {
+    if (vectorSearchTool != null) {
         appendLine("confluenceSearch로 먼저 검색하고, 결과가 부족하면 vectorSearch도 사용하세요.")
+    }
+    if (githubWikiTool != null) {
+        appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
     }
     appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
 }
@@ -379,7 +382,7 @@ buildString {
 
 ---
 
-## 슬라이드 11: 프롬프트 설계 원칙 2 — 컨텍스트 범위 제어
+## 슬라이드 12: 프롬프트 설계 원칙 2 — 컨텍스트 범위 제어
 
 **문제:** 위키 전체를 다 읽히면 토큰 낭비 + 노이즈
 
@@ -401,7 +404,7 @@ confluence:
 
 ---
 
-## 슬라이드 12: 프롬프트 설계 원칙 3 — Tool 호출 유도 vs 직접 답변
+## 슬라이드 13: 프롬프트 설계 원칙 3 — Tool 호출 유도 vs 직접 답변
 
 **언제 Tool을 쓰게 할 것인가?**
 
@@ -423,7 +426,7 @@ confluence:
 
 ---
 
-## 슬라이드 13: Before / After 프롬프트 (wiki-agent 실제 예시)
+## 슬라이드 14: Before / After 프롬프트 (wiki-agent 실제 예시)
 
 **Before (나쁜 예):**
 ```
@@ -468,7 +471,7 @@ git commit -m "docs: 세션 3부 슬라이드 9-13 작성"
 
 ---
 
-## Task 5: 3부 — 아이디어 + 워크숍 (슬라이드 14-15)
+## Task 5: 3부 — 아이디어 + 워크숍 (슬라이드 15-16)
 
 **Files:**
 - Modify: `docs/session/koog-agent-session.md`
@@ -476,7 +479,7 @@ git commit -m "docs: 세션 3부 슬라이드 9-13 작성"
 **Step 1: 슬라이드 14-15 내용 추가**
 
 ```markdown
-## 슬라이드 14: 직군별 에이전트 아이디어
+## 슬라이드 15: 직군별 에이전트 아이디어
 
 wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 
@@ -496,7 +499,7 @@ wiki-agent에서 Tool만 바꾸면 이런 에이전트가 된다:
 
 ---
 
-## 슬라이드 15: 워크숍 — wiki-agent 직접 실행해보기 (35분)
+## 슬라이드 16: 워크숍 — wiki-agent 직접 실행해보기 (35분)
 
 **준비물 (미리 배포):**
 - wiki-agent 레포 클론
@@ -573,7 +576,7 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 
 ---
 
-## Task 6: 4부 — 마무리 (슬라이드 16-17)
+## Task 6: 4부 — 마무리 (슬라이드 17-18)
 
 **Files:**
 - Modify: `docs/session/koog-agent-session.md`
@@ -585,7 +588,7 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 
 ---
 
-## 슬라이드 16: 로컬에서 시작하는 방법
+## 슬라이드 17: 로컬에서 시작하는 방법
 
 **필요한 것:**
 1. Claude Code CLI 설치 (https://claude.ai/code)
@@ -618,7 +621,7 @@ git commit -m "docs: 세션 3부 슬라이드 14-15 작성"
 
 ---
 
-## 슬라이드 17: Q&A
+## 슬라이드 18: Q&A
 
 **자주 나오는 질문:**
 
@@ -629,7 +632,7 @@ A. config.yml 수정 + 프롬프트 교체 수준은 Kotlin 몰라도 됩니다.
 A. Claude Code 구독자는 로컬에서 무료. Gemini Flash는 토큰당 매우 저렴 ($0.075/1M tokens).
 
 **Q. A2A가 뭔가요?**
-A. Agent-to-Agent. 에이전트끼리 HTTP로 통신하는 프로토콜. Orchestrator가 Specialist를 부를 때 씁니다.
+A. Google A2A Protocol (a2a-protocol.org). 에이전트끼리 HTTP로 통신하는 표준 프로토콜입니다. wiki-agent는 현재 ToolRegistry(함수 호출)로 구현되어 있고, 독립 배포가 필요해지면 A2A로 전환할 수 있습니다. 슬라이드 9에서 비교한 내용을 참고하세요.
 
 **Q. LangChain이랑 뭐가 다른가요?**
 A. JVM/Kotlin 생태계에 자연스럽고, 타입 안전성이 높습니다. Python 팀엔 LangChain, Kotlin/Java 팀엔 Koog.
@@ -642,8 +645,8 @@ A. JVM/Kotlin 생태계에 자연스럽고, 타입 안전성이 높습니다. Py
 **Step 2: 최종 빌드 확인 — 문서 전체 검토**
 
 파일을 열어 목차 → 내용 흐름이 자연스러운지 확인:
-- 1부 (15분) → 2부 (15분) → 3부 (75분) → 4부 (15분) = 총 120분
-- 슬라이드 1~17 모두 존재하는지 확인
+- 1부 (15분) → 2부 (18분) → 3부 (72분) → 4부 (15분) = 총 120분
+- 슬라이드 1~18 모두 존재하는지 확인
 
 **Step 3: 최종 커밋**
 
