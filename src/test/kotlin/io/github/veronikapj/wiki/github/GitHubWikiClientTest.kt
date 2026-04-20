@@ -9,32 +9,33 @@ class GitHubWikiClientTest {
     private val client = GitHubWikiClient()
 
     @Test
-    fun `buildSearchUrl includes repo wiki suffix`() {
-        val url = client.buildSearchUrl("배포", listOf("owner/repo"))
-        assertTrue(url.contains("owner%2Frepo.wiki") || url.contains("owner/repo.wiki"))
-    }
-
-    @Test
-    fun `buildRawUrl constructs correct raw github url`() {
-        val url = client.buildRawUrl("owner/repo", "Deploy-Guide.md")
+    fun `buildRawUrl constructs wiki raw url`() {
+        val url = client.buildRawUrl("owner/repo.wiki", "Deploy-Guide.md", isWiki = true)
         assertEquals("https://raw.githubusercontent.com/wiki/owner/repo/Deploy-Guide.md", url)
     }
 
     @Test
-    fun `parseSearchResults extracts pages`() {
-        val json = """
-            {"total_count":1,"items":[{"name":"Deploy-Guide.md","path":"Deploy-Guide.md","html_url":"https://github.com/owner/repo/wiki/Deploy-Guide","repository":{"full_name":"owner/repo"}}]}
-        """.trimIndent()
-        val results = client.parseSearchResults(json)
-        assertEquals(1, results.size)
-        assertEquals("Deploy Guide", results[0].title)
-        assertEquals("owner/repo", results[0].repoFullName)
+    fun `buildRawUrl constructs main repo raw url`() {
+        val url = client.buildRawUrl("owner/repo", "docs/guide.md", isWiki = false)
+        assertEquals("https://raw.githubusercontent.com/owner/repo/main/docs/guide.md", url)
     }
 
     @Test
-    fun `parseSearchResults returns empty on no items`() {
-        val json = """{"total_count":0,"items":[]}"""
-        val results = client.parseSearchResults(json)
-        assertTrue(results.isEmpty())
+    fun `parseMdFilePaths extracts md paths from tree json`() {
+        val json = """
+            {"tree":[
+              {"path":"README.md","type":"blob"},
+              {"path":"src/Main.kt","type":"blob"},
+              {"path":"docs/guide.md","type":"blob"}
+            ]}
+        """.trimIndent()
+        val paths = client.parseMdFilePaths(json)
+        assertEquals(listOf("README.md", "docs/guide.md"), paths)
+    }
+
+    @Test
+    fun `parseMdFilePaths returns empty on no md files`() {
+        val json = """{"tree":[{"path":"src/Main.kt","type":"blob"}]}"""
+        assertTrue(client.parseMdFilePaths(json).isEmpty())
     }
 }

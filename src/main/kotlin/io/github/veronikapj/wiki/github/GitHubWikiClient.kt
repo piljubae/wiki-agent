@@ -7,7 +7,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import org.slf4j.LoggerFactory
-import java.net.URLEncoder
 
 data class GitHubWikiPage(
     val title: String,
@@ -25,14 +24,68 @@ class GitHubWikiClient(private val token: String = "") {
 
     suspend fun searchPages(query: String, repos: List<String>): List<GitHubWikiPage> {
         if (repos.isEmpty()) return emptyList()
-        val url = buildSearchUrl(query, repos)
-        log.info("GitHub Wiki search: {}", url)
-        val response = httpClient.get(url) {
-            header("Accept", "application/vnd.github+json")
-            header("X-GitHub-Api-Version", "2022-11-28")
-            if (token.isNotBlank()) header("Authorization", "Bearer $token")
-        }.bodyAsText()
-        return parseSearchResults(response)
+        val results = mutableListOf<GitHubWikiPage>()
+        val keywords = query.lowercase().split(" ").filter { it.length > 1 }
+
+        for (repo in repos) {
+            // 1) GitHub Wiki (.wiki git repo) — wiki 페이지가 있을 때만 동작
+            results += searchInRepo("$repo.wiki", keywords, isWiki = true)
+            // 2) 메인 레포의 마크다운 파일 (README, docs/, etc.)
+            results += searchInRepo(repo, keywords, isWiki = false)
+        }
+
+        return results.distinctBy { it.path }.take(5)
+    }
+
+    private suspend fun searchInRepo(
+        repoFullName: String,
+        keywords: List<String>,
+        isWiki: Boolean,
+    ): List<GitHubWikiPage> {
+        val treeUrl = "https://api.github.com/repos/$repoFullName/git/trees/HEAD?recursive=1"
+        log.info("Fetching file tree: {}", treeUrl)
+        val treeJson = runCatching {
+            httpClient.get(treeUrl) {
+                header("Accept", "application/vnd.github+json")
+                header("X-GitHub-Api-Version", "2022-11-28")
+                if (token.isNotBlank()) header("Authorization", "Bearer $token")
+            }.bodyAsText()
+        }.getOrElse {
+            log.warn("Tree fetch failed for {}: {}", repoFullName, it.message)
+            return emptyList()
+        }
+
+        if (treeJson.contains("\"Not Found\"") || treeJson.contains("\"message\"")) {
+            val msg = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(treeJson)?.groupValues?.get(1)
+            log.info("Repo {} not accessible: {}", repoFullName, msg)
+            return emptyList()
+        }
+
+        val mdPaths = parseMdFilePaths(treeJson)
+        log.info("Found {} .md files in {}", mdPaths.size, repoFullName)
+
+        val results = mutableListOf<GitHubWikiPage>()
+        for (path in mdPaths.take(20)) {
+            val rawUrl = buildRawUrl(repoFullName, path, isWiki)
+            val content = runCatching { fetchContent(rawUrl) }.getOrDefault("")
+            if (content.isBlank()) continue
+
+            val contentLower = content.lowercase()
+            if (keywords.any { contentLower.contains(it) }) {
+                val title = path.substringAfterLast("/").removeSuffix(".md").replace("-", " ")
+                val htmlUrl = if (isWiki) {
+                    val (owner, repo) = repoFullName.removeSuffix(".wiki").split("/")
+                    "https://github.com/$owner/$repo/wiki/${path.removeSuffix(".md")}"
+                } else {
+                    "https://github.com/$repoFullName/blob/main/$path"
+                }
+                val snippetLines = content.lines()
+                    .firstOrNull { l -> keywords.any { l.lowercase().contains(it) } }
+                    ?: content.lines().firstOrNull { it.isNotBlank() } ?: ""
+                results.add(GitHubWikiPage(title, repoFullName, path, htmlUrl, snippetLines.take(200)))
+            }
+        }
+        return results
     }
 
     suspend fun fetchContent(rawUrl: String): String {
@@ -43,56 +96,23 @@ class GitHubWikiClient(private val token: String = "") {
         }.getOrDefault("")
     }
 
-    internal fun buildSearchUrl(query: String, repos: List<String>): String {
-        val repoQuery = repos.joinToString("+") { "repo:${it}.wiki" }
-        val q = URLEncoder.encode("$query $repoQuery", "UTF-8")
-        return "https://api.github.com/search/code?q=$q&per_page=10"
+    internal fun buildRawUrl(repoFullName: String, path: String, isWiki: Boolean = false): String {
+        return if (isWiki) {
+            val cleanRepo = repoFullName.removeSuffix(".wiki")
+            val (owner, repo) = cleanRepo.split("/")
+            "https://raw.githubusercontent.com/wiki/$owner/$repo/$path"
+        } else {
+            "https://raw.githubusercontent.com/$repoFullName/main/$path"
+        }
     }
 
-    internal fun buildRawUrl(repoFullName: String, path: String): String {
-        val owner = repoFullName.substringBefore("/")
-        val repo = repoFullName.substringAfter("/")
-        val page = path.removeSuffix(".md")
-        return "https://raw.githubusercontent.com/wiki/$owner/$repo/$page.md"
-    }
-
-    internal fun parseSearchResults(json: String): List<GitHubWikiPage> {
-        val results = mutableListOf<GitHubWikiPage>()
-        val itemsStart = json.indexOf("\"items\"")
-        if (itemsStart == -1) return emptyList()
-        val arrayStart = json.indexOf('[', itemsStart)
-        if (arrayStart == -1) return emptyList()
-
-        // Split items by walking the JSON array, collecting each top-level object
-        val items = mutableListOf<String>()
-        var depth = 0
-        var itemStart = -1
-        var i = arrayStart
-        while (i < json.length) {
-            when (json[i]) {
-                '[' -> { depth++; if (depth == 1) { /* array open */ } }
-                '{' -> { depth++; if (depth == 2) itemStart = i }
-                '}' -> {
-                    depth--
-                    if (depth == 1 && itemStart != -1) {
-                        items.add(json.substring(itemStart, i + 1))
-                        itemStart = -1
-                    }
-                }
-                ']' -> { depth--; if (depth == 0) break }
-            }
-            i++
+    internal fun parseMdFilePaths(treeJson: String): List<String> {
+        val paths = mutableListOf<String>()
+        val pathRegex = Regex("\"path\"\\s*:\\s*\"([^\"]+\\.md)\"")
+        pathRegex.findAll(treeJson).forEach { match ->
+            paths.add(match.groupValues[1])
         }
-
-        for (text in items) {
-            val name = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: continue
-            val path = Regex("\"path\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: name
-            val htmlUrl = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: ""
-            val repoFullName = Regex("\"full_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1) ?: ""
-            val title = name.removeSuffix(".md").replace("-", " ")
-            results.add(GitHubWikiPage(title, repoFullName, path, htmlUrl, ""))
-        }
-        return results
+        return paths
     }
 
     fun close() = httpClient.close()

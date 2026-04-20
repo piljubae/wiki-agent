@@ -46,17 +46,23 @@ class OrchestratorAgent(
         )
         val model = AnthropicModels.Haiku_4_5
 
-        // 1단계: 검색어 결정
+        // 1단계: 검색어 결정 (항상 검색 — 예외 없음)
         val decisionPrompt = buildString {
             if (history.isNotEmpty()) {
                 appendLine("=== 이전 대화 ===")
                 history.forEach { (q, a) -> appendLine("Q: $q\nA: ${a.take(150)}...") }
                 appendLine()
             }
-            appendLine("사용 가능한 검색 도구: ${availableTools.joinToString(", ")}")
-            appendLine("다음 형식으로만 응답하세요 (다른 내용 금지):")
-            appendLine("TOOL: <tool이름>")
-            appendLine("QUERY: <검색어>")
+            appendLine("당신은 검색 라우터입니다. 사용자의 질문을 반드시 아래 도구 중 하나로 검색해야 합니다.")
+            appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
+            appendLine()
+            appendLine("출력 형식 (이 두 줄만 출력, 다른 텍스트 금지):")
+            appendLine("TOOL: <도구이름>")
+            appendLine("QUERY: <한국어 검색어>")
+            appendLine()
+            appendLine("규칙:")
+            appendLine("- 어떤 질문이든 반드시 검색해야 합니다. 검색하지 않는 경우는 없습니다.")
+            appendLine("- TOOL과 QUERY 두 줄만 출력하세요.")
             appendLine()
             appendLine("질문: $question")
         }
@@ -67,8 +73,9 @@ class OrchestratorAgent(
 
         log.info("Search decision: {}", decision.take(150))
 
-        // 2단계: tool 실행
+        // 2단계: tool 실행 (파싱 실패 시 기본 도구로 원본 질문 검색)
         val searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
+            ?: runCatching { executeDefault(question, availableTools) }.getOrNull()
         log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
         // 3단계: 검색 결과 + 히스토리로 최종 답변
@@ -105,7 +112,7 @@ class OrchestratorAgent(
         val toolMatch = Regex("TOOL:\\s*(\\S+)").find(decision) ?: return null
         val queryMatch = Regex("QUERY:\\s*(.+)").find(decision) ?: return null
         val toolName = toolMatch.groupValues[1].trim()
-        val query = queryMatch.groupValues[1].trim()  // [1]이 첫 번째 캡처 그룹
+        val query = queryMatch.groupValues[1].trim()
 
         if (query.isBlank()) return null
         log.info("Executing tool: {} query: {}", toolName, query)
@@ -113,6 +120,16 @@ class OrchestratorAgent(
             "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
             "confluenceSearch" -> confluenceTool?.confluenceSearch(query)
             "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
+            else -> null
+        }
+    }
+
+    private fun executeDefault(question: String, availableTools: List<String>): String? {
+        log.info("Fallback: searching with original question using {}", availableTools.firstOrNull())
+        return when (availableTools.firstOrNull()) {
+            "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
+            "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
+            "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
             else -> null
         }
     }
