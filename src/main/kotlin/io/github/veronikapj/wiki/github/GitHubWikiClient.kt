@@ -42,6 +42,63 @@ class GitHubWikiClient(private val token: String = "") {
         keywords: List<String>,
         isWiki: Boolean,
     ): List<GitHubWikiPage> {
+        val paths: List<String> = if (isWiki) {
+            getWikiPagePaths(repoFullName)
+        } else {
+            getMainRepoMdPaths(repoFullName)
+        }
+        if (paths.isEmpty()) return emptyList()
+        log.info("Found {} .md files in {}", paths.size, repoFullName)
+
+        val results = mutableListOf<GitHubWikiPage>()
+        for (path in paths.take(30)) {
+            val rawUrl = buildRawUrl(repoFullName, path, isWiki)
+            val content = runCatching { fetchContent(rawUrl) }.getOrDefault("")
+            if (content.isBlank()) continue
+
+            val contentLower = content.lowercase()
+            if (keywords.any { contentLower.contains(it) }) {
+                val title = path.substringAfterLast("/").removeSuffix(".md").replace("-", " ")
+                val htmlUrl = if (isWiki) {
+                    val cleanRepo = repoFullName.removeSuffix(".wiki")
+                    val (owner, repo) = cleanRepo.split("/")
+                    "https://github.com/$owner/$repo/wiki/${path.removeSuffix(".md")}"
+                } else {
+                    "https://github.com/$repoFullName/blob/main/$path"
+                }
+                val snippet = content.lines()
+                    .firstOrNull { l -> keywords.any { l.lowercase().contains(it) } }
+                    ?: content.lines().firstOrNull { it.isNotBlank() } ?: ""
+                results.add(GitHubWikiPage(title, repoFullName, path, htmlUrl, snippet.take(200)))
+            }
+        }
+        return results
+    }
+
+    // wiki: Home.md 파싱으로 페이지 목록 수집 (git tree API 대신)
+    private suspend fun getWikiPagePaths(repoFullName: String): List<String> {
+        val cleanRepo = repoFullName.removeSuffix(".wiki")
+        val (owner, repo) = cleanRepo.split("/")
+        val homeUrl = "https://raw.githubusercontent.com/wiki/$owner/$repo/Home.md"
+        val homeContent = runCatching { fetchContent(homeUrl) }.getOrDefault("")
+        if (homeContent.isBlank()) {
+            log.info("Wiki Home.md not accessible for {}", repoFullName)
+            return emptyList()
+        }
+        val pages = mutableListOf("Home.md")
+        Regex("\\[([^\\]]+)\\]\\(([^)#\\s]+)\\)").findAll(homeContent).forEach { match ->
+            val link = match.groupValues[2]
+            if (!link.startsWith("http") && link.isNotBlank()) {
+                val pagePath = if (link.endsWith(".md")) link else "$link.md"
+                if (pagePath !in pages) pages.add(pagePath)
+            }
+        }
+        log.info("Wiki pages from Home.md for {}: {}", repoFullName, pages.size)
+        return pages
+    }
+
+    // 메인 레포: Contents API로 파일 트리 조회
+    private suspend fun getMainRepoMdPaths(repoFullName: String): List<String> {
         val treeUrl = "https://api.github.com/repos/$repoFullName/git/trees/HEAD?recursive=1"
         log.info("Fetching file tree: {}", treeUrl)
         val treeJson = runCatching {
@@ -54,38 +111,12 @@ class GitHubWikiClient(private val token: String = "") {
             log.warn("Tree fetch failed for {}: {}", repoFullName, it.message)
             return emptyList()
         }
-
-        if (treeJson.contains("\"Not Found\"") || treeJson.contains("\"message\"")) {
+        if (treeJson.contains("\"message\"")) {
             val msg = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(treeJson)?.groupValues?.get(1)
             log.info("Repo {} not accessible: {}", repoFullName, msg)
             return emptyList()
         }
-
-        val mdPaths = parseMdFilePaths(treeJson)
-        log.info("Found {} .md files in {}", mdPaths.size, repoFullName)
-
-        val results = mutableListOf<GitHubWikiPage>()
-        for (path in mdPaths.take(20)) {
-            val rawUrl = buildRawUrl(repoFullName, path, isWiki)
-            val content = runCatching { fetchContent(rawUrl) }.getOrDefault("")
-            if (content.isBlank()) continue
-
-            val contentLower = content.lowercase()
-            if (keywords.any { contentLower.contains(it) }) {
-                val title = path.substringAfterLast("/").removeSuffix(".md").replace("-", " ")
-                val htmlUrl = if (isWiki) {
-                    val (owner, repo) = repoFullName.removeSuffix(".wiki").split("/")
-                    "https://github.com/$owner/$repo/wiki/${path.removeSuffix(".md")}"
-                } else {
-                    "https://github.com/$repoFullName/blob/main/$path"
-                }
-                val snippetLines = content.lines()
-                    .firstOrNull { l -> keywords.any { l.lowercase().contains(it) } }
-                    ?: content.lines().firstOrNull { it.isNotBlank() } ?: ""
-                results.add(GitHubWikiPage(title, repoFullName, path, htmlUrl, snippetLines.take(200)))
-            }
-        }
-        return results
+        return parseMdFilePaths(treeJson)
     }
 
     suspend fun fetchContent(rawUrl: String): String {
