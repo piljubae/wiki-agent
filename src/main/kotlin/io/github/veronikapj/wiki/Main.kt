@@ -124,15 +124,24 @@ fun main() {
         gateway.start()
     } else {
         log.info("Slack tokens not set — running in local CLI mode")
-        println("=== wiki-agent CLI mode ===")
-        println("질문을 입력하세요 (종료: q)")
+        val divider = "─".repeat(60)
+        println(divider)
+        println("  wiki-agent CLI  |  GitHub Wiki: Veronikapj/wiki-agent")
+        println("  로그: logs/wiki-agent.log  |  종료: q")
+        println(divider)
         while (true) {
-            print("> ")
+            println()
+            print("질문 > ")
             val input = readlnOrNull()?.trim() ?: break
             if (input == "q") break
             if (input.isBlank()) continue
+            println("$divider")
+            println("검색 중...")
             val result = kotlinx.coroutines.runBlocking { orchestrator.answer(input) }
-            println("\n$result\n")
+            println()
+            println(result)
+            println(divider)
         }
+        println("종료합니다.")
     }
 }
