@@ -55,7 +55,7 @@ echo -n "your@email.com:your-api-token" | base64
 
 ### 3. GitHub 토큰 (선택)
 
-GitHub Wiki 검색을 활성화하려면 [GitHub Personal Access Token](https://github.com/settings/tokens)을 생성하세요 (권한: `repo` 또는 public repo만이면 권한 없이도 가능).
+GitHub Wiki 검색을 활성화하려면 [GitHub Personal Access Token](https://github.com/settings/tokens)을 생성하세요 (권한: `repo`). public 레포는 토큰 없이도 동작합니다.
 
 ## 설정
 

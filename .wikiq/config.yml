@@ -1,14 +1,16 @@
 model:
   provider: CLAUDE_CODE  # CLAUDE_CODE | ANTHROPIC | GOOGLE
-  # name: claude-sonnet-4-6  # provider가 ANTHROPIC/GOOGLE일 때만 사용
-  # apiKey: sk-ant-...       # provider가 ANTHROPIC일 때
-  # apiKey: AIza...          # provider가 GOOGLE일 때
 confluence:
   baseUrl: https://yourcompany.atlassian.net
-  token: your-confluence-api-token-base64  # echo -n "email:token" | base64
   spaces:
     - DEV
     - PM
-slack:
-  botToken: xoxb-...
-  appToken: xapp-...
+slack: {}
+rag:
+  enabled: false
+  chromaUrl: http://localhost:8000
+  embeddingMode: LLM_EXPAND
+github:
+  enabled: false
+  repos:
+    - owner/repo

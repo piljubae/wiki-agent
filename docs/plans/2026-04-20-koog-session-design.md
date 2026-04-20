@@ -43,11 +43,13 @@
   - RAG 활성화 시: LLM이 confluenceSearch + vectorSearch 두 Tool 중 선택하는 과정 시각화
 - 슬라이드 3: "이게 Koog로 만들어졌다"
 
-### 2부 — Koog가 뭔가 (15분)
+### 2부 — Koog가 뭔가 (18분)
 
 - 슬라이드 4: JetBrains가 만든 Kotlin-native 에이전트 프레임워크
+  - 특징: Kotlin coroutine 기반 비동기, 멀티 LLM provider, Google A2A Protocol 지원 (a2a-protocol.org)
 - 슬라이드 5: 다른 프레임워크와 비교 (LangChain, LlamaIndex)
-- 슬라이드 6: 핵심 개념 — AIAgent / Tool / A2A Protocol
+  - 비교표의 `Google A2A` 행: Koog = `Google A2A`, LangChain/LlamaIndex = `❌`
+- 슬라이드 6: 핵심 개념 — AIAgent / Tool
   - 실제 Koog 0.8.0 코드: `@Tool`, `@LLMDescription`, `ToolRegistry { tool(obj::method) }`
 - 슬라이드 7: Provider 교체 한 줄 — "Claude로 만들고 Gemini로 배포"
 - 슬라이드 8: Orchestrator + Specialist 패턴
@@ -55,29 +57,33 @@
   - `ToolRegistry { tool(confluenceTool::confluenceSearch) }` 한 줄이 Tool 등록의 전부
   - GitHub Wiki 활성화: `tool(githubWikiTool::githubWikiSearch)` 한 줄 추가 → repos 설정만으로 새 소스 연결
   - RAG 활성화: `tool(vectorSearchTool::vectorSearch)` 한 줄 추가 → LLM이 알아서 선택
+- 슬라이드 9: 심화 — Tool 호출 vs A2A Protocol
+  - ToolRegistry 방식 (현재 wiki-agent) vs A2A 방식 코드 비교
+  - Google A2A Protocol 표준 (a2a-protocol.org)
+  - "오늘은 ToolRegistry로 충분. 독립 배포/스케일링 필요 시 전환"
 
-### 3부 — 내 에이전트 어떻게 설계하나 (75분)
+### 3부 — 내 에이전트 어떻게 설계하나 (72분)
 
-- 슬라이드 9: 에이전트 설계 3단계 (반복업무 → Tool → 프롬프트) — wiki-agent 사례로 설명
-- 슬라이드 10: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리 (wiki-agent OrchestratorAgent 프롬프트)
+- 슬라이드 10: 에이전트 설계 3단계 (반복업무 → Tool → 프롬프트) — wiki-agent 사례로 설명
+- 슬라이드 11: 프롬프트 설계 원칙 1 — 역할과 출력 형식 분리 (wiki-agent OrchestratorAgent 프롬프트)
   - OrchestratorAgent 시스템 프롬프트 실제 코드 제시
   - "검색 없이 직접 답변하지 마세요" — Tool 호출 강제 원칙의 실전 예
-- 슬라이드 11: 프롬프트 설계 원칙 2 — 컨텍스트 범위 제어 (ConfluenceSearchAgent 프롬프트)
-- 슬라이드 12: 프롬프트 설계 원칙 3 — Tool 호출 유도 vs 직접 답변
-- 슬라이드 13: before/after 프롬프트 실제 예시 (wiki-agent 기반)
-- 슬라이드 14: 직군별 에이전트 아이디어 (PM/HR/개발자/마케터) — wiki-agent 확장 가능성
+- 슬라이드 12: 프롬프트 설계 원칙 2 — 컨텍스트 범위 제어 (ConfluenceSearchAgent 프롬프트)
+- 슬라이드 13: 프롬프트 설계 원칙 3 — Tool 호출 유도 vs 직접 답변
+- 슬라이드 14: before/after 프롬프트 실제 예시 (wiki-agent 기반)
+- 슬라이드 15: 직군별 에이전트 아이디어 (PM/HR/개발자/마케터) — wiki-agent 확장 가능성
   - GitHub Wiki Tool 추가 예시: 기술 레포 Wiki 연결로 개발팀 온보딩 자동화
-- 슬라이드 15: 워크숍 — wiki-agent 설정 → Slack에서 직접 질문 → 결과 확인 (35분)
+- 슬라이드 16: 워크숍 — wiki-agent 설정 → Slack에서 직접 질문 → 결과 확인 (35분)
   - 기본: `.env.example` 복사 → 토큰 입력 → `./gradlew run` → `@wiki` 질문
   - 심화 A(선택): `github.enabled=true` → repos 설정 → GitHub Wiki 검색 비교
   - 심화 B(선택): `docker run chromadb/chroma` → `rag.enabled=true` → `/wiki reindex` → 벡터 검색 비교
 
 ### 4부 — 마무리 (15분)
 
-- 슬라이드 16: 로컬 시작 방법
+- 슬라이드 17: 로컬 시작 방법
   1. `cp .env.example .env` → 토큰 입력 (SLACK_BOT_TOKEN, SLACK_APP_TOKEN, CONFLUENCE_TOKEN)
   2. `.wikiq/config.yml` — baseUrl, spaces 설정
   3. `./gradlew run`
   4. (선택) `github.enabled=true` + repos 설정 → GitHub Wiki 연결
   5. (선택) `docker run -p 8000:8000 chromadb/chroma` → `rag.enabled=true` → `/wiki reindex`
-- 슬라이드 17: Q&A
+- 슬라이드 18: Q&A

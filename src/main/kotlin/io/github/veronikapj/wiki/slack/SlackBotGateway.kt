@@ -2,14 +2,14 @@ package io.github.veronikapj.wiki.slack
 
 import com.slack.api.bolt.App
 import com.slack.api.bolt.socket_mode.SocketModeApp
-import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.config.SlackConfig
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
 class SlackBotGateway(
     private val slackConfig: SlackConfig,
-    private val searchAgent: ConfluenceSearchAgent,
+    private val orchestrator: OrchestratorAgent,
     private val configHandler: SlackConfigHandler,
 ) {
     private val app = App()
@@ -30,7 +30,7 @@ class SlackBotGateway(
                 .threadTs(payload.event.ts)
                 .text(":mag: 검색 중...")
             }
-            val result = runBlocking { searchAgent.search(query) }
+            val result = runBlocking { orchestrator.answer(query) }
             ctx.asyncClient().chatPostMessage { it
                 .channel(payload.event.channel)
                 .threadTs(payload.event.ts)
@@ -41,8 +41,8 @@ class SlackBotGateway(
     }
 
     private fun registerSlashCommand() {
-        app.command("/wikiq") { req, ctx ->
-            val fullCommand = "/wikiq ${req.payload.text}"
+        app.command("/wiki") { req, ctx ->
+            val fullCommand = "/wiki ${req.payload.text}"
             val result = configHandler.handle(fullCommand)
             ctx.ack(result)
         }

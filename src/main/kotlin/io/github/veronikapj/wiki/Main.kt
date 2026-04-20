@@ -2,10 +2,24 @@
 
 package io.github.veronikapj.wiki
 
+import ai.koog.prompt.dsl.prompt
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
+import io.github.veronikapj.wiki.agent.OrchestratorAgent
+import io.github.veronikapj.wiki.github.GitHubWikiClient
+import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
+import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
+import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.config.ConfigLoader
+import io.github.veronikapj.wiki.config.EmbeddingMode
+import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
+import io.github.veronikapj.wiki.rag.ChromaClient
+import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
+import io.github.veronikapj.wiki.rag.LlmExpandClient
+import io.github.veronikapj.wiki.rag.VectorIndexAgent
+import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
 import org.slf4j.LoggerFactory
@@ -14,26 +28,94 @@ private val log = LoggerFactory.getLogger("wiki.Main")
 
 fun main() {
     val config = ConfigLoader.load()
-    log.info("Provider: {}, Spaces: {}", config.model.provider, config.confluence.spaces)
+    log.info("Provider: {}, Spaces: {}, RAG: {}", config.model.provider, config.confluence.spaces, config.rag.enabled)
 
-    val confluenceClient = ConfluenceClient(
-        baseUrl = config.confluence.baseUrl,
-        token = config.confluence.token,
-    )
+    // 시크릿 로드 (env → .env → config 폴백)
+    val confluenceToken = SecretLoader.resolve("CONFLUENCE_TOKEN", config.confluence.token)
+    val slackBotToken = SecretLoader.resolve("SLACK_BOT_TOKEN", config.slack.botToken)
+    val slackAppToken = SecretLoader.resolve("SLACK_APP_TOKEN", config.slack.appToken)
+    val resolvedModelApiKey = when (config.model.provider) {
+        io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
+            SecretLoader.resolveNullable("ANTHROPIC_API_KEY", config.model.apiKey)
+        io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
+            SecretLoader.resolveNullable("GOOGLE_API_KEY", config.model.apiKey)
+        else -> config.model.apiKey
+    }
+    val resolvedModelConfig = config.model.copy(apiKey = resolvedModelApiKey)
 
-    val searchAgent = ConfluenceSearchAgent(
-        confluenceClient = confluenceClient,
-        spaces = config.confluence.spaces,
+    val executor = LLMExecutorBuilder.build(resolvedModelConfig)
+    val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
+
+    var confluenceTool: ConfluenceTool? = null
+    var confluenceClient: ConfluenceClient? = null
+    if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
+        confluenceClient = ConfluenceClient(
+            baseUrl = config.confluence.baseUrl,
+            token = confluenceToken,
+        )
+        val confluenceSearchAgent = ConfluenceSearchAgent(
+            confluenceClient = confluenceClient,
+            spaces = config.confluence.spaces,
+        )
+        confluenceTool = ConfluenceTool(confluenceSearchAgent)
+        log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
+    } else {
+        log.info("Confluence disabled (baseUrl or token not set)")
+    }
+
+    val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
+    var githubWikiTool: GitHubWikiTool? = null
+    if (config.github.enabled && config.github.repos.isNotEmpty()) {
+        val githubClient = GitHubWikiClient(githubToken)
+        val githubWikiSearchAgent = GitHubWikiSearchAgent(githubClient, config.github.repos)
+        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent)
+        log.info("GitHub Wiki enabled: repos={}", config.github.repos)
+    }
+
+    var vectorSearchTool: VectorSearchTool? = null
+    var vectorIndexAgent: VectorIndexAgent? = null
+
+    if (config.rag.enabled) {
+        val chromaClient = ChromaClient(config.rag.chromaUrl)
+        val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
+        val llmFn: suspend (String) -> String = { userPrompt ->
+            executor.execute(
+                prompt("llm") { user(userPrompt) }, model
+            ).joinToString("") { it.content }
+        }
+        val llmExpandClient = LlmExpandClient(llmFn)
+        val googleEmbeddingClient = if (config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING)
+            GoogleEmbeddingClient(requireNotNull(googleApiKey) { "GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
+        else null
+
+        val vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
+        vectorSearchTool = VectorSearchTool(vectorSearchAgent)
+        if (confluenceClient != null) {
+            vectorIndexAgent = VectorIndexAgent(
+                confluenceClient, chromaClient, llmExpandClient, googleEmbeddingClient, config.rag, config.confluence.spaces
+            )
+        } else {
+            log.info("RAG indexing disabled (Confluence not configured)")
+        }
+        log.info("RAG enabled (mode={})", config.rag.embeddingMode)
+    }
+
+    val orchestrator = OrchestratorAgent(
+        confluenceTool = confluenceTool,
+        githubWikiTool = githubWikiTool,
+        vectorSearchTool = vectorSearchTool,
+        executor = executor,
     )
 
     val configHandler = SlackConfigHandler(
         config = config,
         persistOnChange = true,
+        onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
     )
 
     val gateway = SlackBotGateway(
-        slackConfig = config.slack,
-        searchAgent = searchAgent,
+        slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
+        orchestrator = orchestrator,
         configHandler = configHandler,
     )
 
