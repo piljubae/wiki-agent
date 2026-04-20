@@ -34,22 +34,26 @@ class OrchestratorAgent(
         else answerWithKoogAgent(question)
     }
 
-    // Claude Code CLI용: 2단계 직접 루프 (tool call 프로토콜 불필요)
+    // 대화 히스토리 (최근 5턴 유지)
+    private val history = ArrayDeque<Pair<String, String>>()
+
+    // Claude Code CLI용: 직접 루프 (tool call 프로토콜 불필요)
     private suspend fun answerWithManualLoop(question: String): String {
         val availableTools = listOfNotNull(
             githubWikiTool?.let { "githubWikiSearch" },
             confluenceTool?.let { "confluenceSearch" },
             vectorSearchTool?.let { "vectorSearch" },
         )
+        val model = AnthropicModels.Haiku_4_5
 
-        // 1단계: 어떤 tool로 무엇을 검색할지 결정
+        // 1단계: 검색어 결정
         val decisionPrompt = buildString {
-            appendLine("당신은 검색 라우터입니다.")
+            if (history.isNotEmpty()) {
+                appendLine("=== 이전 대화 ===")
+                history.forEach { (q, a) -> appendLine("Q: $q\nA: ${a.take(150)}...") }
+                appendLine()
+            }
             appendLine("사용 가능한 검색 도구: ${availableTools.joinToString(", ")}")
-            appendLine()
-            appendLine("아래 질문에 답하기 위한 검색어를 결정하세요.")
-            appendLine("질문의 답이 문서에 있을 가능성이 조금이라도 있으면 반드시 검색하세요.")
-            appendLine()
             appendLine("다음 형식으로만 응답하세요 (다른 내용 금지):")
             appendLine("TOOL: <tool이름>")
             appendLine("QUERY: <검색어>")
@@ -57,41 +61,53 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
-        val model = AnthropicModels.Haiku_4_5
         val decision = executor.execute(
             prompt("decision") { user(decisionPrompt) }, model
         ).joinToString("") { it.content }.trim()
 
         log.info("Search decision: {}", decision.take(150))
 
-        // 2단계: 결정에 따라 tool 실행
+        // 2단계: tool 실행
         val searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
+        log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
-        // 3단계: 결과를 바탕으로 최종 답변
-        val summaryPrompt = if (searchResult != null) {
-            buildString {
-                appendLine("질문: $question")
+        // 3단계: 검색 결과 + 히스토리로 최종 답변
+        val summaryPrompt = buildString {
+            if (history.isNotEmpty()) {
+                appendLine("=== 이전 대화 ===")
+                history.forEach { (q, a) -> appendLine("Q: $q\nA: ${a.take(200)}...") }
                 appendLine()
-                appendLine("검색 결과:")
+            }
+            appendLine("질문: $question")
+            appendLine()
+            if (searchResult != null) {
+                appendLine("=== 검색 결과 ===")
                 appendLine(searchResult)
                 appendLine()
-                appendLine("위 검색 결과를 바탕으로 요약과 관련 링크를 함께 답변하세요.")
+                appendLine("위 검색 결과를 바탕으로 요약과 관련 링크를 포함해 답변하세요.")
+            } else {
+                appendLine("검색 결과가 없습니다. 알고 있는 내용으로 간략히 답변하세요.")
             }
-        } else {
-            question
         }
 
-        return executor.execute(
+        val answer = executor.execute(
             prompt("summary") { user(summaryPrompt) }, model
         ).joinToString("") { it.content }
+
+        // 히스토리 업데이트 (최대 5턴)
+        history.addLast(question to answer)
+        if (history.size > 5) history.removeFirst()
+
+        return answer
     }
 
     private fun executeFromDecision(decision: String): String? {
         val toolMatch = Regex("TOOL:\\s*(\\S+)").find(decision) ?: return null
         val queryMatch = Regex("QUERY:\\s*(.+)").find(decision) ?: return null
         val toolName = toolMatch.groupValues[1].trim()
-        val query = queryMatch.groupValues[2].trim()
+        val query = queryMatch.groupValues[1].trim()  // [1]이 첫 번째 캡처 그룹
 
+        if (query.isBlank()) return null
         log.info("Executing tool: {} query: {}", toolName, query)
         return when (toolName) {
             "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
