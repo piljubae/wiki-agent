@@ -107,17 +107,32 @@ fun main() {
         executor = executor,
     )
 
-    val configHandler = SlackConfigHandler(
-        config = config,
-        persistOnChange = true,
-        onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
-    )
+    val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
+            slackAppToken.isNotBlank() && !slackAppToken.startsWith("xapp-...")
 
-    val gateway = SlackBotGateway(
-        slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
-        orchestrator = orchestrator,
-        configHandler = configHandler,
-    )
-
-    gateway.start()
+    if (slackReady) {
+        val configHandler = SlackConfigHandler(
+            config = config,
+            persistOnChange = true,
+            onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
+        )
+        val gateway = SlackBotGateway(
+            slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
+            orchestrator = orchestrator,
+            configHandler = configHandler,
+        )
+        gateway.start()
+    } else {
+        log.info("Slack tokens not set — running in local CLI mode")
+        println("=== wiki-agent CLI mode ===")
+        println("질문을 입력하세요 (종료: q)")
+        while (true) {
+            print("> ")
+            val input = readlnOrNull()?.trim() ?: break
+            if (input == "q") break
+            if (input.isBlank()) continue
+            val result = kotlinx.coroutines.runBlocking { orchestrator.answer(input) }
+            println("\n$result\n")
+        }
+    }
 }

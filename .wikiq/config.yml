@@ -11,6 +11,6 @@ rag:
   chromaUrl: http://localhost:8000
   embeddingMode: LLM_EXPAND
 github:
-  enabled: false
+  enabled: true
   repos:
-    - owner/repo
+    - Veronikapj/wiki-agent
