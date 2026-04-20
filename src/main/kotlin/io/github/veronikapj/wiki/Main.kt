@@ -43,19 +43,25 @@ fun main() {
     }
     val resolvedModelConfig = config.model.copy(apiKey = resolvedModelApiKey)
 
-    val confluenceClient = ConfluenceClient(
-        baseUrl = config.confluence.baseUrl,
-        token = confluenceToken,
-    )
-
     val executor = LLMExecutorBuilder.build(resolvedModelConfig)
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
-    val confluenceSearchAgent = ConfluenceSearchAgent(
-        confluenceClient = confluenceClient,
-        spaces = config.confluence.spaces,
-    )
-    val confluenceTool = ConfluenceTool(confluenceSearchAgent)
+    var confluenceTool: ConfluenceTool? = null
+    var confluenceClient: ConfluenceClient? = null
+    if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
+        confluenceClient = ConfluenceClient(
+            baseUrl = config.confluence.baseUrl,
+            token = confluenceToken,
+        )
+        val confluenceSearchAgent = ConfluenceSearchAgent(
+            confluenceClient = confluenceClient,
+            spaces = config.confluence.spaces,
+        )
+        confluenceTool = ConfluenceTool(confluenceSearchAgent)
+        log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
+    } else {
+        log.info("Confluence disabled (baseUrl or token not set)")
+    }
 
     val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
     var githubWikiTool: GitHubWikiTool? = null
@@ -84,13 +90,22 @@ fun main() {
 
         val vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
         vectorSearchTool = VectorSearchTool(vectorSearchAgent)
-        vectorIndexAgent = VectorIndexAgent(
-            confluenceClient, chromaClient, llmExpandClient, googleEmbeddingClient, config.rag, config.confluence.spaces
-        )
+        if (confluenceClient != null) {
+            vectorIndexAgent = VectorIndexAgent(
+                confluenceClient, chromaClient, llmExpandClient, googleEmbeddingClient, config.rag, config.confluence.spaces
+            )
+        } else {
+            log.info("RAG indexing disabled (Confluence not configured)")
+        }
         log.info("RAG enabled (mode={})", config.rag.embeddingMode)
     }
 
-    val orchestrator = OrchestratorAgent(confluenceTool, githubWikiTool, vectorSearchTool, executor)
+    val orchestrator = OrchestratorAgent(
+        confluenceTool = confluenceTool,
+        githubWikiTool = githubWikiTool,
+        vectorSearchTool = vectorSearchTool,
+        executor = executor,
+    )
 
     val configHandler = SlackConfigHandler(
         config = config,
