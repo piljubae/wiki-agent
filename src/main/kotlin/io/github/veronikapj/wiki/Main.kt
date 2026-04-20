@@ -138,6 +138,7 @@ fun main() {
             val input = readlnOrNull()?.trim() ?: break
             if (input == "q") break
             if (input.isBlank()) continue
+            println("       $input")
             println(divider)
             println("검색 중...")
             sourceTracker.reset()

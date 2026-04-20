@@ -9,6 +9,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.Dispatchers
@@ -40,15 +41,15 @@ class ClaudeCodeLLMClient(
             flattenPrompt(prompt)
         }
 
-        val args = buildArgs(flatPrompt, model.id)
-        log.debug("Executing claude CLI: {}", args.joinToString(" "))
-        val output = runProcess(args)
+        log.info(">>> prompt (tools={}, hasResults={}): {}", tools.map { it.name }, hasToolResults, flatPrompt.take(200))
+        val output = runProcess(flatPrompt, model.id)
+        log.info("<<< response: {}", output.take(200))
 
         if (tools.isNotEmpty() && !hasToolResults) {
-            val toolCall = parseToolCall(output)
+            val toolCall = parseToolCall(output, tools)
             if (toolCall != null) {
                 val (name, argsJson) = toolCall
-                log.info("Tool call detected: {} args={}", name, argsJson)
+                log.info("Tool call: {} args={}", name, argsJson)
                 return listOf(
                     Message.Tool.Call(
                         id = "call-${System.currentTimeMillis()}",
@@ -68,86 +69,79 @@ class ClaudeCodeLLMClient(
         model: LLModel,
         tools: List<ToolDescriptor>,
     ): Flow<ai.koog.prompt.streaming.StreamFrame> = flow {
-        throw UnsupportedOperationException("ClaudeCodeLLMClient does not support streaming execution")
+        throw UnsupportedOperationException("Streaming not supported")
     }
 
     override suspend fun moderate(prompt: Prompt, model: LLModel): ModerationResult =
-        throw UnsupportedOperationException("ClaudeCodeLLMClient does not support moderation")
-
-    suspend fun checkAuth() {
-        runProcess(listOf(claudePath, "auth", "status"))
-    }
+        throw UnsupportedOperationException("Moderation not supported")
 
     private fun buildPromptWithTools(prompt: Prompt, tools: List<ToolDescriptor>): String {
-        val sb = StringBuilder()
-        val toolDefs = tools.joinToString("\n") { tool ->
-            val params = (tool.requiredParameters + tool.optionalParameters).joinToString(", ") {
-                "${it.name}: ${it.description ?: it.type}"
-            }
-            "- ${tool.name}($params): ${tool.description}"
-        }
+        val systemContent = prompt.messages.filterIsInstance<Message.System>()
+            .firstOrNull()?.content ?: ""
+        val userQuestion = prompt.messages.filterIsInstance<Message.User>()
+            .lastOrNull()?.content ?: ""
+        val toolNames = tools.joinToString(", ") { it.name }
 
+        return buildString {
+            appendLine(systemContent)
+            appendLine()
+            appendLine("=== 사용 가능한 Tool ===")
+            tools.forEach { tool ->
+                appendLine("• ${tool.name}: ${tool.description}")
+            }
+            appendLine()
+            appendLine("=== 지시사항 ===")
+            appendLine("반드시 Tool을 호출해서 검색한 뒤 답변하세요.")
+            appendLine("Tool을 호출하려면 아래 형식만 출력하고 다른 내용은 쓰지 마세요:")
+            appendLine()
+            appendLine("SEARCH: <검색어>")
+            appendLine()
+            appendLine("(사용 가능한 Tool: $toolNames)")
+            appendLine()
+            appendLine("=== 질문 ===")
+            append(userQuestion)
+        }.trimEnd()
+    }
+
+    private fun flattenPrompt(prompt: Prompt): String = buildString {
         for (message in prompt.messages) {
             when (message) {
-                is Message.System -> {
-                    sb.appendLine("[System]: ${message.content}")
-                    sb.appendLine()
-                    sb.appendLine("You have access to the following tools:")
-                    sb.appendLine(toolDefs)
-                    sb.appendLine()
-                    sb.appendLine("If you need to call a tool, respond ONLY with this exact format and nothing else:")
-                    sb.appendLine("<tool_call>{\"name\": \"toolName\", \"args\": {\"argName\": \"argValue\"}}</tool_call>")
-                    sb.appendLine("Otherwise respond normally.")
-                }
-                is Message.User -> sb.appendLine("[Human]: ${message.content}")
-                is Message.Assistant -> sb.appendLine("[Assistant]: ${message.content}")
-                is Message.Tool.Call -> sb.appendLine("[Tool Call]: ${message.tool}(${message.content})")
-                is Message.Tool.Result -> sb.appendLine("[Tool Result]: ${message.content}")
-                else -> sb.appendLine(message.content)
+                is Message.System -> appendLine("[System]: ${message.content}")
+                is Message.User -> appendLine("[Human]: ${message.content}")
+                is Message.Assistant -> appendLine("[Assistant]: ${message.content}")
+                is Message.Tool.Call -> appendLine("[Tool Call]: ${message.tool}(${message.content})")
+                is Message.Tool.Result -> appendLine("[Tool Result]: ${message.content}")
+                else -> appendLine(message.content)
             }
         }
-        return sb.toString().trimEnd()
+    }.trimEnd()
+
+    // "SEARCH: <query>" 형식 파싱 → 첫 번째 tool에 query 인자로 매핑
+    private fun parseToolCall(output: String, tools: List<ToolDescriptor>): Pair<String, String>? {
+        val match = SEARCH_REGEX.find(output) ?: return null
+        val query = match.groupValues[1].trim().ifBlank { return null }
+        val toolName = tools.firstOrNull()?.name ?: return null
+        val argsJson = """{"query": "${query.replace("\"", "\\\"")}"}"""
+        return toolName to argsJson
     }
 
-    private fun flattenPrompt(prompt: Prompt): String {
-        val sb = StringBuilder()
-        for (message in prompt.messages) {
-            when (message) {
-                is Message.System -> sb.appendLine("[System]: ${message.content}")
-                is Message.User -> sb.appendLine("[Human]: ${message.content}")
-                is Message.Assistant -> sb.appendLine("[Assistant]: ${message.content}")
-                is Message.Tool.Call -> sb.appendLine("[Tool Call]: ${message.tool}(${message.content})")
-                is Message.Tool.Result -> sb.appendLine("[Tool Result]: ${message.content}")
-                else -> sb.appendLine(message.content)
-            }
-        }
-        return sb.toString().trimEnd()
-    }
-
-    private fun parseToolCall(output: String): Pair<String, String>? {
-        val match = TOOL_CALL_REGEX.find(output) ?: return null
-        return runCatching {
-            val json = kotlinx.serialization.json.Json.parseToJsonElement(match.groupValues[1])
-                as? kotlinx.serialization.json.JsonObject ?: return null
-            val name = (json["name"] as? kotlinx.serialization.json.JsonPrimitive)
-                ?.content ?: return null
-            val args = json["args"]?.toString() ?: "{}"
-            name to args
-        }.getOrNull()
-    }
-
-    private fun buildArgs(flatPrompt: String, modelId: String): List<String> {
-        val args = mutableListOf(claudePath, "-p", flatPrompt, "--output-format", "text")
+    private suspend fun runProcess(prompt: String, modelId: String): String = withContext(Dispatchers.IO) {
+        val args = mutableListOf(claudePath, "-p", prompt, "--output-format", "text")
         if (modelId.isNotBlank()) args += listOf("--model", modelId)
-        return args
-    }
 
-    private suspend fun runProcess(args: List<String>): String = withContext(Dispatchers.IO) {
         val process = try {
-            ProcessBuilder(args).redirectErrorStream(true).start()
+            ProcessBuilder(args)
+                .redirectInput(File("/dev/null"))  // subprocess가 stdin 읽지 못하게
+                .start()
         } catch (e: java.io.IOException) {
-            throw IllegalStateException("Failed to start claude binary at '${args.first()}': ${e.message}", e)
+            throw IllegalStateException("Failed to start claude binary: ${e.message}", e)
         }
+
+        // stderr는 별도로 드레인 (출력에 섞이지 않게)
+        val stderrThread = Thread { process.errorStream.bufferedReader().readText() }
+        stderrThread.isDaemon = true
+        stderrThread.start()
+
         val completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
         if (!completed) {
             process.destroyForcibly()
@@ -155,14 +149,14 @@ class ClaudeCodeLLMClient(
         }
         val output = process.inputStream.bufferedReader().readText()
         val exitCode = process.exitValue()
-        if (exitCode != 0) throw IllegalStateException("claude CLI exited with code $exitCode. Output: ${output.take(500)}")
+        if (exitCode != 0) throw IllegalStateException("claude CLI exited with code $exitCode: ${output.take(300)}")
         output.trim()
     }
 
     companion object {
         private const val DEFAULT_CLAUDE_PATH = "claude"
         private const val TIMEOUT_SECONDS = 120L
-        private val TOOL_CALL_REGEX = Regex("<tool_call>(.*?)</tool_call>", RegexOption.DOT_MATCHES_ALL)
+        private val SEARCH_REGEX = Regex("^SEARCH:\\s*(.+)$", RegexOption.MULTILINE)
         private val log = LoggerFactory.getLogger(ClaudeCodeLLMClient::class.java)
     }
 }
