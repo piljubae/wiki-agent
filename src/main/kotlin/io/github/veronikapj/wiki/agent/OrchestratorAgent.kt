@@ -44,15 +44,15 @@ class OrchestratorAgent(
 
         // 1단계: 어떤 tool로 무엇을 검색할지 결정
         val decisionPrompt = buildString {
-            appendLine("당신은 검색 라우터입니다. 아래 질문에 답하기 위해 어떤 검색이 필요한지 판단하세요.")
-            appendLine()
+            appendLine("당신은 검색 라우터입니다.")
             appendLine("사용 가능한 검색 도구: ${availableTools.joinToString(", ")}")
             appendLine()
-            appendLine("규칙:")
-            appendLine("- 검색이 필요하면 다음 형식으로만 응답하세요 (다른 내용 금지):")
-            appendLine("  TOOL: <tool이름>")
-            appendLine("  QUERY: <검색어>")
-            appendLine("- 검색이 불필요하면 NO_SEARCH 라고만 응답하세요.")
+            appendLine("아래 질문에 답하기 위한 검색어를 결정하세요.")
+            appendLine("질문의 답이 문서에 있을 가능성이 조금이라도 있으면 반드시 검색하세요.")
+            appendLine()
+            appendLine("다음 형식으로만 응답하세요 (다른 내용 금지):")
+            appendLine("TOOL: <tool이름>")
+            appendLine("QUERY: <검색어>")
             appendLine()
             appendLine("질문: $question")
         }
