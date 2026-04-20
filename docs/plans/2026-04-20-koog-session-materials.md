@@ -257,6 +257,60 @@ toolRegistry = ToolRegistry {
 - Tool 추가: config.yml 한 줄 → 코드 한 줄 → LLM이 알아서 선택
 
 ---
+
+## 슬라이드 9: 심화 — Tool 호출 vs A2A Protocol
+
+**현재 wiki-agent (같은 프로세스, ToolRegistry):**
+
+```
+┌─────────────────────────────────────────┐
+│ OrchestratorAgent (단일 프로세스)          │
+│   └── ToolRegistry {                    │
+│         tool(::confluenceSearch)  ← 함수 호출  │
+│         tool(::githubWikiSearch)         │
+│         tool(::vectorSearch)             │
+│       }                                 │
+└─────────────────────────────────────────┘
+```
+
+**A2A Protocol로 전환하면 (독립 프로세스, HTTP):**
+
+```
+┌──────────────┐  HTTP(A2A)  ┌─────────────────────┐
+│ Orchestrator │ ───────────→│ ConfluenceAgent     │
+│ (A2A Client) │             │ (A2A Server :9001)  │
+│              │ ───────────→│ GitHubWikiAgent     │
+│              │             │ (A2A Server :9002)  │
+│              │ ───────────→│ VectorSearchAgent   │
+│              │             │ (A2A Server :9003)  │
+└──────────────┘             └─────────────────────┘
+```
+
+**A2A 서버 코드 (Koog):**
+```kotlin
+val a2aServer = A2AServer(
+    agentExecutor = ConfluenceAgentExecutor(searchAgent),
+    agentCard = AgentCard(
+        name = "ConfluenceSearch",
+        url = "http://localhost:9001/confluence",
+        skills = listOf(AgentSkill(id = "search", name = "Search", description = "CQL 검색")),
+    ),
+)
+HttpJSONRPCServerTransport(a2aServer).start(port = 9001, path = "/confluence")
+```
+
+**언제 전환?**
+
+| 현재 (ToolRegistry) | A2A 전환 시 |
+|---------------------|------------|
+| 단일 프로세스, 간단 | 에이전트별 독립 배포 |
+| 로컬/소규모 팀 적합 | 대규모 팀, MSA 구조 |
+| 시작이 쉬움 | 다른 언어 에이전트 연결 가능 |
+
+- **Google A2A Protocol** (a2a-protocol.org) 표준 — Koog가 구현
+- 오늘은 ToolRegistry로 충분. **필요할 때 전환.**
+
+---
 ```
 
 **Step 2: 커밋**
