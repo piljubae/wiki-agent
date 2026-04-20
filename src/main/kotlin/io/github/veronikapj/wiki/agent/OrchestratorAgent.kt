@@ -20,15 +20,89 @@ class OrchestratorAgent(
     private val githubWikiTool: GitHubWikiTool? = null,
     private val vectorSearchTool: VectorSearchTool? = null,
     private val executor: MultiLLMPromptExecutor,
+    private val useManualLoop: Boolean = false,
 ) {
     init {
         require(confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
-            "At least one tool must be enabled: Confluence, GitHub Wiki, or RAG"
+            "At least one tool must be enabled"
         }
     }
 
     suspend fun answer(question: String): String {
         log.info("OrchestratorAgent answering: '{}'", question)
+        return if (useManualLoop) answerWithManualLoop(question)
+        else answerWithKoogAgent(question)
+    }
+
+    // Claude Code CLI용: 2단계 직접 루프 (tool call 프로토콜 불필요)
+    private suspend fun answerWithManualLoop(question: String): String {
+        val availableTools = listOfNotNull(
+            githubWikiTool?.let { "githubWikiSearch" },
+            confluenceTool?.let { "confluenceSearch" },
+            vectorSearchTool?.let { "vectorSearch" },
+        )
+
+        // 1단계: 어떤 tool로 무엇을 검색할지 결정
+        val decisionPrompt = buildString {
+            appendLine("당신은 검색 라우터입니다. 아래 질문에 답하기 위해 어떤 검색이 필요한지 판단하세요.")
+            appendLine()
+            appendLine("사용 가능한 검색 도구: ${availableTools.joinToString(", ")}")
+            appendLine()
+            appendLine("규칙:")
+            appendLine("- 검색이 필요하면 다음 형식으로만 응답하세요 (다른 내용 금지):")
+            appendLine("  TOOL: <tool이름>")
+            appendLine("  QUERY: <검색어>")
+            appendLine("- 검색이 불필요하면 NO_SEARCH 라고만 응답하세요.")
+            appendLine()
+            appendLine("질문: $question")
+        }
+
+        val model = AnthropicModels.Haiku_4_5
+        val decision = executor.execute(
+            prompt("decision") { user(decisionPrompt) }, model
+        ).joinToString("") { it.content }.trim()
+
+        log.info("Search decision: {}", decision.take(150))
+
+        // 2단계: 결정에 따라 tool 실행
+        val searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
+
+        // 3단계: 결과를 바탕으로 최종 답변
+        val summaryPrompt = if (searchResult != null) {
+            buildString {
+                appendLine("질문: $question")
+                appendLine()
+                appendLine("검색 결과:")
+                appendLine(searchResult)
+                appendLine()
+                appendLine("위 검색 결과를 바탕으로 요약과 관련 링크를 함께 답변하세요.")
+            }
+        } else {
+            question
+        }
+
+        return executor.execute(
+            prompt("summary") { user(summaryPrompt) }, model
+        ).joinToString("") { it.content }
+    }
+
+    private fun executeFromDecision(decision: String): String? {
+        val toolMatch = Regex("TOOL:\\s*(\\S+)").find(decision) ?: return null
+        val queryMatch = Regex("QUERY:\\s*(.+)").find(decision) ?: return null
+        val toolName = toolMatch.groupValues[1].trim()
+        val query = queryMatch.groupValues[2].trim()
+
+        log.info("Executing tool: {} query: {}", toolName, query)
+        return when (toolName) {
+            "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
+            "confluenceSearch" -> confluenceTool?.confluenceSearch(query)
+            "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
+            else -> null
+        }
+    }
+
+    // API 키 사용 시: Koog AIAgent의 네이티브 tool calling 루프
+    private suspend fun answerWithKoogAgent(question: String): String {
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
         for ((index, model) in fallbackModels.withIndex()) {
             val result = runCatching { buildAgent(model).run(question) }

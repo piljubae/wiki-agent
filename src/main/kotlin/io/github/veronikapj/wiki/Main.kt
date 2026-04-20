@@ -108,6 +108,7 @@ fun main() {
         githubWikiTool = githubWikiTool,
         vectorSearchTool = vectorSearchTool,
         executor = executor,
+        useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE,
     )
 
     val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
