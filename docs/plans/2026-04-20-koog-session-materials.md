@@ -150,7 +150,7 @@ git commit -m "docs: 세션 1부 슬라이드 작성"
 - GitHub: github.com/JetBrains/koog
 - 특징:
   - Kotlin coroutine 기반 비동기 처리
-  - A2A (Agent-to-Agent) 프로토콜 내장
+  - Google A2A Protocol 지원 (a2a-protocol.org)
   - 멀티 LLM provider 지원 (Anthropic, Google, OpenAI)
 
 ---
@@ -160,7 +160,7 @@ git commit -m "docs: 세션 1부 슬라이드 작성"
 | | LangChain | LlamaIndex | Koog |
 |--|-----------|-----------|------|
 | 언어 | Python | Python | Kotlin |
-| 에이전트 간 통신 | 직접 구현 | 직접 구현 | A2A 내장 |
+| Google A2A | ❌ | ❌ | ✅ |
 | 멀티 LLM | ✅ | ✅ | ✅ |
 | JVM 생태계 | ❌ | ❌ | ✅ |
 | 타입 안전성 | 낮음 | 낮음 | 높음 |
