@@ -169,19 +169,23 @@ git commit -m "docs: 세션 1부 슬라이드 작성"
 
 ---
 
-## 슬라이드 6: 핵심 개념 3가지
+## 슬라이드 6: 핵심 개념 2가지
 
 **① AIAgent**
 ```kotlin
 AIAgent(
     promptExecutor = executor,
     agentConfig = AIAgentConfig(
-        prompt = prompt("orchestrator") { system(systemPrompt) },
+        prompt = prompt("orchestrator", params = AnthropicParams(maxTokens = 2048)) {
+            system(systemPrompt)
+        },
         model = AnthropicModels.Haiku_4_5,
         maxAgentIterations = 10,
     ),
     toolRegistry = ToolRegistry {
         tool(confluenceTool::confluenceSearch)
+        if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
+        if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
     },
 )
 ```
@@ -191,17 +195,12 @@ AIAgent(
 class ConfluenceTool(private val searchAgent: ConfluenceSearchAgent) {
 
     @Tool("confluenceSearch")
-    @LLMDescription("Confluence 위키에서 CQL로 검색합니다.")
+    @LLMDescription("Confluence 위키에서 질문과 관련된 문서를 CQL로 검색합니다. 키워드나 질문 형태로 입력하세요.")
     fun confluenceSearch(
-        @LLMDescription("검색 키워드") query: String
+        @LLMDescription("검색할 질문 또는 키워드 (한국어 가능)") query: String,
     ): String = runBlocking { searchAgent.search(query) }
 }
 ```
-
-**③ A2A Protocol**
-- 에이전트끼리 HTTP로 통신
-- OrchestratorAgent → SpecialistAgent 호출
-- 독립적으로 확장, 교체 가능
 
 ---
 
