@@ -150,13 +150,28 @@ class OrchestratorAgent(
     ): String {
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
 
+        // Compress if needed (before loading history)
+        if (sessionId != null && conversationStore != null) {
+            val summarizer: suspend (String) -> String = { promptText ->
+                executor.execute(
+                    prompt("summarize") { user(promptText) },
+                    AnthropicModels.Haiku_4_5,
+                ).joinToString("") { it.content }
+            }
+            conversationStore.compress(sessionId, summarizer)
+        }
+
         // Load history
         val conversationHistory = if (sessionId != null && conversationStore != null) {
             conversationStore.load(sessionId)
         } else emptyList()
 
+        val summary = if (sessionId != null && conversationStore != null) {
+            conversationStore.loadSummary(sessionId)
+        } else null
+
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, listener, conversationHistory).run(question) }
+            val result = runCatching { buildAgent(model, listener, conversationHistory, summary).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) {
                 val answer = result.getOrThrow()
@@ -180,6 +195,7 @@ class OrchestratorAgent(
         model: LLModel,
         listener: SearchProgressListener? = null,
         history: List<Turn> = emptyList(),
+        summary: String? = null,
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
@@ -197,6 +213,11 @@ class OrchestratorAgent(
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
+            summary?.let {
+                appendLine()
+                appendLine("# 이전 대화 요약")
+                appendLine(it)
+            }
         }
 
         return AIAgent(
