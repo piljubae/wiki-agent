@@ -21,7 +21,7 @@ class ConversationStore(private val sessionsDir: String = ".wiki/sessions") {
         file.appendText("""{"ts":"$ts","role":"assistant","content":${json.encodeToString(String.serializer(), answer)}}""" + "\n")
     }
 
-    fun load(sessionId: String, maxTurns: Int = 5): List<Turn> {
+    fun loadAll(sessionId: String): List<Turn> {
         val file = File(sessionsDir, "$sessionId.jsonl")
         if (!file.exists()) return emptyList()
 
@@ -48,7 +48,31 @@ class ConversationStore(private val sessionsDir: String = ".wiki/sessions") {
                 i++
             }
         }
+        return turns
+    }
 
-        return turns.takeLast(maxTurns)
+    fun load(sessionId: String, maxTurns: Int = 5): List<Turn> = loadAll(sessionId).takeLast(maxTurns)
+
+    fun loadSummary(sessionId: String): String? {
+        val file = File(sessionsDir, "$sessionId.summary.md")
+        if (!file.exists()) return null
+        return file.readText().ifBlank { null }
+    }
+
+    fun saveSummary(sessionId: String, summary: String) {
+        val dir = File(sessionsDir)
+        if (!dir.exists()) dir.mkdirs()
+        File(dir, "$sessionId.summary.md").writeText(summary)
+    }
+
+    fun trimOldTurns(sessionId: String, keepRecent: Int) {
+        val allTurns = loadAll(sessionId)
+        if (allTurns.size <= keepRecent) return
+        val recent = allTurns.takeLast(keepRecent)
+        val file = File(sessionsDir, "$sessionId.jsonl")
+        file.writeText("")
+        for (turn in recent) {
+            append(sessionId, turn.question, turn.answer)
+        }
     }
 }

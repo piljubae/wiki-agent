@@ -46,4 +46,35 @@ class ConversationStoreTest {
         assertEquals(1, store.load("session1").size)
         assertEquals("Q2", store.load("session2")[0].question)
     }
+
+    @Test
+    fun `loadAll returns all turns without limit`() {
+        val store = createTempStore()
+        repeat(12) { i -> store.append("session1", "질문$i", "답변$i") }
+        val all = store.loadAll("session1")
+        assertEquals(12, all.size)
+    }
+
+    @Test
+    fun `loadSummary returns null when no summary`() {
+        val store = createTempStore()
+        assertEquals(null, store.loadSummary("session1"))
+    }
+
+    @Test
+    fun `saveSummary and loadSummary round-trip`() {
+        val store = createTempStore()
+        store.saveSummary("session1", "이전 대화 요약 내용")
+        assertEquals("이전 대화 요약 내용", store.loadSummary("session1"))
+    }
+
+    @Test
+    fun `trimOldTurns keeps only recent turns`() {
+        val store = createTempStore()
+        repeat(10) { i -> store.append("session1", "질문$i", "답변$i") }
+        store.trimOldTurns("session1", keepRecent = 4)
+        val remaining = store.loadAll("session1")
+        assertEquals(4, remaining.size)
+        assertEquals("질문6", remaining[0].question)
+    }
 }
