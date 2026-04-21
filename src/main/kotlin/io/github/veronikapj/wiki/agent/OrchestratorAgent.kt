@@ -14,6 +14,8 @@ import ai.koog.prompt.llm.LLModel
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
+import io.github.veronikapj.wiki.context.ConversationStore
+import io.github.veronikapj.wiki.context.Turn
 import org.slf4j.LoggerFactory
 
 class OrchestratorAgent(
@@ -22,6 +24,7 @@ class OrchestratorAgent(
     private val vectorSearchTool: VectorSearchTool? = null,
     private val executor: MultiLLMPromptExecutor,
     private val useManualLoop: Boolean = false,
+    private val conversationStore: ConversationStore? = null,
 ) {
     init {
         require(confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
@@ -29,10 +32,14 @@ class OrchestratorAgent(
         }
     }
 
-    suspend fun answer(question: String, progressListener: SearchProgressListener? = null): String {
-        log.info("OrchestratorAgent answering: '{}'", question)
+    suspend fun answer(
+        question: String,
+        progressListener: SearchProgressListener? = null,
+        sessionId: String? = null,
+    ): String {
+        log.info("OrchestratorAgent answering: '{}' session={}", question, sessionId)
         return if (useManualLoop) answerWithManualLoop(question)
-        else answerWithKoogAgent(question, progressListener)
+        else answerWithKoogAgent(question, progressListener, sessionId)
     }
 
     // 대화 히스토리 (최근 5턴 유지)
@@ -136,12 +143,29 @@ class OrchestratorAgent(
     }
 
     // API 키 사용 시: Koog AIAgent의 네이티브 tool calling 루프
-    private suspend fun answerWithKoogAgent(question: String, listener: SearchProgressListener? = null): String {
+    private suspend fun answerWithKoogAgent(
+        question: String,
+        listener: SearchProgressListener? = null,
+        sessionId: String? = null,
+    ): String {
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
+
+        // Load history
+        val conversationHistory = if (sessionId != null && conversationStore != null) {
+            conversationStore.load(sessionId)
+        } else emptyList()
+
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, listener).run(question) }
+            val result = runCatching { buildAgent(model, listener, conversationHistory).run(question) }
             val ex = result.exceptionOrNull()
-            if (ex == null) return result.getOrThrow()
+            if (ex == null) {
+                val answer = result.getOrThrow()
+                // Save to history
+                if (sessionId != null && conversationStore != null) {
+                    conversationStore.append(sessionId, question, answer)
+                }
+                return answer
+            }
             if (index < fallbackModels.lastIndex) {
                 log.warn("Retrying with {}", fallbackModels[index + 1].id)
                 continue
@@ -152,7 +176,11 @@ class OrchestratorAgent(
         error("unreachable")
     }
 
-    private fun buildAgent(model: LLModel, listener: SearchProgressListener? = null): AIAgent<String, String> {
+    private fun buildAgent(
+        model: LLModel,
+        listener: SearchProgressListener? = null,
+        history: List<Turn> = emptyList(),
+    ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
                 if (confluenceTool != null) "Confluence 위키" else null,
@@ -176,6 +204,11 @@ class OrchestratorAgent(
             agentConfig = AIAgentConfig(
                 prompt = prompt("orchestrator", params = AnthropicParams(maxTokens = 2048)) {
                     system(systemPrompt)
+                    // Inject conversation history as user/assistant messages
+                    for (turn in history) {
+                        user(turn.question)
+                        assistant(turn.answer)
+                    }
                 },
                 model = model,
                 maxAgentIterations = 10,
