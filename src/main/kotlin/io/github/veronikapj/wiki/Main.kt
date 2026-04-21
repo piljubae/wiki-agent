@@ -124,6 +124,7 @@ fun main() {
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
             orchestrator = orchestrator,
             configHandler = configHandler,
+            sourceTracker = sourceTracker,
         )
         gateway.start()
     } else {
