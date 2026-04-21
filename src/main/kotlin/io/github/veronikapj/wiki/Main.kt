@@ -15,6 +15,7 @@ import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.EmbeddingMode
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.context.ConversationStore
 import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
@@ -48,6 +49,7 @@ fun main() {
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
     val sourceTracker = SourceTracker()
+    val conversationStore = ConversationStore()
 
     var confluenceTool: ConfluenceTool? = null
     var confluenceClient: ConfluenceClient? = null
@@ -109,6 +111,7 @@ fun main() {
         vectorSearchTool = vectorSearchTool,
         executor = executor,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE,
+        conversationStore = conversationStore,
     )
 
     val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
@@ -124,6 +127,7 @@ fun main() {
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
             orchestrator = orchestrator,
             configHandler = configHandler,
+            sourceTracker = sourceTracker,
         )
         gateway.start()
     } else {

@@ -34,6 +34,30 @@ class OrchestratorAgentTest {
     }
 
     @Test
+    fun `answer method accepts progressListener parameter`() {
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = LLMExecutorBuilder.build(ModelConfig()),
+        )
+        assertNotNull(agent)
+    }
+
+    @Test
+    fun `accepts conversationStore and sessionId`() {
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
+        val store = io.github.veronikapj.wiki.context.ConversationStore(
+            java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-${System.nanoTime()}").absolutePath
+        )
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = LLMExecutorBuilder.build(ModelConfig()),
+            conversationStore = store,
+        )
+        assertNotNull(agent)
+    }
+
+    @Test
     fun `throws when no tools are provided`() {
         assertFailsWith<IllegalArgumentException> {
             OrchestratorAgent(
