@@ -69,7 +69,7 @@ class SlackBotGateway(
             }
 
             sourceTracker.reset()
-            val result = runBlocking { orchestrator.answer(query, listener) }
+            val result = runBlocking { orchestrator.answer(query, listener, sessionId = threadTs) }
 
             // Delete intermediate message
             progressMessageTs?.let { ts ->
