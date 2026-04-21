@@ -5,6 +5,7 @@ package io.github.veronikapj.wiki.agent
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
@@ -28,10 +29,10 @@ class OrchestratorAgent(
         }
     }
 
-    suspend fun answer(question: String): String {
+    suspend fun answer(question: String, progressListener: SearchProgressListener? = null): String {
         log.info("OrchestratorAgent answering: '{}'", question)
         return if (useManualLoop) answerWithManualLoop(question)
-        else answerWithKoogAgent(question)
+        else answerWithKoogAgent(question, progressListener)
     }
 
     // 대화 히스토리 (최근 5턴 유지)
@@ -135,10 +136,10 @@ class OrchestratorAgent(
     }
 
     // API 키 사용 시: Koog AIAgent의 네이티브 tool calling 루프
-    private suspend fun answerWithKoogAgent(question: String): String {
+    private suspend fun answerWithKoogAgent(question: String, listener: SearchProgressListener? = null): String {
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model).run(question) }
+            val result = runCatching { buildAgent(model, listener).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) return result.getOrThrow()
             if (index < fallbackModels.lastIndex) {
@@ -151,7 +152,7 @@ class OrchestratorAgent(
         error("unreachable")
     }
 
-    private fun buildAgent(model: LLModel): AIAgent<String, String> {
+    private fun buildAgent(model: LLModel, listener: SearchProgressListener? = null): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
                 if (confluenceTool != null) "Confluence 위키" else null,
@@ -184,7 +185,18 @@ class OrchestratorAgent(
                 if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
                 if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
             },
-        )
+        ) {
+            if (listener != null) {
+                install(EventHandler.Feature) {
+                    onToolCallStarting { context ->
+                        kotlinx.coroutines.runBlocking { listener.onSearchStarted(context.toolName) }
+                    }
+                    onToolCallCompleted { context ->
+                        kotlinx.coroutines.runBlocking { listener.onSearchCompleted(context.toolName) }
+                    }
+                }
+            }
+        }
     }
 
     companion object {

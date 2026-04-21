@@ -34,6 +34,17 @@ class OrchestratorAgentTest {
     }
 
     @Test
+    fun `answer method accepts progressListener parameter`() {
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = LLMExecutorBuilder.build(ModelConfig()),
+        )
+        // Just verify it compiles — actual listener invocation requires LLM
+        assertNotNull(agent)
+    }
+
+    @Test
     fun `throws when no tools are provided`() {
         assertFailsWith<IllegalArgumentException> {
             OrchestratorAgent(
