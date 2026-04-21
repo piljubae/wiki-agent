@@ -75,4 +75,43 @@ class ConversationStore(private val sessionsDir: String = ".wiki/sessions") {
             append(sessionId, turn.question, turn.answer)
         }
     }
+
+    suspend fun compress(
+        sessionId: String,
+        summarizer: suspend (String) -> String,
+        compressThreshold: Int = COMPRESS_THRESHOLD,
+        keepRecent: Int = KEEP_RECENT,
+    ) {
+        val allTurns = loadAll(sessionId)
+        if (allTurns.size <= compressThreshold) return
+
+        val turnsToSummarize = allTurns.dropLast(keepRecent)
+
+        val conversationText = buildString {
+            loadSummary(sessionId)?.let {
+                appendLine("이전 요약: $it")
+                appendLine()
+            }
+            for (turn in turnsToSummarize) {
+                appendLine("User: ${turn.question}")
+                appendLine("Assistant: ${turn.answer}")
+            }
+        }
+
+        val prompt = buildString {
+            appendLine("다음은 Slack에서 사용자와 AI 어시스턴트의 대화입니다.")
+            appendLine("핵심 내용을 3-5줄로 요약하세요. 검색한 문서명과 주요 답변 내용을 포함하세요.")
+            appendLine()
+            append(conversationText)
+        }
+
+        val summary = summarizer(prompt)
+        saveSummary(sessionId, summary)
+        trimOldTurns(sessionId, keepRecent)
+    }
+
+    companion object {
+        const val COMPRESS_THRESHOLD = 10
+        const val KEEP_RECENT = 4
+    }
 }

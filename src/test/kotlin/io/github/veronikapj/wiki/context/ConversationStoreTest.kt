@@ -2,6 +2,8 @@ package io.github.veronikapj.wiki.context
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import java.io.File
 
 class ConversationStoreTest {
@@ -76,5 +78,55 @@ class ConversationStoreTest {
         val remaining = store.loadAll("session1")
         assertEquals(4, remaining.size)
         assertEquals("질문6", remaining[0].question)
+    }
+
+    @Test
+    fun `compress summarizes old turns and keeps recent`() {
+        val store = createTempStore()
+        repeat(12) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        val summarizer: suspend (String) -> String = { text -> "요약: ${text.lines().size}줄" }
+
+        kotlinx.coroutines.runBlocking {
+            store.compress("session1", summarizer)
+        }
+
+        val remaining = store.loadAll("session1")
+        assertEquals(4, remaining.size)
+        assertEquals("질문8", remaining[0].question)
+
+        val summary = store.loadSummary("session1")
+        assertNotNull(summary)
+        assertTrue(summary.contains("요약"))
+    }
+
+    @Test
+    fun `compress does nothing below threshold`() {
+        val store = createTempStore()
+        repeat(5) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        val summarizer: suspend (String) -> String = { error("should not be called") }
+        kotlinx.coroutines.runBlocking {
+            store.compress("session1", summarizer)
+        }
+
+        assertEquals(5, store.loadAll("session1").size)
+        assertEquals(null, store.loadSummary("session1"))
+    }
+
+    @Test
+    fun `compress includes previous summary in new summary`() {
+        val store = createTempStore()
+        store.saveSummary("session1", "기존 요약 내용")
+        repeat(12) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        val summarizer: suspend (String) -> String = { text -> text }
+        kotlinx.coroutines.runBlocking {
+            store.compress("session1", summarizer)
+        }
+
+        val summary = store.loadSummary("session1")
+        assertNotNull(summary)
+        assertTrue(summary.contains("기존 요약 내용"))
     }
 }
