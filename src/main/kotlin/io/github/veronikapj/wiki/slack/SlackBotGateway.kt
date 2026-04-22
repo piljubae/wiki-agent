@@ -9,7 +9,9 @@ import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.config.SlackConfig
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 class SlackBotGateway(
     private val slackConfig: SlackConfig,
@@ -18,7 +20,10 @@ class SlackBotGateway(
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
-    private val messageExecutor = Executors.newFixedThreadPool(4)
+    private val messageExecutor = ThreadPoolExecutor(
+        4, 4, 0L, TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue(20),
+    )
 
     private val toolDisplayNames = mapOf(
         "confluenceSearch" to "Confluence",
@@ -40,7 +45,9 @@ class SlackBotGateway(
             val channel = payload.event.channel
             val threadTs = payload.event.ts
             log.info("Mention received: '{}'", query)
-            handleQueryAsync(channel = channel, threadTs = threadTs, sessionId = threadTs, query = query)
+            if (!handleQueryAsync(channel = channel, threadTs = threadTs, sessionId = threadTs, query = query)) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+            }
             ctx.ack()
         }
     }
@@ -55,12 +62,15 @@ class SlackBotGateway(
             if (query.isBlank()) return@event ctx.ack()
             val channel = event.channel
             log.info("DM received: '{}'", query)
-            handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)
+            if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
+                slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+            }
             ctx.ack()
         }
     }
 
-    private fun handleQueryAsync(channel: String, threadTs: String?, sessionId: String, query: String) {
+    private fun handleQueryAsync(channel: String, threadTs: String?, sessionId: String, query: String): Boolean {
+        return try {
         messageExecutor.submit {
             var progressMessageTs: String? = null
             val searchedTools = mutableListOf<String>()
@@ -121,6 +131,11 @@ class SlackBotGateway(
                     }
                 }
             }
+        }
+        true
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            log.warn("Request queue full — rejected: channel={} thread={}", channel, threadTs)
+            false
         }
     }
 
