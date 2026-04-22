@@ -5,8 +5,10 @@ import io.github.veronikapj.wiki.config.ModelConfig
 import io.github.veronikapj.wiki.config.ModelProvider
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.config.WikiConfig
+import io.github.veronikapj.wiki.context.ProjectMemory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SlackConfigHandlerTest {
@@ -55,5 +57,39 @@ class SlackConfigHandlerTest {
         handler.handle("/wiki reindex")
         val result = handler.handle("/wiki reindex status")
         assertTrue(result.contains("마지막") || result.contains("문서"))
+    }
+
+    @Test
+    fun `memory add stores content`() {
+        val memory = ProjectMemory(
+            java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-mem-${System.nanoTime()}.md").absolutePath
+        )
+        val handler = SlackConfigHandler(config = makeConfig(), projectMemory = memory)
+        val result = handler.handle("/wiki memory add Spring Boot 3.x 기반")
+        assertTrue(result.contains("저장 완료"))
+        assertTrue(memory.load()!!.contains("Spring Boot 3.x"))
+    }
+
+    @Test
+    fun `memory show returns content`() {
+        val memory = ProjectMemory(
+            java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-mem-${System.nanoTime()}.md").absolutePath
+        )
+        memory.add("테스트 항목")
+        val handler = SlackConfigHandler(config = makeConfig(), projectMemory = memory)
+        val result = handler.handle("/wiki memory show")
+        assertTrue(result.contains("테스트 항목"))
+    }
+
+    @Test
+    fun `memory clear removes content`() {
+        val memory = ProjectMemory(
+            java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-mem-${System.nanoTime()}.md").absolutePath
+        )
+        memory.add("삭제될 항목")
+        val handler = SlackConfigHandler(config = makeConfig(), projectMemory = memory)
+        val result = handler.handle("/wiki memory clear")
+        assertTrue(result.contains("초기화"))
+        assertNull(memory.load())
     }
 }
