@@ -38,12 +38,15 @@ class ConfluenceClient(
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
         // 단어별 분리 → OR로 제목/본문 검색 (구문 매칭 대신 단어 매칭)
+        val safeQuery = query.replace("\"", "\\\"")
         val words = query.trim().split(Regex("\\s+")).filter { it.length >= 2 }
         val textCql = if (words.size <= 1) {
-            "(title ~ \"$query\" OR text ~ \"$query\")"
+            "(title ~ \"$safeQuery\" OR text ~ \"$safeQuery\")"
         } else {
-            val wordClauses = words.joinToString(" OR ") { "text ~ \"$it\"" }
-            "(title ~ \"$query\" OR ($wordClauses))"
+            val wordClauses = words.joinToString(" OR ") { w ->
+                "text ~ \"${w.replace("\"", "\\\"")}\""
+            }
+            "(title ~ \"$safeQuery\" OR ($wordClauses))"
         }
         val cql = URLEncoder.encode("$textCql$spaceCql", "UTF-8")
         return "$baseUrl/wiki/rest/api/content/search?cql=$cql&limit=$limit&expand=body.storage"

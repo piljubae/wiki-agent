@@ -164,7 +164,6 @@ class OrchestratorAgent(
 
         if (query.isBlank()) return null
 
-        // 메인 쿼리 + 동의어로 검색, 결과 합치기 (중복 제거)
         val allQueries = listOf(query) + synonyms
         log.info("Executing tool: {} queries: {}", toolName, allQueries)
 
@@ -177,7 +176,7 @@ class OrchestratorAgent(
                     else -> null
                 }
             }.getOrNull()
-        }.filter { !it.contains("찾을 수 없습니다") }
+        }.filter { !it.contains("찾을 수 없습니다") }.distinct()
 
         return if (results.isNotEmpty()) results.joinToString("\n\n") else null
     }
