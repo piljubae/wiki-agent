@@ -22,6 +22,7 @@ dependencies {
     implementation("ai.koog:prompt-executor-google-client-jvm:0.8.0")
     implementation("com.slack.api:bolt:1.46.0")
     implementation("com.slack.api:bolt-socket-mode:1.46.0")
+    implementation("org.glassfish.tyrus.bundles:tyrus-standalone-client:1.21")
     implementation("com.neovisionaries:nv-websocket-client:2.14")
     implementation("io.ktor:ktor-client-cio:3.1.2")
     implementation("com.charleskorn.kaml:kaml:0.67.0")
