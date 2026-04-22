@@ -1,8 +1,13 @@
 package io.github.veronikapj.wiki.context
 
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 class ProjectMemory(private val filePath: String = ".wiki/memory.md") {
+
+    private val lock = ReentrantLock()
 
     fun load(): String? {
         val file = File(filePath)
@@ -10,7 +15,7 @@ class ProjectMemory(private val filePath: String = ".wiki/memory.md") {
         return file.readText().ifBlank { null }
     }
 
-    fun add(content: String) {
+    fun add(content: String) = lock.withLock {
         val file = File(filePath)
         file.parentFile?.mkdirs()
         file.appendText("- $content\n")
@@ -21,8 +26,10 @@ class ProjectMemory(private val filePath: String = ".wiki/memory.md") {
         return "📝 프로젝트 메모리:\n$content"
     }
 
-    fun clear() {
+    fun clear() = lock.withLock {
         val file = File(filePath)
-        if (file.exists()) file.delete()
+        if (file.exists() && !file.delete()) {
+            throw IOException("메모리 파일 삭제 실패: $filePath")
+        }
     }
 }

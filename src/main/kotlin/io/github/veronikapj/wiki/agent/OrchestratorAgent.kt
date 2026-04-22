@@ -105,8 +105,15 @@ class OrchestratorAgent(
         if (toolName != null) listener?.onSearchCompleted(toolName)
         log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
+        val memory = projectMemory?.load()
+
         // 3단계: 검색 결과 + 히스토리로 최종 답변
         val summaryPrompt = buildString {
+            memory?.let {
+                appendLine("# 프로젝트 정보")
+                appendLine(it)
+                appendLine()
+            }
             if (contextHistory.isNotEmpty()) {
                 appendLine("=== 이전 대화 ===")
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(200)}...") }

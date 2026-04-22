@@ -22,3 +22,6 @@ Thumbs.db
 
 # Project memory
 .wiki/memory.md
+
+# Runtime logs
+logs/*.log

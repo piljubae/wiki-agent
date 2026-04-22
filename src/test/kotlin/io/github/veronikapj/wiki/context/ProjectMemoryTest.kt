@@ -1,7 +1,6 @@
 package io.github.veronikapj.wiki.context
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import java.io.File
@@ -10,6 +9,7 @@ class ProjectMemoryTest {
 
     private fun createTempMemory(): ProjectMemory {
         val file = File(System.getProperty("java.io.tmpdir"), "wiki-test-memory-${System.nanoTime()}.md")
+        file.deleteOnExit()
         return ProjectMemory(file.absolutePath)
     }
 
