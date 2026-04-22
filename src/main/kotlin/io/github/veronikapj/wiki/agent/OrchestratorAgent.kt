@@ -20,6 +20,7 @@ import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
+import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.context.Turn
 import org.slf4j.LoggerFactory
 
@@ -30,6 +31,7 @@ class OrchestratorAgent(
     private val executor: MultiLLMPromptExecutor,
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
+    private val projectMemory: ProjectMemory? = null,
 ) {
     init {
         require(confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
@@ -103,8 +105,15 @@ class OrchestratorAgent(
         if (toolName != null) listener?.onSearchCompleted(toolName)
         log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
+        val memory = projectMemory?.load()
+
         // 3단계: 검색 결과 + 히스토리로 최종 답변
         val summaryPrompt = buildString {
+            memory?.let {
+                appendLine("# 프로젝트 정보")
+                appendLine(it)
+                appendLine()
+            }
             if (contextHistory.isNotEmpty()) {
                 appendLine("=== 이전 대화 ===")
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(200)}...") }
@@ -176,9 +185,15 @@ class OrchestratorAgent(
             conversationStore.load(sessionId)
         } else emptyList()
 
+        val summary = if (sessionId != null && conversationStore != null) {
+            conversationStore.loadSummary(sessionId)
+        } else null
+
+        val memory = projectMemory?.load()
+
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, contextHistory, listener).run(question) }
+            val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) {
                 val answer = result.getOrThrow()
@@ -205,6 +220,8 @@ class OrchestratorAgent(
         model: LLModel,
         history: List<Turn> = emptyList(),
         listener: SearchProgressListener? = null,
+        summary: String? = null,
+        memory: String? = null,
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
@@ -222,6 +239,16 @@ class OrchestratorAgent(
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
+            memory?.let {
+                appendLine()
+                appendLine("# 프로젝트 정보")
+                appendLine(it)
+            }
+            summary?.let {
+                appendLine()
+                appendLine("# 이전 대화 요약")
+                appendLine(it)
+            }
         }
 
         return AIAgent(

@@ -19,3 +19,9 @@ Thumbs.db
 # Config with secrets
 .wikiq/config.yml
 .env
+
+# Project memory
+.wiki/memory.md
+
+# Runtime logs
+logs/*.log

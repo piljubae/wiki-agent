@@ -2,6 +2,7 @@ package io.github.veronikapj.wiki.slack
 
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.WikiConfig
+import io.github.veronikapj.wiki.context.ProjectMemory
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
@@ -12,6 +13,7 @@ class SlackConfigHandler(
     private val configPath: String = ".wikiq/config.yml",
     private val persistOnChange: Boolean = false,
     private val onReindex: (suspend () -> Int)? = null,
+    private val projectMemory: ProjectMemory? = null,
 ) {
     private var lastIndexTime: LocalDateTime? = null
     private var lastIndexCount: Int = 0
@@ -21,6 +23,7 @@ class SlackConfigHandler(
     fun handle(command: String): String {
         val parts = command.trim().split(" ")
         return when {
+            parts.size >= 2 && parts[1] == "memory" -> handleMemory(parts.drop(2))
             parts.size >= 3 && parts[1] == "config" && parts[2] == "space" -> {
                 val arg = parts.getOrNull(3)
                 if (arg == "show" || arg == null) showSpaces()
@@ -64,6 +67,24 @@ class SlackConfigHandler(
         else "현재 검색 스페이스: ${spaces.joinToString(", ")}"
     }
 
+    private fun handleMemory(args: List<String>): String {
+        val mem = projectMemory ?: return "프로젝트 메모리가 비활성화 상태입니다."
+        return when (args.firstOrNull()) {
+            "add" -> {
+                val content = args.drop(1).joinToString(" ").trim()
+                if (content.isBlank()) return "사용법: /wiki memory add <내용>"
+                mem.add(content)
+                "메모리 저장 완료: $content"
+            }
+            "show" -> mem.show()
+            "clear" -> {
+                mem.clear()
+                "프로젝트 메모리 초기화 완료"
+            }
+            else -> "사용법: /wiki memory add|show|clear"
+        }
+    }
+
     private fun helpMessage() = """
         사용법:
         • `/wiki <질문>` — Confluence에서 검색
@@ -71,6 +92,9 @@ class SlackConfigHandler(
         • `/wiki config space show` — 현재 설정 확인
         • `/wiki reindex` — RAG 재인덱싱
         • `/wiki reindex status` — 마지막 인덱싱 정보
+        • `/wiki memory add <내용>` — 프로젝트 정보 저장
+        • `/wiki memory show` — 저장된 프로젝트 정보 확인
+        • `/wiki memory clear` — 프로젝트 정보 초기화
     """.trimIndent()
 
     companion object {
