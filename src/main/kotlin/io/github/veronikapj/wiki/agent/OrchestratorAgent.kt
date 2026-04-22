@@ -64,8 +64,8 @@ class OrchestratorAgent(
         }
 
         val availableTools = listOfNotNull(
-            githubWikiTool?.let { "githubWikiSearch" },
             confluenceTool?.let { "confluenceSearch" },
+            githubWikiTool?.let { "githubWikiSearch" },
             vectorSearchTool?.let { "vectorSearch" },
         )
         val model = AnthropicModels.Haiku_4_5
@@ -77,16 +77,19 @@ class OrchestratorAgent(
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(150)}...") }
                 appendLine()
             }
-            appendLine("당신은 검색 라우터입니다. 사용자의 질문을 반드시 아래 도구 중 하나로 검색해야 합니다.")
+            appendLine("당신은 검색 라우터입니다. 사용자의 질문을 분석해 검색어를 생성합니다.")
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
-            appendLine("출력 형식 (이 두 줄만 출력, 다른 텍스트 금지):")
+            appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
             appendLine("TOOL: <도구이름>")
-            appendLine("QUERY: <한국어 검색어>")
+            appendLine("QUERY: <핵심 검색어>")
+            appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
             appendLine()
             appendLine("규칙:")
-            appendLine("- 어떤 질문이든 반드시 검색해야 합니다. 검색하지 않는 경우는 없습니다.")
-            appendLine("- TOOL과 QUERY 두 줄만 출력하세요.")
+            appendLine("- 어떤 질문이든 반드시 검색해야 합니다.")
+            appendLine("- QUERY는 핵심 키워드만 간결하게.")
+            appendLine("- SYNONYMS에 같은 의미의 다른 표현을 포함하세요. 예: 신입 온보딩 → 신규 입사자, 입사 가이드, 온보딩 체크리스트")
+            appendLine("- TOOL, QUERY, SYNONYMS 세 줄만 출력하세요.")
             appendLine()
             appendLine("질문: $question")
         }
@@ -129,6 +132,8 @@ class OrchestratorAgent(
             } else {
                 appendLine("검색 결과가 없습니다. 알고 있는 내용으로 간략히 답변하세요.")
             }
+            appendLine()
+            appendLine("출력 형식: Slack mrkdwn (Markdown 아님). *굵게*, _기울임_, ~취소선~, `코드`, ```코드블록```, <URL|텍스트> 링크, • 불릿. #/##/** 같은 Markdown 문법 사용 금지.")
         }
 
         val answer = executor.execute(
@@ -154,25 +159,41 @@ class OrchestratorAgent(
         val queryMatch = Regex("QUERY:\\s*(.+)").find(decision) ?: return null
         val toolName = toolMatch.groupValues[1].trim()
         val query = queryMatch.groupValues[1].trim()
+        val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
 
         if (query.isBlank()) return null
-        log.info("Executing tool: {} query: {}", toolName, query)
-        return when (toolName) {
-            "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
-            "confluenceSearch" -> confluenceTool?.confluenceSearch(query)
-            "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
-            else -> null
-        }
+
+        val allQueries = listOf(query) + synonyms
+        log.info("Executing tool: {} queries: {}", toolName, allQueries)
+
+        val results = allQueries.mapNotNull { q ->
+            runCatching {
+                when (toolName) {
+                    "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(q)
+                    "confluenceSearch" -> confluenceTool?.confluenceSearch(q)
+                    "vectorSearch" -> vectorSearchTool?.vectorSearch(q)
+                    else -> null
+                }
+            }.getOrNull()
+        }.filter { !it.contains("찾을 수 없습니다") }.distinct()
+
+        return if (results.isNotEmpty()) results.joinToString("\n\n") else null
     }
 
     private fun executeDefault(question: String, availableTools: List<String>): String? {
-        log.info("Fallback: searching with original question using {}", availableTools.firstOrNull())
-        return when (availableTools.firstOrNull()) {
-            "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
-            "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
-            "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
-            else -> null
-        }
+        log.info("Fallback: searching all available tools with original question: {}", availableTools)
+        val results = availableTools.mapNotNull { tool ->
+            runCatching {
+                when (tool) {
+                    "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
+                    "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
+                    "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
+                    else -> null
+                }
+            }.getOrNull()
+        }.filter { !it.contains("찾을 수 없습니다") }
+        return if (results.isNotEmpty()) results.joinToString("\n\n") else null
     }
 
     // API 키 사용 시: Koog AIAgent의 네이티브 tool calling 루프
@@ -249,6 +270,7 @@ class OrchestratorAgent(
                 appendLine("# 이전 대화 요약")
                 appendLine(it)
             }
+            appendLine("출력 형식: Slack mrkdwn. *굵게*, _기울임_, ~취소선~, `코드`, ```코드블록```, <URL|텍스트> 링크, • 불릿. #/##/** 같은 Markdown 문법 사용 금지.")
         }
 
         return AIAgent(
