@@ -15,6 +15,7 @@ import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
+import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.context.Turn
 import org.slf4j.LoggerFactory
 
@@ -25,6 +26,7 @@ class OrchestratorAgent(
     private val executor: MultiLLMPromptExecutor,
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
+    private val projectMemory: ProjectMemory? = null,
 ) {
     init {
         require(confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
@@ -170,8 +172,10 @@ class OrchestratorAgent(
             conversationStore.loadSummary(sessionId)
         } else null
 
+        val memory = projectMemory?.load()
+
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, listener, conversationHistory, summary).run(question) }
+            val result = runCatching { buildAgent(model, listener, conversationHistory, summary, memory).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) {
                 val answer = result.getOrThrow()
@@ -196,6 +200,7 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         history: List<Turn> = emptyList(),
         summary: String? = null,
+        memory: String? = null,
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
@@ -213,6 +218,11 @@ class OrchestratorAgent(
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
+            memory?.let {
+                appendLine()
+                appendLine("# 프로젝트 정보")
+                appendLine(it)
+            }
             summary?.let {
                 appendLine()
                 appendLine("# 이전 대화 요약")

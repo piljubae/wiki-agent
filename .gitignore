@@ -22,3 +22,6 @@ Thumbs.db
 
 # Conversation session files
 .wiki/sessions/
+
+# Project memory
+.wiki/memory.md

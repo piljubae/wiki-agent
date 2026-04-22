@@ -13,6 +13,7 @@ import io.github.veronikapj.wiki.agent.tool.SourceTracker
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.context.ConversationStore
+import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.config.EmbeddingMode
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
@@ -50,6 +51,7 @@ fun main() {
 
     val sourceTracker = SourceTracker()
     val conversationStore = ConversationStore()
+    val projectMemory = ProjectMemory()
 
     var confluenceTool: ConfluenceTool? = null
     var confluenceClient: ConfluenceClient? = null
@@ -112,6 +114,7 @@ fun main() {
         executor = executor,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE,
         conversationStore = conversationStore,
+        projectMemory = projectMemory,
     )
 
     val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
@@ -122,6 +125,7 @@ fun main() {
             config = config,
             persistOnChange = true,
             onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
+            projectMemory = projectMemory,
         )
         val gateway = SlackBotGateway(
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
