@@ -7,31 +7,25 @@ class ConfluenceSearchAgent(
     private val confluenceClient: ConfluenceClient,
     private val spaces: List<String>,
 ) {
-    suspend fun search(query: String, topK: Int = 5): String {
-        log.info("Searching Confluence: query='{}', spaces={}", query, spaces)
+    suspend fun searchStructured(query: String, synonyms: List<String> = emptyList(), topK: Int = 5): List<SearchResult> {
+        log.info("Searching Confluence: query='{}', synonyms={}, spaces={}", query, synonyms, spaces)
 
-        val pages = confluenceClient.searchPages(query, spaces, topK)
-        if (pages.isEmpty()) {
-            return "관련 문서를 찾을 수 없습니다. (query: $query)"
+        val pages = confluenceClient.searchPages(query, spaces, synonyms, topK)
+        return pages.map { ref ->
+            SearchResult(
+                pageId = ref.id,
+                title = ref.title,
+                url = ref.webUrl,
+                snippet = ref.excerpt,
+                source = Source.CQL,
+            )
         }
+    }
 
-        val sb = StringBuilder()
-        sb.appendLine("*\"$query\"* 관련 Confluence 문서 (${pages.size}건):\n")
-
-        pages.forEachIndexed { i, ref ->
-            runCatching {
-                val page = confluenceClient.fetchPageContent(ref.id)
-                val snippet = page.content.lines().take(5).joinToString("\n").take(300)
-                sb.appendLine("${i + 1}. *${ref.title}*")
-                sb.appendLine("   <${ref.webUrl}|링크>")
-                sb.appendLine("   > ${snippet.replace("\n", "\n   > ")}")
-                sb.appendLine()
-            }.onFailure {
-                sb.appendLine("${i + 1}. *${ref.title}*  <${ref.webUrl}|링크>")
-                sb.appendLine()
-            }
-        }
-        return sb.toString().trim()
+    suspend fun search(query: String, synonyms: List<String> = emptyList(), topK: Int = 5): String {
+        val results = searchStructured(query, synonyms, topK)
+        if (results.isEmpty()) return "관련 문서를 찾을 수 없습니다. (query: $query)"
+        return results.formatForSlack()
     }
 
     companion object {

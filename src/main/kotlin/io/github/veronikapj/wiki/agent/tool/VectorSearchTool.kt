@@ -4,10 +4,12 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 class VectorSearchTool(
     private val searchAgent: VectorSearchAgent,
     private val tracker: SourceTracker? = null,
+    private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
 ) {
 
     @Tool("vectorSearch")
@@ -17,6 +19,12 @@ class VectorSearchTool(
         query: String,
     ): String = runBlocking {
         tracker?.record("RAG(ChromaDB)")
-        searchAgent.search(query)
+        withTimeoutOrNull(timeoutMillis) {
+            searchAgent.search(query)
+        } ?: "RAG 검색 타임아웃"
+    }
+
+    companion object {
+        const val DEFAULT_TIMEOUT_MILLIS = 5000L
     }
 }

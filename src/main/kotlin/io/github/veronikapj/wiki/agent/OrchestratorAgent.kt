@@ -70,14 +70,22 @@ class OrchestratorAgent(
         )
         val model = AnthropicModels.Haiku_4_5
 
+        val memory = projectMemory?.load()
+
         // 1단계: 검색어 결정 (항상 검색 — 예외 없음)
         val decisionPrompt = buildString {
+            memory?.let {
+                appendLine("프로젝트 정보:")
+                appendLine(it)
+                appendLine()
+            }
             if (contextHistory.isNotEmpty()) {
-                appendLine("=== 이전 대화 ===")
+                appendLine("이전 대화:")
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(150)}...") }
                 appendLine()
             }
             appendLine("당신은 검색 라우터입니다. 사용자의 질문을 분석해 검색어를 생성합니다.")
+            appendLine("SYNONYMS는 프로젝트 정보의 도메인 맥락에 맞는 동의어를 생성하세요.")
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
             appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
@@ -103,37 +111,54 @@ class OrchestratorAgent(
         // 2단계: tool 실행 (파싱 실패 시 기본 도구로 원본 질문 검색)
         val toolName = Regex("TOOL:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
         if (toolName != null) listener?.onSearchStarted(toolName)
-        val searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
-            ?: runCatching { executeDefault(question, availableTools) }.getOrNull()
+        var searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
         if (toolName != null) listener?.onSearchCompleted(toolName)
-        log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
-        val memory = projectMemory?.load()
+        // RAG fallback: CQL 결과 없고 vectorSearch 가능하면 시도
+        val vst = vectorSearchTool
+        if (searchResult == null && vst != null && toolName != "vectorSearch") {
+            log.info("CQL result empty, falling back to RAG")
+            listener?.onSearchStarted("vectorSearch")
+            searchResult = runCatching { vst.vectorSearch(question) }.getOrNull()
+                ?.takeIf { !it.contains("찾을 수 없습니다") && !it.contains("타임아웃") }
+            listener?.onSearchCompleted("vectorSearch")
+        }
+
+        // Final fallback: 모든 도구로 원본 질문 검색
+        if (searchResult == null) {
+            searchResult = runCatching { executeDefault(question, availableTools) }.getOrNull()
+        }
+
+        log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
         // 3단계: 검색 결과 + 히스토리로 최종 답변
         val summaryPrompt = buildString {
+            appendLine("당신은 회사 내부 위키 검색 봇입니다. Confluence 검색 결과를 바탕으로 사용자의 질문에 답변합니다.")
+            appendLine("당신은 AI 어시스턴트, 코딩 도구, 개발 환경이 아닙니다. 세션, 브랜치, 코드 관련 대화를 하지 마세요.")
+            appendLine()
             memory?.let {
-                appendLine("# 프로젝트 정보")
+                appendLine("프로젝트 정보:")
                 appendLine(it)
                 appendLine()
             }
             if (contextHistory.isNotEmpty()) {
-                appendLine("=== 이전 대화 ===")
+                appendLine("이전 대화:")
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(200)}...") }
                 appendLine()
             }
             appendLine("질문: $question")
             appendLine()
             if (searchResult != null) {
-                appendLine("=== 검색 결과 ===")
+                appendLine("검색 결과:")
                 appendLine(searchResult)
                 appendLine()
-                appendLine("위 검색 결과를 바탕으로 요약과 관련 링크를 포함해 답변하세요.")
+                appendLine("위 검색 결과만을 바탕으로 답변하세요.")
+                appendLine()
+                appendLine(buildAnswerGuidelines(verbose = true))
             } else {
-                appendLine("검색 결과가 없습니다. 알고 있는 내용으로 간략히 답변하세요.")
+                appendLine("검색 결과가 없습니다. '관련 문서를 찾지 못했습니다'라고 답변하세요.")
+                appendLine("검색 대상: Confluence 스페이스. 질문을 다르게 표현하면 찾을 수도 있다고 안내하세요.")
             }
-            appendLine()
-            appendLine("출력 형식: Slack mrkdwn (Markdown 아님). *굵게*, _기울임_, ~취소선~, `코드`, ```코드블록```, <URL|텍스트> 링크, • 불릿. #/##/** 같은 Markdown 문법 사용 금지.")
         }
 
         val answer = executor.execute(
@@ -164,21 +189,19 @@ class OrchestratorAgent(
 
         if (query.isBlank()) return null
 
-        val allQueries = listOf(query) + synonyms
-        log.info("Executing tool: {} queries: {}", toolName, allQueries)
+        log.info("Executing tool: {} query: {} synonyms: {}", toolName, query, synonyms)
 
-        val results = allQueries.mapNotNull { q ->
-            runCatching {
-                when (toolName) {
-                    "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(q)
-                    "confluenceSearch" -> confluenceTool?.confluenceSearch(q)
-                    "vectorSearch" -> vectorSearchTool?.vectorSearch(q)
-                    else -> null
-                }
-            }.getOrNull()
-        }.filter { !it.contains("찾을 수 없습니다") }.distinct()
+        // Single call — synonyms are now handled inside CQL OR clause
+        val result = runCatching {
+            when (toolName) {
+                "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
+                "confluenceSearch" -> confluenceTool?.confluenceSearch(query, synonyms)
+                "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
+                else -> null
+            }
+        }.getOrNull()
 
-        return if (results.isNotEmpty()) results.joinToString("\n\n") else null
+        return result?.takeIf { !it.contains("찾을 수 없습니다") }
     }
 
     private fun executeDefault(question: String, availableTools: List<String>): String? {
@@ -259,7 +282,9 @@ class OrchestratorAgent(
             if (githubWikiTool != null) {
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
             }
-            appendLine("검색 결과를 바탕으로 요약과 링크를 함께 제공하세요.")
+            appendLine("검색 결과를 바탕으로 답변하세요.")
+            appendLine()
+            appendLine(buildAnswerGuidelines(verbose = false))
             memory?.let {
                 appendLine()
                 appendLine("# 프로젝트 정보")
@@ -270,7 +295,6 @@ class OrchestratorAgent(
                 appendLine("# 이전 대화 요약")
                 appendLine(it)
             }
-            appendLine("출력 형식: Slack mrkdwn. *굵게*, _기울임_, ~취소선~, `코드`, ```코드블록```, <URL|텍스트> 링크, • 불릿. #/##/** 같은 Markdown 문법 사용 금지.")
         }
 
         return AIAgent(
@@ -319,5 +343,40 @@ class OrchestratorAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(OrchestratorAgent::class.java)
+
+        fun buildAnswerGuidelines(verbose: Boolean = true): String = buildString {
+            appendLine("질문 유형에 맞는 구조로 답변하세요. 질문 유형을 출력하지 마세요. 바로 답변을 시작하세요.")
+            appendLine("검색 결과가 제공되었으면 '없습니다', '찾을 수 없습니다'로 시작하지 마세요. 관련 정보를 먼저 안내하세요.")
+            appendLine()
+            if (verbose) {
+                appendLine("질문 유형별 답변 구조:")
+                appendLine("정의형 (~뭐야?) → 한 줄 정의 + 부연 1-2문장. 총 3-5줄.")
+                appendLine("절차형 (~어떻게?) → 단계별 번호 리스트(1. 2. 3.). 각 단계 1-2문장.")
+                appendLine("비교형 (A와 B 차이) → 항목별 비교.")
+                appendLine("목록형 (~종류, ~목록) → 불릿(•) 리스트. 각 항목 간결하게.")
+                appendLine("기타/복합 → 핵심 답변 먼저, 세부사항 아래. 단순 3-5줄, 복합 10줄+.")
+            } else {
+                appendLine("질문 유형에 맞게: 정의형(3-5줄) / 절차형(번호 리스트) / 비교형(항목별) / 목록형(불릿) / 기타(핵심 먼저)")
+            }
+            appendLine()
+            if (verbose) {
+                appendLine("출처 표기:")
+                appendLine("각 문서의 정보를 언급할 때 해당 문장 안에 <URL|문서제목> 형태로 인라인 링크를 넣으세요.")
+                appendLine("예: 배포 절차는 <https://wiki.example.com/pages/123|배포 가이드>에 정리되어 있습니다.")
+                appendLine("별도 출처 섹션을 만들지 마세요. 본문 흐름 안에 자연스럽게 넣으세요.")
+                appendLine("검색 결과에 URL이 없으면 링크 없이 답변하세요. URL을 추측하지 마세요.")
+            } else {
+                appendLine("출처: 문장 안에 <URL|문서제목> 인라인. 별도 출처 섹션 금지. URL 없으면 링크 생략.")
+            }
+            appendLine()
+            appendLine("검색 결과에 명시적으로 포함된 정보만 사용하세요.")
+            appendLine("확실하지 않으면 \"해당 문서에서 정확한 내용을 확인해주세요\"로 안내하세요.")
+            appendLine("검색 결과에 없는 내용을 추측하거나 지어내지 마세요.")
+            appendLine()
+            appendLine("중요 — 출력 형식은 반드시 Slack mrkdwn입니다. Markdown이 아닙니다.")
+            appendLine("허용: *굵게* _기울임_ ~취소선~ `코드` ```코드블록``` <URL|텍스트> • 불릿 1. 번호")
+            appendLine("금지 (절대 사용하지 마세요): # ## ### **굵게** __굵게__ [텍스트](URL) --- - 대시불릿")
+            appendLine("Slack에서 굵게는 *한 개*로 감쌉니다. **두 개**가 아닙니다.")
+        }
     }
 }

@@ -17,7 +17,7 @@ class VectorIndexAgent(
 ) {
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
-        val pages = confluenceClient.searchPages("", spaces, topK)
+        val pages = confluenceClient.listPages(spaces, limit = topK)
         log.info("Indexing {} pages into ChromaDB (mode={})", pages.size, config.embeddingMode)
 
         var indexed = 0
@@ -29,19 +29,19 @@ class VectorIndexAgent(
 
             batch.forEach { ref ->
                 runCatching {
-                    val page = confluenceClient.fetchPageContent(ref.id)
-                    val text = when (config.embeddingMode) {
-                        EmbeddingMode.LLM_EXPAND ->
-                            requireNotNull(llmExpandClient).enrichDocument("${page.title}\n${page.content}")
-                        EmbeddingMode.GOOGLE_EMBEDDING ->
-                            "${page.title}\n${page.content}"
-                    }
+                    // excerpt 기반 인덱싱 — fetchPageContent의 regex 파싱 실패 방지
+                    val text = "${ref.title}\n${ref.excerpt}".take(2048)
+                    if (text.isBlank()) return@forEach
                     ids += ref.id
-                    docs += text
+                    docs += when (config.embeddingMode) {
+                        EmbeddingMode.LLM_EXPAND ->
+                            requireNotNull(llmExpandClient).enrichDocument(text)
+                        EmbeddingMode.GOOGLE_EMBEDDING -> text
+                    }
                     if (config.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING) {
                         embeddings += requireNotNull(googleEmbeddingClient).embed(text)
                     }
-                    metas += mapOf("title" to page.title, "url" to page.webUrl)
+                    metas += mapOf("title" to ref.title, "url" to ref.webUrl)
                     indexed++
                 }.onFailure { log.warn("Failed to index page {}: {}", ref.id, it.message) }
             }

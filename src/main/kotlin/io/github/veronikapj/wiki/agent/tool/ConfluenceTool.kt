@@ -15,8 +15,10 @@ class ConfluenceTool(
     fun confluenceSearch(
         @LLMDescription("검색할 질문 또는 키워드 (한국어 가능)")
         query: String,
+        @LLMDescription("검색어의 동의어/유사 표현 목록")
+        synonyms: List<String> = emptyList(),
     ): String = runBlocking {
         tracker?.record("Confluence")
-        searchAgent.search(query)
+        searchAgent.search(query, synonyms)
     }
 }
