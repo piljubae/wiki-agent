@@ -20,8 +20,12 @@ Thumbs.db
 .wikiq/config.yml
 .env
 
-# Project memory
-.wiki/memory.md
+# Project memory & sessions
+.wiki/
 
 # Runtime logs
 logs/*.log
+
+# ChromaDB data
+chroma_data/
+chroma.log
