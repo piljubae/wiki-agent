@@ -43,18 +43,17 @@ class SlackConfigHandlerTest {
     }
 
     @Test
-    fun `handle reindex calls indexer`() {
-        var indexCalled = false
-        val handler = SlackConfigHandler(makeConfig(), onReindex = { indexCalled = true; 42 })
+    fun `handle reindex starts async and returns immediately`() {
+        val handler = SlackConfigHandler(makeConfig(), onReindex = { Thread.sleep(100); 42 })
         val result = handler.handle("/wiki reindex")
-        assertTrue(indexCalled)
-        assertTrue(result.contains("42"))
+        assertTrue(result.contains("인덱싱을 시작"))
     }
 
     @Test
     fun `handle reindex status returns last index info`() {
         val handler = SlackConfigHandler(makeConfig(), onReindex = { 0 })
         handler.handle("/wiki reindex")
+        Thread.sleep(500) // 비동기 완료 대기
         val result = handler.handle("/wiki reindex status")
         assertTrue(result.contains("마지막") || result.contains("문서"))
     }

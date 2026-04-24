@@ -131,6 +131,8 @@ fun main() {
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
             orchestrator = orchestrator,
             configHandler = configHandler,
+            projectMemory = projectMemory,
+            confluenceClient = confluenceClient,
         )
         gateway.start()
     } else {
