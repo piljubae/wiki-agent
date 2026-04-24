@@ -16,6 +16,7 @@ data class GoldenCase(
     val expectedMaxLines: Int = 8,
     val requiresSteps: Boolean = false,
     val requiresLink: Boolean = true,
+    val sourcePageId: String? = null,
 )
 
 @Serializable
@@ -26,6 +27,10 @@ enum class Category {
     PARTIAL_MATCH,
     MULTI_DOC,
     ZERO_EXPECTED,
+    // 자동 생성 카테고리
+    TITLE_BASED,
+    LLM_GENERATED,
+    PARAPHRASE,
 }
 
 @Serializable

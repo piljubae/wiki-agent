@@ -22,10 +22,14 @@ class SearchQualityEvalTest {
     }
 
     @Test
-    fun `golden dataset covers all categories`() {
-        val categories = goldenCases.map { it.category }.toSet()
-        Category.entries.forEach { cat ->
-            assertTrue(cat in categories, "Missing category: $cat")
+    fun `golden dataset covers manual categories`() {
+        val manualCategories = setOf(
+            Category.EXACT_MATCH, Category.SYNONYM_GAP, Category.ABBREVIATION,
+            Category.PARTIAL_MATCH, Category.MULTI_DOC, Category.ZERO_EXPECTED,
+        )
+        val present = goldenCases.map { it.category }.toSet()
+        manualCategories.forEach { cat ->
+            assertTrue(cat in present, "Missing manual category: $cat")
         }
     }
 
