@@ -114,15 +114,7 @@ class OrchestratorAgent(
         var searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
         if (toolName != null) listener?.onSearchCompleted(toolName)
 
-        // RAG fallback: CQL 결과 없고 vectorSearch 가능하면 시도
-        val vst = vectorSearchTool
-        if (searchResult == null && vst != null && toolName != "vectorSearch") {
-            log.info("CQL result empty, falling back to RAG")
-            listener?.onSearchStarted("vectorSearch")
-            searchResult = runCatching { vst.vectorSearch(question) }.getOrNull()
-                ?.takeIf { !it.contains("찾을 수 없습니다") && !it.contains("타임아웃") }
-            listener?.onSearchCompleted("vectorSearch")
-        }
+        // RAG fallback은 ConfluenceSearchAgent 내부에서 병렬 처리됨
 
         // Final fallback: 모든 도구로 원본 질문 검색
         if (searchResult == null) {
