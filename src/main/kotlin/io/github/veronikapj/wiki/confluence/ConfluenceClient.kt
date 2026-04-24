@@ -139,33 +139,39 @@ class ConfluenceClient(
     fun buildPageUrl(pageId: String): String =
         "$baseUrl/wiki/rest/api/content/$pageId?expand=body.storage,version,title"
 
-    suspend fun searchPages(query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5): List<ConfluencePageRef> {
-        // 1단계: 제목 매칭 (관련도 높음)
-        val titleUrl = buildTitleCqlSearchUrl(query, spaces, synonyms, limit)
-        log.info("Confluence title search: {}", titleUrl)
-        val titleResponse = httpClient.get(titleUrl) {
+    suspend fun searchByTitle(
+        query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+    ): List<ConfluencePageRef> {
+        val url = buildTitleCqlSearchUrl(query, spaces, synonyms, limit)
+        log.info("Confluence title search: {}", url)
+        val response = httpClient.get(url) {
             header("Authorization", "Basic $token")
             header("Accept", "application/json")
         }.bodyAsText()
-        val titleResults = parseSearchResults(titleResponse, baseUrl).map { it.copy(titleMatched = true) }
-        log.info("Title search: {} results", titleResults.size)
+        return parseSearchResults(response, baseUrl).map { it.copy(titleMatched = true) }
+    }
 
+    suspend fun searchByText(
+        query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+    ): List<ConfluencePageRef> {
+        val url = buildTextCqlSearchUrl(query, spaces, synonyms, limit)
+        log.info("Confluence text search: {}", url)
+        val response = httpClient.get(url) {
+            header("Authorization", "Basic $token")
+            header("Accept", "application/json")
+        }.bodyAsText()
+        return parseSearchResults(response, baseUrl)
+    }
+
+    suspend fun searchPages(query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5): List<ConfluencePageRef> {
+        val titleResults = searchByTitle(query, spaces, synonyms, limit)
+        log.info("Title search: {} results", titleResults.size)
         if (titleResults.size >= limit) return titleResults.take(limit)
 
-        // 2단계: 본문 매칭으로 보충 (제목 결과 부족 시)
         val remaining = limit - titleResults.size
-        val textUrl = buildTextCqlSearchUrl(query, spaces, synonyms, remaining)
-        log.info("Confluence text search (supplement): {}", textUrl)
-        val textResponse = httpClient.get(textUrl) {
-            header("Authorization", "Basic $token")
-            header("Accept", "application/json")
-        }.bodyAsText()
-        val textResults = parseSearchResults(textResponse, baseUrl)
-
-        // 제목 결과 우선 + 본문 결과 보충 (중복 제거)
+        val textResults = searchByText(query, spaces, synonyms, remaining)
         val titleIds = titleResults.map { it.id }.toSet()
-        val combined = titleResults + textResults.filter { it.id !in titleIds }
-        return combined.take(limit)
+        return titleResults + textResults.filter { it.id !in titleIds }
     }
 
     suspend fun fetchPageContent(pageId: String): ConfluencePage {
