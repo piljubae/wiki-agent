@@ -1,13 +1,18 @@
 package io.github.veronikapj.wiki.agent
 
-enum class Source { CQL, RAG }
+enum class SearchStage(val score: Double) {
+    TITLE_MATCH(1.0),
+    SPACE_EXPANSION(0.8),
+    TEXT_MATCH(0.6),
+    RAG(0.5),
+}
 
 data class SearchResult(
     val pageId: String,
     val title: String,
     val url: String,
     val snippet: String,
-    val source: Source,
+    val stage: SearchStage,
 )
 
 fun List<SearchResult>.formatForSlack(): String {

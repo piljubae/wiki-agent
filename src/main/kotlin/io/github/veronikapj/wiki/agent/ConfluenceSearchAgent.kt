@@ -27,7 +27,7 @@ class ConfluenceSearchAgent(
                 title = ref.title,
                 url = ref.webUrl,
                 snippet = ref.excerpt,
-                source = Source.CQL,
+                stage = SearchStage.TITLE_MATCH,
             )
         }
     }

@@ -49,6 +49,6 @@ class ConfluenceSearchAgentTest {
         val results = agent.searchStructured("배포")
         assertEquals(2, results.size)
         assertEquals("1", results[0].pageId)
-        assertEquals(Source.CQL, results[0].source)
+        assertEquals(SearchStage.TITLE_MATCH, results[0].stage)
     }
 }
