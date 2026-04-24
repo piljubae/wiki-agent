@@ -11,7 +11,17 @@ class ConfluenceSearchAgent(
         log.info("Searching Confluence: query='{}', synonyms={}, spaces={}", query, synonyms, spaces)
 
         val pages = confluenceClient.searchPages(query, spaces, synonyms, topK)
-        return pages.map { ref ->
+
+        // 설정 스페이스에서 제목 매칭 결과가 없으면 전체 스페이스로 확장
+        val finalPages = if (pages.none { it.titleMatched } && spaces.isNotEmpty()) {
+            log.info("No title matches in configured spaces, expanding to all spaces")
+            val allPages = confluenceClient.searchPages(query, emptyList(), synonyms, topK)
+            val existingIds = pages.map { it.id }.toSet()
+            val expanded = allPages.filter { it.id !in existingIds }
+            if (expanded.isNotEmpty()) expanded else pages // 확장 결과 있으면 교체, 없으면 유지
+        } else pages
+
+        return finalPages.take(topK).map { ref ->
             SearchResult(
                 pageId = ref.id,
                 title = ref.title,

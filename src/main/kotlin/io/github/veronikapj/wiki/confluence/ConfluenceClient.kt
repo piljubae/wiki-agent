@@ -18,6 +18,7 @@ data class ConfluencePageRef(
     val title: String,
     val webUrl: String,
     val excerpt: String = "",
+    val titleMatched: Boolean = false,
 )
 
 data class ConfluencePage(
@@ -146,7 +147,7 @@ class ConfluenceClient(
             header("Authorization", "Basic $token")
             header("Accept", "application/json")
         }.bodyAsText()
-        val titleResults = parseSearchResults(titleResponse, baseUrl)
+        val titleResults = parseSearchResults(titleResponse, baseUrl).map { it.copy(titleMatched = true) }
         log.info("Title search: {} results", titleResults.size)
 
         if (titleResults.size >= limit) return titleResults.take(limit)

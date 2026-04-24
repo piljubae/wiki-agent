@@ -1,15 +1,18 @@
 model:
-  provider: CLAUDE_CODE  # CLAUDE_CODE | ANTHROPIC | GOOGLE
+  provider: CLAUDE_CODE
 confluence:
-  baseUrl: https://yourcompany.atlassian.net
+  baseUrl: https://kurly0521.atlassian.net
   spaces:
-    - DEV
-    - PM
-slack: {}
+    - ProductApp
+    - project
+    - ClientDivision
+    - PSD
+    - CMS
+slack:
 rag:
-  enabled: false
+  enabled: true
   chromaUrl: http://localhost:8000
-  embeddingMode: LLM_EXPAND
+  embeddingMode: GOOGLE_EMBEDDING
 github:
   enabled: true
   repos:
