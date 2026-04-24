@@ -4,6 +4,7 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.confluence.ConfluencePage
 import io.github.veronikapj.wiki.confluence.ConfluencePageRef
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -15,9 +16,10 @@ class ConfluenceSearchAgentTest {
     @Test
     fun `search returns formatted markdown with links`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
-        coEvery { mockClient.searchPages("배포", listOf("DEV"), emptyList(), 5) } returns listOf(
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), emptyList(), 5) } returns listOf(
             ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/spaces/DEV/pages/1", titleMatched = true),
             ConfluencePageRef("2", "배포 절차", "https://co.atlassian.net/wiki/spaces/DEV/pages/2", titleMatched = true),
+            ConfluencePageRef("3", "배포 체크리스트", "https://co.atlassian.net/wiki/spaces/DEV/pages/3", titleMatched = true),
         )
 
         val agent = ConfluenceSearchAgent(mockClient, spaces = listOf("DEV"))
@@ -30,7 +32,8 @@ class ConfluenceSearchAgentTest {
     @Test
     fun `search returns no results message when empty`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
-        coEvery { mockClient.searchPages(any(), any(), any(), any()) } returns emptyList()
+        coEvery { mockClient.searchByTitle(any(), any(), any(), any()) } returns emptyList()
+        coEvery { mockClient.searchByText(any(), any(), any(), any()) } returns emptyList()
 
         val agent = ConfluenceSearchAgent(mockClient, spaces = listOf("DEV"))
         val result = agent.search("존재하지않는쿼리xyz")
@@ -41,14 +44,64 @@ class ConfluenceSearchAgentTest {
     @Test
     fun `searchStructured returns list of SearchResult`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
-        coEvery { mockClient.searchPages("배포", listOf("DEV"), any(), any()) } returns listOf(
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
             ConfluencePageRef("1", "배포 가이드", "https://example.com/wiki/1", titleMatched = true),
             ConfluencePageRef("2", "배포 절차", "https://example.com/wiki/2", titleMatched = true),
+            ConfluencePageRef("3", "배포 체크리스트", "https://example.com/wiki/3", titleMatched = true),
         )
         val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"))
         val results = agent.searchStructured("배포")
-        assertEquals(2, results.size)
+        assertEquals(3, results.size)
         assertEquals("1", results[0].pageId)
         assertEquals(SearchStage.TITLE_MATCH, results[0].stage)
+    }
+
+    @Test
+    fun `early return when title matches are sufficient`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "배포 가이드", "url1", titleMatched = true),
+            ConfluencePageRef("2", "배포 절차", "url2", titleMatched = true),
+            ConfluencePageRef("3", "배포 체크리스트", "url3", titleMatched = true),
+        )
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("배포")
+        assertEquals(3, results.size)
+        assertTrue(results.all { it.stage == SearchStage.TITLE_MATCH })
+        coVerify(exactly = 0) { mockClient.searchByText(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `parallel fallback when title matches insufficient`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "배포 가이드", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("2", "릴리즈 노트", "url2"),
+        )
+        coEvery { mockClient.searchByTitle("배포", emptyList(), any(), any()) } returns listOf(
+            ConfluencePageRef("3", "다른팀 배포", "url3", titleMatched = true),
+        )
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("배포")
+        assertTrue(results.size >= 2)
+        assertEquals(SearchStage.TITLE_MATCH, results[0].stage)
+    }
+
+    @Test
+    fun `results deduplicated by pageId`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "배포 가이드", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "배포 가이드", "url1"),
+            ConfluencePageRef("2", "새 문서", "url2"),
+        )
+        coEvery { mockClient.searchByTitle("배포", emptyList(), any(), any()) } returns emptyList()
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("배포")
+        assertEquals(1, results.count { it.pageId == "1" })
     }
 }
