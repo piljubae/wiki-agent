@@ -1,0 +1,75 @@
+[
+  {
+    "id": "GC-001",
+    "question": "배포 가이드",
+    "category": "EXACT_MATCH",
+    "expectedDocTitles": ["배포 프로세스 가이드"],
+    "keyPoints": ["배포 절차"],
+    "questionType": "PROCEDURE",
+    "expectedMinLines": 5,
+    "expectedMaxLines": 15,
+    "requiresSteps": true,
+    "requiresLink": true
+  },
+  {
+    "id": "GC-002",
+    "question": "신입 온보딩",
+    "category": "SYNONYM_GAP",
+    "expectedDocTitles": ["신규 입사자 온보딩 가이드"],
+    "keyPoints": ["입사 체크리스트"],
+    "questionType": "PROCEDURE",
+    "expectedMinLines": 5,
+    "expectedMaxLines": 15,
+    "requiresSteps": true,
+    "requiresLink": true
+  },
+  {
+    "id": "GC-003",
+    "question": "PR 리뷰 규칙",
+    "category": "ABBREVIATION",
+    "expectedDocTitles": ["Pull Request 리뷰 가이드"],
+    "keyPoints": ["리뷰 프로세스"],
+    "questionType": "DEFINITION",
+    "expectedMinLines": 3,
+    "expectedMaxLines": 8,
+    "requiresSteps": false,
+    "requiresLink": true
+  },
+  {
+    "id": "GC-004",
+    "question": "장애 대응",
+    "category": "PARTIAL_MATCH",
+    "expectedDocTitles": ["서비스 장애 대응 매뉴얼"],
+    "keyPoints": ["대응 절차"],
+    "questionType": "PROCEDURE",
+    "expectedMinLines": 5,
+    "expectedMaxLines": 15,
+    "requiresSteps": true,
+    "requiresLink": true
+  },
+  {
+    "id": "GC-005",
+    "question": "API 인증 방법과 권한 설정",
+    "category": "MULTI_DOC",
+    "expectedDocTitles": ["API 인증 가이드", "권한 관리 정책"],
+    "keyPoints": ["인증", "권한"],
+    "questionType": "COMPOSITE",
+    "expectedMinLines": 10,
+    "expectedMaxLines": 20,
+    "requiresSteps": false,
+    "requiresLink": true
+  },
+  {
+    "id": "GC-006",
+    "question": "양자컴퓨터 사용법",
+    "category": "ZERO_EXPECTED",
+    "expectedDocTitles": [],
+    "keyPoints": [],
+    "negativePoints": ["양자"],
+    "questionType": "ZERO",
+    "expectedMinLines": 1,
+    "expectedMaxLines": 3,
+    "requiresSteps": false,
+    "requiresLink": false
+  }
+]

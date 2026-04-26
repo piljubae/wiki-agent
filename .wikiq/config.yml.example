@@ -1,0 +1,20 @@
+model:
+  provider: CLAUDE_CODE          # CLAUDE_CODE | ANTHROPIC | GEMINI | OPENAI
+confluence:
+  baseUrl: https://yourcompany.atlassian.net
+  token: your-confluence-api-token
+  spaces:
+    - TEAM
+    - DEV
+    - DOCS
+slack:
+  botToken: xoxb-your-bot-token
+  appToken: xapp-your-app-token
+rag:
+  enabled: false
+  chromaUrl: http://localhost:8000
+  embeddingMode: GOOGLE_EMBEDDING  # GOOGLE_EMBEDDING | LLM_EXPAND
+github:
+  enabled: false
+  repos:
+    - your-org/your-repo

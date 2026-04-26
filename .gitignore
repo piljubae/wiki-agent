@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+.wikiq/config.yml
+.env
+
+# Project memory & sessions
+.wiki/
+
+# Runtime logs
+logs/*.log
+
+# ChromaDB data
+chroma_data/
+chroma.log
