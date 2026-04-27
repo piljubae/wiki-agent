@@ -12,11 +12,11 @@ import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.SourceTracker
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.config.ConfigLoader
-import io.github.veronikapj.wiki.context.ConversationStore
 import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.config.EmbeddingMode
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.context.ConversationStore
 import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
@@ -53,33 +53,21 @@ fun main() {
     val conversationStore = ConversationStore()
     val projectMemory = ProjectMemory()
 
-    var confluenceTool: ConfluenceTool? = null
+    // Confluence 클라이언트 생성
     var confluenceClient: ConfluenceClient? = null
     if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
         confluenceClient = ConfluenceClient(
             baseUrl = config.confluence.baseUrl,
             token = confluenceToken,
         )
-        val confluenceSearchAgent = ConfluenceSearchAgent(
-            confluenceClient = confluenceClient,
-            spaces = config.confluence.spaces,
-        )
-        confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
         log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
     } else {
         log.info("Confluence disabled (baseUrl or token not set)")
     }
 
-    val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
-    var githubWikiTool: GitHubWikiTool? = null
-    if (config.github.enabled && config.github.repos.isNotEmpty()) {
-        val githubClient = GitHubWikiClient(githubToken)
-        val githubWikiSearchAgent = GitHubWikiSearchAgent(githubClient, config.github.repos)
-        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent, sourceTracker)
-        log.info("GitHub Wiki enabled: repos={}", config.github.repos)
-    }
-
+    // RAG 설정 (VectorSearchAgent를 ConfluenceSearchAgent에 주입하기 위해 먼저 생성)
     var vectorSearchTool: VectorSearchTool? = null
+    var vectorSearchAgent: VectorSearchAgent? = null
     var vectorIndexAgent: VectorIndexAgent? = null
 
     if (config.rag.enabled) {
@@ -95,7 +83,7 @@ fun main() {
             GoogleEmbeddingClient(requireNotNull(googleApiKey) { "GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
         else null
 
-        val vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
+        vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
         vectorSearchTool = VectorSearchTool(vectorSearchAgent, sourceTracker)
         if (confluenceClient != null) {
             vectorIndexAgent = VectorIndexAgent(
@@ -105,6 +93,27 @@ fun main() {
             log.info("RAG indexing disabled (Confluence not configured)")
         }
         log.info("RAG enabled (mode={})", config.rag.embeddingMode)
+    }
+
+    // Confluence 검색 에이전트 (RAG 병렬 fallback 포함)
+    var confluenceTool: ConfluenceTool? = null
+    if (confluenceClient != null) {
+        val confluenceSearchAgent = ConfluenceSearchAgent(
+            confluenceClient = confluenceClient,
+            spaces = config.confluence.spaces,
+            vectorSearchAgent = vectorSearchAgent,
+        )
+        confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
+    }
+
+    // GitHub Wiki
+    val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
+    var githubWikiTool: GitHubWikiTool? = null
+    if (config.github.enabled && config.github.repos.isNotEmpty()) {
+        val githubClient = GitHubWikiClient(githubToken)
+        val githubWikiSearchAgent = GitHubWikiSearchAgent(githubClient, config.github.repos)
+        githubWikiTool = GitHubWikiTool(githubWikiSearchAgent, sourceTracker)
+        log.info("GitHub Wiki enabled: repos={}", config.github.repos)
     }
 
     val orchestrator = OrchestratorAgent(
@@ -131,7 +140,8 @@ fun main() {
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
             orchestrator = orchestrator,
             configHandler = configHandler,
-            sourceTracker = sourceTracker,
+            projectMemory = projectMemory,
+            confluenceClient = confluenceClient,
         )
         gateway.start()
     } else {

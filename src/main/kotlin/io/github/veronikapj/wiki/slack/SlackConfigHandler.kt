@@ -23,6 +23,7 @@ class SlackConfigHandler(
     fun handle(command: String): String {
         val parts = command.trim().split(" ")
         return when {
+            parts.size >= 2 && parts[1] == "help" -> helpMessage()
             parts.size >= 2 && parts[1] == "memory" -> handleMemory(parts.drop(2))
             parts.size >= 3 && parts[1] == "config" && parts[2] == "space" -> {
                 val arg = parts.getOrNull(3)
@@ -39,12 +40,18 @@ class SlackConfigHandler(
 
     private fun triggerReindex(): String {
         val indexer = onReindex ?: return "RAG가 비활성화 상태입니다. config.yml에서 rag.enabled=true로 설정하세요."
-        return runCatching {
-            val count = runBlocking { indexer() }
-            lastIndexCount = count
-            lastIndexTime = LocalDateTime.now()
-            "$count 개 문서 인덱싱 완료"
-        }.getOrElse { "인덱싱 실패: ${it.message}" }
+        // 비동기 실행 — 슬래시 커맨드 3초 타임아웃 방지
+        Thread {
+            runCatching {
+                val count = runBlocking { indexer() }
+                lastIndexCount = count
+                lastIndexTime = LocalDateTime.now()
+                log.info("Reindex completed: {} pages", count)
+            }.onFailure { e ->
+                log.error("Reindex failed", e)
+            }
+        }.start()
+        return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/wiki reindex status`로 진행 상황을 확인하세요."
     }
 
     private fun reindexStatus(): String {
@@ -85,16 +92,26 @@ class SlackConfigHandler(
         }
     }
 
-    private fun helpMessage() = """
-        사용법:
-        • `/wiki <질문>` — Confluence에서 검색
-        • `/wiki config space DEV,PM,HR` — 검색 스페이스 설정
+    fun helpMessage() = """
+        *위키 검색 봇 사용법*
+
+        :mag: *검색*
+        • `@wiki <질문>` — 채널에서 멘션으로 검색
+        • `/wiki <질문>` — 슬래시 커맨드로 검색
+
+        :gear: *설정*
+        • `/wiki config space DEV,PM` — 검색 스페이스 설정
         • `/wiki config space show` — 현재 설정 확인
         • `/wiki reindex` — RAG 재인덱싱
         • `/wiki reindex status` — 마지막 인덱싱 정보
-        • `/wiki memory add <내용>` — 프로젝트 정보 저장
+
+        :brain: *프로젝트 메모리*
+        • `/wiki memory add <내용>` — 프로젝트 정보 저장 (도메인 용어, 팀 정보 등)
         • `/wiki memory show` — 저장된 프로젝트 정보 확인
         • `/wiki memory clear` — 프로젝트 정보 초기화
+
+        :bulb: *도움말*
+        • `@wiki 도움말` 또는 `/wiki help`
     """.trimIndent()
 
     companion object {
