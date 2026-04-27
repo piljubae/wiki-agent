@@ -43,9 +43,12 @@ class ConfluenceSearchAgent(
             }
             val ragDeferred = async {
                 if (vectorSearchAgent != null) {
-                    withTimeoutOrNull(5000) {
+                    withTimeoutOrNull(RAG_TIMEOUT_MS) {
                         runCatching { vectorSearchAgent.searchStructured(query, topK) }.getOrElse { emptyList() }
-                    } ?: emptyList()
+                    } ?: run {
+                        log.warn("RAG search timed out after {}ms", RAG_TIMEOUT_MS)
+                        emptyList()
+                    }
                 } else emptyList()
             }
             Triple(textDeferred.await(), expandedDeferred.await(), ragDeferred.await())
@@ -63,14 +66,14 @@ class ConfluenceSearchAgent(
         topK: Int,
     ): List<SearchResult> {
         val seen = mutableSetOf<String>()
-        val scored = mutableListOf<SearchResult>()
+        val deduplicated = mutableListOf<SearchResult>()
 
-        titleResults.forEach { if (seen.add(it.id)) scored.add(it.toSearchResult(SearchStage.TITLE_MATCH)) }
-        expandedResults.forEach { if (seen.add(it.id)) scored.add(it.toSearchResult(SearchStage.SPACE_EXPANSION)) }
-        textResults.forEach { if (seen.add(it.id)) scored.add(it.toSearchResult(SearchStage.TEXT_MATCH)) }
-        ragResults.forEach { if (seen.add(it.pageId)) scored.add(it) }
+        titleResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.TITLE_MATCH)) }
+        expandedResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.SPACE_EXPANSION)) }
+        textResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.TEXT_MATCH)) }
+        ragResults.forEach { if (seen.add(it.pageId)) deduplicated.add(it) }
 
-        return scored.sortedByDescending { it.stage.score }.take(topK)
+        return deduplicated.sortedByDescending { it.stage.score }.take(topK)
     }
 
     private fun ConfluencePageRef.toSearchResult(stage: SearchStage) = SearchResult(
@@ -85,6 +88,7 @@ class ConfluenceSearchAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceSearchAgent::class.java)
+        private const val RAG_TIMEOUT_MS = 5_000L
 
         // 대화형 접미사 제거
         private val SUFFIXES = listOf(
