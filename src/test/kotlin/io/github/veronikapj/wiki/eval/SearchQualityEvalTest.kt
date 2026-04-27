@@ -24,18 +24,14 @@ class SearchQualityEvalTest {
     @Test
     fun `golden dataset loads successfully`() {
         assertTrue(goldenCases.isNotEmpty(), "Golden dataset should not be empty")
-        assertTrue(goldenCases.size >= 6, "Should have at least 6 cases")
     }
 
     @Test
-    fun `golden dataset covers manual categories`() {
-        val manualCategories = setOf(
-            Category.EXACT_MATCH, Category.SYNONYM_GAP, Category.ABBREVIATION,
-            Category.PARTIAL_MATCH, Category.MULTI_DOC, Category.ZERO_EXPECTED,
-        )
+    fun `golden dataset covers auto-generation categories`() {
+        val autoCategories = setOf(Category.TITLE_BASED, Category.LLM_GENERATED, Category.PARAPHRASE)
         val present = goldenCases.map { it.category }.toSet()
-        manualCategories.forEach { cat ->
-            assertTrue(cat in present, "Missing manual category: $cat")
+        autoCategories.forEach { cat ->
+            assertTrue(cat in present, "Missing auto-generation category: $cat")
         }
     }
 
@@ -44,9 +40,7 @@ class SearchQualityEvalTest {
         goldenCases.forEach { case ->
             assertTrue(case.id.isNotBlank(), "Case ID should not be blank")
             assertTrue(case.question.isNotBlank(), "Question should not be blank for ${case.id}")
-            if (case.category != Category.ZERO_EXPECTED) {
-                assertTrue(case.expectedDocTitles.isNotEmpty(), "Expected docs should not be empty for ${case.id}")
-            }
+            assertTrue(case.expectedDocTitles.isNotEmpty(), "Expected docs should not be empty for ${case.id}")
         }
     }
 

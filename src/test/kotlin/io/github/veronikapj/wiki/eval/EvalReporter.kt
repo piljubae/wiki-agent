@@ -146,7 +146,7 @@ object EvalReporter {
         return cr.results.firstOrNull { result ->
             val normalizedResult = result.title.trim().replace(Regex("\\s+"), " ").lowercase()
             normalizedExpected.any { expected ->
-                normalizedResult.contains(expected) || expected.contains(normalizedResult)
+                EvalMetrics.titleMatches(normalizedResult, expected)
             }
         }?.stage
     }

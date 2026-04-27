@@ -48,22 +48,22 @@ class EvalMetricsTest {
     @Test
     fun `MRR calculation`() {
         val results = listOf(
-            result("Page A"),
-            result("Page B"),
-            result("Target Page"),
-            result("Page D"),
+            result("배포 절차 안내"),
+            result("온보딩 체크리스트"),
+            result("장애 대응 매뉴얼"),
+            result("모니터링 대시보드"),
         )
-        // Target is at position 3 (1-indexed) → RR = 1/3
-        assertEquals(1.0 / 3.0, EvalMetrics.reciprocalRank(results, listOf("Target Page")), 0.001)
+        // "장애 대응 매뉴얼" at position 3 → RR = 1/3
+        assertEquals(1.0 / 3.0, EvalMetrics.reciprocalRank(results, listOf("장애 대응 매뉴얼")), 0.001)
 
         // First position → RR = 1.0
-        assertEquals(1.0, EvalMetrics.reciprocalRank(results, listOf("Page A")), 0.001)
+        assertEquals(1.0, EvalMetrics.reciprocalRank(results, listOf("배포 절차 안내")), 0.001)
     }
 
     @Test
     fun `MRR zero when not found`() {
-        val results = listOf(result("Page A"), result("Page B"))
-        assertEquals(0.0, EvalMetrics.reciprocalRank(results, listOf("Missing Page")))
+        val results = listOf(result("배포 절차 안내"), result("온보딩 체크리스트"))
+        assertEquals(0.0, EvalMetrics.reciprocalRank(results, listOf("양자컴퓨터 사용법")))
     }
 
     // --- isHonestZero ---
@@ -110,6 +110,21 @@ class EvalMetricsTest {
         val results2 = listOf(result("Release"))
         assertTrue(
             EvalMetrics.hitAtK(results2, listOf("Release Notes and Changelog"), k = 1),
+        )
+    }
+
+    @Test
+    fun `title matching uses word overlap for non-contiguous matches`() {
+        // "배포 가이드" vs "배포 프로세스 가이드" — 단어가 겹치지만 연속 substring이 아닌 경우
+        val results = listOf(result("배포 가이드"))
+        assertTrue(
+            EvalMetrics.hitAtK(results, listOf("배포 프로세스 가이드"), k = 1),
+        )
+
+        // 역방향도: 결과가 더 긴 경우
+        val results2 = listOf(result("서비스 장애 대응 매뉴얼"))
+        assertTrue(
+            EvalMetrics.hitAtK(results2, listOf("장애 대응"), k = 1),
         )
     }
 

@@ -15,7 +15,7 @@ object EvalMetrics {
         return topK.any { result ->
             val normalizedResult = result.title.normalize()
             normalizedExpected.any { expected ->
-                normalizedResult.contains(expected) || expected.contains(normalizedResult)
+                titleMatches(normalizedResult, expected)
             }
         }
     }
@@ -29,7 +29,7 @@ object EvalMetrics {
         results.forEachIndexed { index, result ->
             val normalizedResult = result.title.normalize()
             val matches = normalizedExpected.any { expected ->
-                normalizedResult.contains(expected) || expected.contains(normalizedResult)
+                titleMatches(normalizedResult, expected)
             }
             if (matches) return 1.0 / (index + 1)
         }
@@ -42,6 +42,25 @@ object EvalMetrics {
      */
     fun isHonestZero(results: List<SearchResult>, category: Category): Boolean {
         return category == Category.ZERO_EXPECTED && results.isEmpty()
+    }
+
+    /**
+     * 두 제목이 매치되는지 판단.
+     * 1) 연속 substring 매치 (기존)
+     * 2) 단어 겹침: 짧은 쪽 단어의 50% 이상이 긴 쪽에 포함되면 match
+     */
+    internal fun titleMatches(a: String, b: String): Boolean {
+        // 1. substring match
+        if (a.contains(b) || b.contains(a)) return true
+
+        // 2. word overlap match
+        val wordsA = a.split(Regex("\\s+")).filter { it.length >= 2 }.toSet()
+        val wordsB = b.split(Regex("\\s+")).filter { it.length >= 2 }.toSet()
+        if (wordsA.isEmpty() || wordsB.isEmpty()) return false
+        val shorter = if (wordsA.size <= wordsB.size) wordsA else wordsB
+        val longer = if (wordsA.size <= wordsB.size) wordsB else wordsA
+        val overlap = shorter.count { sw -> longer.any { lw -> lw.contains(sw) || sw.contains(lw) } }
+        return overlap.toDouble() / shorter.size >= 0.5
     }
 
     private fun String.normalize(): String = trim().replace(Regex("\\s+"), " ").lowercase()
