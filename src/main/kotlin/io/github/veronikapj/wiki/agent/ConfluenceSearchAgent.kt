@@ -17,10 +17,11 @@ class ConfluenceSearchAgent(
     suspend fun searchStructured(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
     ): List<SearchResult> {
-        log.info("Searching: query='{}', synonyms={}, spaces={}", query, synonyms, spaces)
+        val cleaned = cleanQuery(query)
+        log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}", query, cleaned, synonyms, spaces)
 
         // 1단계: 설정 스페이스에서 제목 검색
-        val titleResults = confluenceClient.searchByTitle(query, spaces, synonyms, topK)
+        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, topK)
         log.info("Title search: {} results", titleResults.size)
 
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
@@ -33,11 +34,11 @@ class ConfluenceSearchAgent(
         log.info("Insufficient title matches ({}<{}), parallel fallback", titleResults.size, sufficientThreshold)
         val (textResults, expandedResults, ragResults) = coroutineScope {
             val textDeferred = async {
-                runCatching { confluenceClient.searchByText(query, spaces, synonyms, topK) }.getOrElse { emptyList() }
+                runCatching { confluenceClient.searchByText(cleaned, spaces, synonyms, topK) }.getOrElse { emptyList() }
             }
             val expandedDeferred = async {
                 if (spaces.isNotEmpty()) {
-                    runCatching { confluenceClient.searchByTitle(query, emptyList(), synonyms, topK) }.getOrElse { emptyList() }
+                    runCatching { confluenceClient.searchByTitle(cleaned, emptyList(), synonyms, topK) }.getOrElse { emptyList() }
                 } else emptyList()
             }
             val ragDeferred = async {
@@ -84,5 +85,32 @@ class ConfluenceSearchAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceSearchAgent::class.java)
+
+        // 대화형 접미사 제거
+        private val SUFFIXES = listOf(
+            "알려줘", "알려주세요", "알려 줘", "알려 주세요",
+            "어디서 봐?", "어디서 봐", "어디 있어?", "어디 있어",
+            "어떻게 돼?", "어떻게 돼", "뭐야?", "뭐야",
+            "찾아줘", "보여줘", "설명해줘", "정리해줘",
+        )
+
+        /** CQL 검색 전 쿼리 정제: 특수문자 제거 + 대화형 접미사 제거 */
+        internal fun cleanQuery(query: String): String {
+            var q = query
+            // 대화형 접미사 제거
+            for (s in SUFFIXES) {
+                if (q.endsWith(s)) {
+                    q = q.removeSuffix(s).trimEnd()
+                    break
+                }
+            }
+            // CQL을 깨뜨리는 특수문자 제거 (내용은 유지)
+            q = q.replace(Regex("[\\[\\]|~{}()]"), " ")
+            // 언더스코어 → 공백 (제목에서 구분자로 사용)
+            q = q.replace('_', ' ')
+            // 연속 공백 정리
+            q = q.replace(Regex("\\s+"), " ").trim()
+            return q.ifBlank { query.trim() }
+        }
     }
 }

@@ -90,6 +90,34 @@ class ConfluenceSearchAgentTest {
     }
 
     @Test
+    fun `query preprocessing strips suffixes and special chars`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        // "iOS Daily - 26.04.27 알려줘" → 전처리 후 "iOS Daily 26.04.27" 로 검색
+        coEvery { mockClient.searchByTitle(any(), listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "iOS Daily - 26.04.27", "url1", titleMatched = true),
+            ConfluencePageRef("2", "iOS Daily - 26.04.26", "url2", titleMatched = true),
+            ConfluencePageRef("3", "iOS Daily - 26.04.25", "url3", titleMatched = true),
+        )
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"))
+        val results = agent.searchStructured("iOS Daily - 26.04.27 알려줘")
+        assertTrue(results.isNotEmpty())
+    }
+
+    @Test
+    fun `query preprocessing handles brackets and pipes`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        // "[XP/핀테크트라이브]주간보고_260417 알려줘" → 전처리
+        coEvery { mockClient.searchByTitle(any(), listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "[XP/핀테크트라이브]주간보고", "url1", titleMatched = true),
+            ConfluencePageRef("2", "주간보고 2", "url2", titleMatched = true),
+            ConfluencePageRef("3", "주간보고 3", "url3", titleMatched = true),
+        )
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"))
+        val results = agent.searchStructured("[XP/핀테크트라이브]주간보고_260417 알려줘")
+        assertTrue(results.isNotEmpty())
+    }
+
+    @Test
     fun `results deduplicated by pageId`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
         coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(

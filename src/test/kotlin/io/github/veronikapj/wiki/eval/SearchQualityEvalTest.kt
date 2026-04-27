@@ -40,7 +40,9 @@ class SearchQualityEvalTest {
         goldenCases.forEach { case ->
             assertTrue(case.id.isNotBlank(), "Case ID should not be blank")
             assertTrue(case.question.isNotBlank(), "Question should not be blank for ${case.id}")
-            assertTrue(case.expectedDocTitles.isNotEmpty(), "Expected docs should not be empty for ${case.id}")
+            if (case.category != Category.ZERO_EXPECTED) {
+                assertTrue(case.expectedDocTitles.isNotEmpty(), "Expected docs should not be empty for ${case.id}")
+            }
         }
     }
 
