@@ -3,9 +3,11 @@ package io.github.veronikapj.wiki.agent
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.confluence.ConfluencePage
 import io.github.veronikapj.wiki.confluence.ConfluencePageRef
+import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -131,5 +133,48 @@ class ConfluenceSearchAgentTest {
         val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
         val results = agent.searchStructured("배포")
         assertEquals(1, results.count { it.pageId == "1" })
+    }
+
+    @Test
+    fun `RAG result with same pageId as Confluence result is deduplicated`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("42", "배포 가이드", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("배포", listOf("DEV"), any(), any()) } returns emptyList()
+        coEvery { mockClient.searchByTitle("배포", emptyList(), any(), any()) } returns emptyList()
+
+        val mockVectorAgent = mockk<VectorSearchAgent>()
+        coEvery { mockVectorAgent.searchStructured(any(), any()) } returns listOf(
+            SearchResult("42", "배포 가이드 (RAG)", "url2", "snippet", SearchStage.RAG),
+        )
+
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), mockVectorAgent, sufficientThreshold = 3)
+        val results = agent.searchStructured("배포")
+        // Confluence result wins (higher stage score); RAG duplicate suppressed
+        assertEquals(1, results.count { it.pageId == "42" })
+        assertEquals(SearchStage.TITLE_MATCH, results.first { it.pageId == "42" }.stage)
+    }
+
+    @Test
+    fun `RAG timeout returns empty list gracefully`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "배포 가이드", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("배포", listOf("DEV"), any(), any()) } returns emptyList()
+        coEvery { mockClient.searchByTitle("배포", emptyList(), any(), any()) } returns emptyList()
+
+        val slowVectorAgent = mockk<VectorSearchAgent>()
+        coEvery { slowVectorAgent.searchStructured(any(), any()) } coAnswers {
+            delay(10_000) // far exceeds RAG_TIMEOUT_MS=5000
+            emptyList()
+        }
+
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), slowVectorAgent, sufficientThreshold = 3)
+        // Should not throw, should return Confluence results without RAG
+        val results = agent.searchStructured("배포")
+        assertTrue(results.isNotEmpty())
+        assertTrue(results.all { it.stage != SearchStage.RAG })
     }
 }

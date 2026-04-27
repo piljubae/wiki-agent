@@ -95,6 +95,10 @@ object EvalReporter {
         }
 
         val totalHits = stageCounts.values.sum()
+        if (totalHits == 0) {
+            sb.appendLine("(no hits)")
+            return
+        }
         SearchStage.entries.forEach { stage ->
             val count = stageCounts[stage] ?: 0
             if (count == 0) return@forEach
