@@ -1,11 +1,13 @@
 package io.github.veronikapj.wiki.rag
 
+import io.github.veronikapj.wiki.agent.SearchStage
 import io.github.veronikapj.wiki.config.EmbeddingMode
 import io.github.veronikapj.wiki.config.RagConfig
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class VectorSearchAgentTest {
@@ -26,6 +28,35 @@ class VectorSearchAgentTest {
 
         assertTrue(result.contains("배포 가이드"))
         assertTrue(result.contains("https://"))
+    }
+
+    @Test
+    fun `searchStructured returns list of SearchResult with RAG stage`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+        coEvery { mockChroma.query("col-id", any(), null, any()) } returns listOf(
+            ChromaQueryResult("1", "배포 절차 내용", mapOf("title" to "배포 가이드", "url" to "https://co.atlassian.net/1", "pageId" to "p1"), 0.2f)
+        )
+
+        val agent = VectorSearchAgent(mockChroma, llmExpand, null, config)
+        val results = agent.searchStructured("배포")
+
+        assertEquals(1, results.size)
+        assertEquals("p1", results[0].pageId)
+        assertEquals("배포 가이드", results[0].title)
+        assertEquals(SearchStage.RAG, results[0].stage)
+    }
+
+    @Test
+    fun `searchStructured returns empty list when no results`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+        coEvery { mockChroma.query(any(), any(), any(), any()) } returns emptyList()
+
+        val agent = VectorSearchAgent(mockChroma, llmExpand, null, config)
+        val results = agent.searchStructured("없는것")
+
+        assertTrue(results.isEmpty())
     }
 
     @Test

@@ -40,7 +40,6 @@ class OrchestratorAgentTest {
             confluenceTool = confluenceTool,
             executor = LLMExecutorBuilder.build(ModelConfig()),
         )
-        // Just verify it compiles — actual listener invocation requires LLM
         assertNotNull(agent)
     }
 

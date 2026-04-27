@@ -47,8 +47,10 @@ class SlackConfigHandlerTest {
         var indexCalled = false
         val handler = SlackConfigHandler(makeConfig(), onReindex = { indexCalled = true; 42 })
         val result = handler.handle("/wiki reindex")
+        // triggerReindex runs in a background thread — wait briefly
+        Thread.sleep(500)
         assertTrue(indexCalled)
-        assertTrue(result.contains("42"))
+        assertTrue(result.contains("hourglass") || result.contains("인덱싱"))
     }
 
     @Test

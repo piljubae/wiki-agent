@@ -1,0 +1,1221 @@
+[
+    {
+        "id": "GC-001",
+        "question": "배포 가이드",
+        "category": "EXACT_MATCH",
+        "expectedDocTitles": [
+            "배포 프로세스 가이드"
+        ],
+        "keyPoints": [
+            "배포 절차"
+        ],
+        "questionType": "PROCEDURE",
+        "expectedMinLines": 5,
+        "expectedMaxLines": 15,
+        "requiresSteps": true
+    },
+    {
+        "id": "GC-002",
+        "question": "신입 온보딩",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": [
+            "신규 입사자 온보딩 가이드"
+        ],
+        "keyPoints": [
+            "입사 체크리스트"
+        ],
+        "questionType": "PROCEDURE",
+        "expectedMinLines": 5,
+        "expectedMaxLines": 15,
+        "requiresSteps": true
+    },
+    {
+        "id": "GC-003",
+        "question": "PR 리뷰 규칙",
+        "category": "ABBREVIATION",
+        "expectedDocTitles": [
+            "Pull Request 리뷰 가이드"
+        ],
+        "keyPoints": [
+            "리뷰 프로세스"
+        ]
+    },
+    {
+        "id": "GC-004",
+        "question": "장애 대응",
+        "category": "PARTIAL_MATCH",
+        "expectedDocTitles": [
+            "서비스 장애 대응 매뉴얼"
+        ],
+        "keyPoints": [
+            "대응 절차"
+        ],
+        "questionType": "PROCEDURE",
+        "expectedMinLines": 5,
+        "expectedMaxLines": 15,
+        "requiresSteps": true
+    },
+    {
+        "id": "GC-005",
+        "question": "API 인증 방법과 권한 설정",
+        "category": "MULTI_DOC",
+        "expectedDocTitles": [
+            "API 인증 가이드",
+            "권한 관리 정책"
+        ],
+        "keyPoints": [
+            "인증",
+            "권한"
+        ],
+        "questionType": "COMPOSITE",
+        "expectedMinLines": 10,
+        "expectedMaxLines": 20
+    },
+    {
+        "id": "GC-006",
+        "question": "양자컴퓨터 사용법",
+        "category": "ZERO_EXPECTED",
+        "expectedDocTitles": [],
+        "negativePoints": [
+            "양자"
+        ],
+        "questionType": "ZERO",
+        "expectedMinLines": 1,
+        "expectedMaxLines": 3,
+        "requiresLink": false
+    },
+    {
+        "id": "AUTO-001",
+        "question": "[Track 1] 세그먼트별 홈 섹션 최적화 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[Track 1] 세그먼트별 홈 섹션 최적화"
+        ],
+        "sourcePageId": "5801968105"
+    },
+    {
+        "id": "AUTO-002",
+        "question": "홈 섹션을 유저별로 다르게 보여주는 실험 했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[Track 1] 세그먼트별 홈 섹션 최적화"
+        ],
+        "sourcePageId": "5801968105"
+    },
+    {
+        "id": "AUTO-003",
+        "question": "메인화면 사용자별로 다르게 보여주는 실험 자료 어디있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[Track 1] 세그먼트별 홈 섹션 최적화"
+        ],
+        "sourcePageId": "5801968105"
+    },
+    {
+        "id": "AUTO-004",
+        "question": "[Weekly #4] 26.04.13 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[Weekly #4] 26.04.13"
+        ],
+        "sourcePageId": "5837162929"
+    },
+    {
+        "id": "AUTO-005",
+        "question": "4월 13일 주간 회의에 누가 참석했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[Weekly #4] 26.04.13"
+        ],
+        "sourcePageId": "5837162929"
+    },
+    {
+        "id": "AUTO-006",
+        "question": "4월 정기 미팅 정보 어디 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[Weekly #4] 26.04.13"
+        ],
+        "sourcePageId": "5837162929"
+    },
+    {
+        "id": "AUTO-007",
+        "question": "[Weekly #5] 26.04.20 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[Weekly #5] 26.04.20"
+        ],
+        "sourcePageId": "5848253377"
+    },
+    {
+        "id": "AUTO-008",
+        "question": "4월 20일 주간 미팅에 누가 참석했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[Weekly #5] 26.04.20"
+        ],
+        "sourcePageId": "5848253377"
+    },
+    {
+        "id": "AUTO-009",
+        "question": "4월 20일 정기 미팅 누가 참석했어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[Weekly #5] 26.04.20"
+        ],
+        "sourcePageId": "5848253377"
+    },
+    {
+        "id": "AUTO-010",
+        "question": "iOS Daily - 26.04.27 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "iOS Daily - 26.04.27"
+        ],
+        "sourcePageId": "5858984395"
+    },
+    {
+        "id": "AUTO-011",
+        "question": "4월 27일 iOS 데일리 미팅에서 어떤 내용들이 논의되었나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "iOS Daily - 26.04.27"
+        ],
+        "sourcePageId": "5858984395"
+    },
+    {
+        "id": "AUTO-012",
+        "question": "아이폰팀 일일회의 내용 어디서 확인해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "iOS Daily - 26.04.27"
+        ],
+        "sourcePageId": "5858984395"
+    },
+    {
+        "id": "AUTO-013",
+        "question": "[XP/핀테크트라이브]주간보고_260417~260423 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[XP/핀테크트라이브]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5857593286"
+    },
+    {
+        "id": "AUTO-014",
+        "question": "4월 3주차 핀테크 트라이브 주간보고 내용 확인해줘",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[XP/핀테크트라이브]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5857593286"
+    },
+    {
+        "id": "AUTO-015",
+        "question": "핀테크팀 이번주 업무 현황 어떻게 됐어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[XP/핀테크트라이브]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5857593286"
+    },
+    {
+        "id": "AUTO-016",
+        "question": "쿠폰 적용 카테고리 미진열에 따른 전환 영향 분석 및 개선 방안 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "쿠폰 적용 카테고리 미진열에 따른 전환 영향 분석 및 개선 방안"
+        ],
+        "sourcePageId": "5838180449"
+    },
+    {
+        "id": "AUTO-017",
+        "question": "쿠폰 적용 상품이 안 보이는 것 때문에 매출에 얼마나 영향이 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "쿠폰 적용 카테고리 미진열에 따른 전환 영향 분석 및 개선 방안"
+        ],
+        "sourcePageId": "5838180449"
+    },
+    {
+        "id": "AUTO-018",
+        "question": "쿠폰 쓸 수 있는 상품이 안 보여서 매출에 어떤 영향 주는지 분석한 자료 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "쿠폰 적용 카테고리 미진열에 따른 전환 영향 분석 및 개선 방안"
+        ],
+        "sourcePageId": "5838180449"
+    },
+    {
+        "id": "AUTO-019",
+        "question": "[XP/상품기획]주간보고_260417~260423 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[XP/상품기획]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5856276731"
+    },
+    {
+        "id": "AUTO-020",
+        "question": "상품기획팀 4월 3주차 주간보고서 어디있어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[XP/상품기획]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5856276731"
+    },
+    {
+        "id": "AUTO-021",
+        "question": "프로덕트팀 4월 셋째주 위클리 리포트 어디 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[XP/상품기획]주간보고_260417~260423"
+        ],
+        "sourcePageId": "5856276731"
+    },
+    {
+        "id": "AUTO-022",
+        "question": "2026.00 | 번들할인 연동 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026.00 | 번들할인 연동"
+        ],
+        "sourcePageId": "5338071516"
+    },
+    {
+        "id": "AUTO-023",
+        "question": "번들할인 연동은 어떻게 하나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026.00 | 번들할인 연동"
+        ],
+        "sourcePageId": "5338071516"
+    },
+    {
+        "id": "AUTO-024",
+        "question": "묶음상품 할인 시스템 어떻게 연결해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026.00 | 번들할인 연동"
+        ],
+        "sourcePageId": "5338071516"
+    },
+    {
+        "id": "AUTO-025",
+        "question": "[프로덕트앱개발][물류] 위클리 - 20260427 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] 위클리 - 20260427"
+        ],
+        "sourcePageId": "5858756503"
+    },
+    {
+        "id": "AUTO-026",
+        "question": "이번 주 물류팀 위클리에서 Flutter 전환 관련해서 뭐라고 했어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] 위클리 - 20260427"
+        ],
+        "sourcePageId": "5858756503"
+    },
+    {
+        "id": "AUTO-027",
+        "question": "물류팀 앱개발 회의 자료 어디 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] 위클리 - 20260427"
+        ],
+        "sourcePageId": "5858756503"
+    },
+    {
+        "id": "AUTO-028",
+        "question": "2026.04.27 ~ 05.01 (Android) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026.04.27 ~ 05.01 (Android)"
+        ],
+        "sourcePageId": "5860201390"
+    },
+    {
+        "id": "AUTO-029",
+        "question": "이번 주 안드로이드 데일리 일정이 어떻게 돼?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026.04.27 ~ 05.01 (Android)"
+        ],
+        "sourcePageId": "5860201390"
+    },
+    {
+        "id": "AUTO-030",
+        "question": "안드로이드 팀 일일 회의 템플릿 어디 있지?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026.04.27 ~ 05.01 (Android)"
+        ],
+        "sourcePageId": "5860201390"
+    },
+    {
+        "id": "AUTO-031",
+        "question": "[Weekly #1] 26.03.26 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[Weekly #1] 26.03.26"
+        ],
+        "sourcePageId": "5810487409"
+    },
+    {
+        "id": "AUTO-032",
+        "question": "3월 26일 위클리 미팅 참석자가 누구였나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[Weekly #1] 26.03.26"
+        ],
+        "sourcePageId": "5810487409"
+    },
+    {
+        "id": "AUTO-033",
+        "question": "3월 주간 미팅 누가 참석했지?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[Weekly #1] 26.03.26"
+        ],
+        "sourcePageId": "5810487409"
+    },
+    {
+        "id": "AUTO-034",
+        "question": "[XPD1-536]상세기획_미구매 멤버스 0원이상 무배 적용 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[XPD1-536]상세기획_미구매 멤버스 0원이상 무배 적용"
+        ],
+        "sourcePageId": "5813895373"
+    },
+    {
+        "id": "AUTO-035",
+        "question": "멤버스 가입했지만 아직 구매하지 않은 고객도 무료배송 받을 수 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[XPD1-536]상세기획_미구매 멤버스 0원이상 무배 적용"
+        ],
+        "sourcePageId": "5813895373"
+    },
+    {
+        "id": "AUTO-036",
+        "question": "멤버십 안산 사람도 배송비 무료로 받을 수 있나요?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[XPD1-536]상세기획_미구매 멤버스 0원이상 무배 적용"
+        ],
+        "sourcePageId": "5813895373"
+    },
+    {
+        "id": "AUTO-037",
+        "question": "2026.00 | N+셀렉션 상품 적용 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026.00 | N+셀렉션 상품 적용"
+        ],
+        "sourcePageId": "5818779374"
+    },
+    {
+        "id": "AUTO-038",
+        "question": "N+셀렉션 상품을 시스템에서 자동으로 구분하고 관리하는 방법이 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026.00 | N+셀렉션 상품 적용"
+        ],
+        "sourcePageId": "5818779374"
+    },
+    {
+        "id": "AUTO-039",
+        "question": "엔플러스 전용 아이템 어떻게 등록하지?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026.00 | N+셀렉션 상품 적용"
+        ],
+        "sourcePageId": "5818779374"
+    },
+    {
+        "id": "AUTO-040",
+        "question": "[기획] 이탈 예상 유저 대상 리워드 제공 메시지 노출 (Track 3) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[기획] 이탈 예상 유저 대상 리워드 제공 메시지 노출 (Track 3)"
+        ],
+        "sourcePageId": "5811962147"
+    },
+    {
+        "id": "AUTO-041",
+        "question": "이탈 예상 유저한테 리워드 주는 실험 자료 있어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[기획] 이탈 예상 유저 대상 리워드 제공 메시지 노출 (Track 3)"
+        ],
+        "sourcePageId": "5811962147"
+    },
+    {
+        "id": "AUTO-042",
+        "question": "앱 안 쓸 것 같은 사람들한테 혜택 주는 팝업 보여주는 실험이 뭐였지?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[기획] 이탈 예상 유저 대상 리워드 제공 메시지 노출 (Track 3)"
+        ],
+        "sourcePageId": "5811962147"
+    },
+    {
+        "id": "AUTO-043",
+        "question": "[Kira] DDL 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[Kira] DDL"
+        ],
+        "sourcePageId": "5819171936"
+    },
+    {
+        "id": "AUTO-044",
+        "question": "조직 계층 구조 테이블 DDL이 어떻게 설계되어 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[Kira] DDL"
+        ],
+        "sourcePageId": "5819171936"
+    },
+    {
+        "id": "AUTO-045",
+        "question": "키라 조직 테이블 구조 어떻게 생겼나요?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[Kira] DDL"
+        ],
+        "sourcePageId": "5819171936"
+    },
+    {
+        "id": "AUTO-046",
+        "question": "빅프로모션 할인 마감 카운트 적용 분석 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "빅프로모션 할인 마감 카운트 적용 분석"
+        ],
+        "sourcePageId": "5824676889"
+    },
+    {
+        "id": "AUTO-047",
+        "question": "빅프로모션에서 할인 마감 카운트다운 적용한 효과 분석 자료 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "빅프로모션 할인 마감 카운트 적용 분석"
+        ],
+        "sourcePageId": "5824676889"
+    },
+    {
+        "id": "AUTO-048",
+        "question": "세일 끝나는 시간 표시하는 기능 어떻게 해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "빅프로모션 할인 마감 카운트 적용 분석"
+        ],
+        "sourcePageId": "5824676889"
+    },
+    {
+        "id": "AUTO-049",
+        "question": "2026-04-27 검색 위클리 회의록 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026-04-27 검색 위클리 회의록"
+        ],
+        "sourcePageId": "5860372320"
+    },
+    {
+        "id": "AUTO-050",
+        "question": "4월 27일 검색 위클리 회의록 어디서 볼 수 있어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026-04-27 검색 위클리 회의록"
+        ],
+        "sourcePageId": "5860372320"
+    },
+    {
+        "id": "AUTO-051",
+        "question": "주간 검색 미팅 기록 어디 있지?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026-04-27 검색 위클리 회의록"
+        ],
+        "sourcePageId": "5860372320"
+    },
+    {
+        "id": "AUTO-052",
+        "question": "2차 AB 테스트 실험 설계안 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2차 AB 테스트 실험 설계안"
+        ],
+        "sourcePageId": "5852955149"
+    },
+    {
+        "id": "AUTO-053",
+        "question": "검색 알고리즘 개선 AB 테스트 설계 어떻게 했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2차 AB 테스트 실험 설계안"
+        ],
+        "sourcePageId": "5852955149"
+    },
+    {
+        "id": "AUTO-054",
+        "question": "두번째 AB 실험 계획 어떻게 되는거야?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2차 AB 테스트 실험 설계안"
+        ],
+        "sourcePageId": "5852955149"
+    },
+    {
+        "id": "AUTO-055",
+        "question": "2026.00 ⎹ [증정]La-CMS 개선 2) 검색필터 추가_ 증정 상품 검색 개선 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026.00 ⎹ [증정]La-CMS 개선 2) 검색필터 추가_ 증정 상품 검색 개선"
+        ],
+        "sourcePageId": "5762581531"
+    },
+    {
+        "id": "AUTO-056",
+        "question": "La-CMS에서 증정 상품 검색 기능이 어떻게 개선되었나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026.00 ⎹ [증정]La-CMS 개선 2) 검색필터 추가_ 증정 상품 검색 개선"
+        ],
+        "sourcePageId": "5762581531"
+    },
+    {
+        "id": "AUTO-057",
+        "question": "CMS에서 선물 상품 찾는 기능 어떻게 바뀜?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026.00 ⎹ [증정]La-CMS 개선 2) 검색필터 추가_ 증정 상품 검색 개선"
+        ],
+        "sourcePageId": "5762581531"
+    },
+    {
+        "id": "AUTO-058",
+        "question": "01-3. 태그(TAG) 관리 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "01-3. 태그(TAG) 관리"
+        ],
+        "sourcePageId": "5806260228"
+    },
+    {
+        "id": "AUTO-059",
+        "question": "SEG 태그는 어떻게 관리하나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "01-3. 태그(TAG) 관리"
+        ],
+        "sourcePageId": "5806260228"
+    },
+    {
+        "id": "AUTO-060",
+        "question": "세그먼트 라벨 어떻게 설정해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "01-3. 태그(TAG) 관리"
+        ],
+        "sourcePageId": "5806260228"
+    },
+    {
+        "id": "AUTO-061",
+        "question": "04. 계정 관리 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "04. 계정 관리"
+        ],
+        "sourcePageId": "5757470300"
+    },
+    {
+        "id": "AUTO-062",
+        "question": "계정 권한은 어떻게 나누어져 있고, 각각 어떤 부서에서 관리하나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "04. 계정 관리"
+        ],
+        "sourcePageId": "5757470300"
+    },
+    {
+        "id": "AUTO-063",
+        "question": "사용자 권한은 어디서 설정해요?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "04. 계정 관리"
+        ],
+        "sourcePageId": "5757470300"
+    },
+    {
+        "id": "AUTO-064",
+        "question": "02. Attribute 관리 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "02. Attribute 관리"
+        ],
+        "sourcePageId": "5757108973"
+    },
+    {
+        "id": "AUTO-065",
+        "question": "어드민에서 attribute는 어떻게 등록하고 관리하나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "02. Attribute 관리"
+        ],
+        "sourcePageId": "5757108973"
+    },
+    {
+        "id": "AUTO-066",
+        "question": "사용자 속성 설정하는 곳이 어디야?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "02. Attribute 관리"
+        ],
+        "sourcePageId": "5757108973"
+    },
+    {
+        "id": "AUTO-067",
+        "question": "컬리버드 PR 자동 코드 리뷰 도입 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "컬리버드 PR 자동 코드 리뷰 도입"
+        ],
+        "sourcePageId": "5859905629"
+    },
+    {
+        "id": "AUTO-068",
+        "question": "컬리버드에 자동 코드 리뷰 어떻게 도입했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "컬리버드 PR 자동 코드 리뷰 도입"
+        ],
+        "sourcePageId": "5859905629"
+    },
+    {
+        "id": "AUTO-069",
+        "question": "라이더 앱에서 AI로 풀리퀘 검토하는 거 어떻게 셋업해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "컬리버드 PR 자동 코드 리뷰 도입"
+        ],
+        "sourcePageId": "5859905629"
+    },
+    {
+        "id": "AUTO-070",
+        "question": "[프로덕트앱개발][물류] LLM Wiki — 정책·흐름·용도 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] LLM Wiki — 정책·흐름·용도"
+        ],
+        "sourcePageId": "5859938020"
+    },
+    {
+        "id": "AUTO-071",
+        "question": "컬리 물류 앱들의 LLM Wiki 시스템이 어떻게 동작하는지 알고 싶어요",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] LLM Wiki — 정책·흐름·용도"
+        ],
+        "sourcePageId": "5859938020"
+    },
+    {
+        "id": "AUTO-072",
+        "question": "컬리 배송 앱들 AI 문서 시스템 어떻게 써?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[프로덕트앱개발][물류] LLM Wiki — 정책·흐름·용도"
+        ],
+        "sourcePageId": "5859938020"
+    },
+    {
+        "id": "AUTO-073",
+        "question": "멤버스 미구매 무배 적용 유저 케이스 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "멤버스 미구매 무배 적용 유저 케이스"
+        ],
+        "sourcePageId": "5859117225"
+    },
+    {
+        "id": "AUTO-074",
+        "question": "멤버스 구독자가 21일 이상 구매 안 했을 때 무배 혜택이 어떻게 적용되나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "멤버스 미구매 무배 적용 유저 케이스"
+        ],
+        "sourcePageId": "5859117225"
+    },
+    {
+        "id": "AUTO-075",
+        "question": "구독 중인데 오래 안 사면 무료배송 혜택 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "멤버스 미구매 무배 적용 유저 케이스"
+        ],
+        "sourcePageId": "5859117225"
+    },
+    {
+        "id": "AUTO-076",
+        "question": "[실험 설계] AI 쇼핑 검색 (Ask Sophie) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[실험 설계] AI 쇼핑 검색 (Ask Sophie)"
+        ],
+        "sourcePageId": "5854398761"
+    },
+    {
+        "id": "AUTO-077",
+        "question": "Ask Sophie AI 검색 실험은 어떻게 진행하나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[실험 설계] AI 쇼핑 검색 (Ask Sophie)"
+        ],
+        "sourcePageId": "5854398761"
+    },
+    {
+        "id": "AUTO-078",
+        "question": "소피 AI로 물건 찾는 테스트 어떻게 하는 거야?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[실험 설계] AI 쇼핑 검색 (Ask Sophie)"
+        ],
+        "sourcePageId": "5854398761"
+    },
+    {
+        "id": "AUTO-079",
+        "question": "LaCMS 패널 AB 테스트 운영 API 설계 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "LaCMS 패널 AB 테스트 운영 API 설계"
+        ],
+        "sourcePageId": "5852434379"
+    },
+    {
+        "id": "AUTO-080",
+        "question": "LaCMS에서 패널 AB 테스트 운영 API 어떻게 설계했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "LaCMS 패널 AB 테스트 운영 API 설계"
+        ],
+        "sourcePageId": "5852434379"
+    },
+    {
+        "id": "AUTO-081",
+        "question": "홈 화면 실험 시스템 어떻게 만들어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "LaCMS 패널 AB 테스트 운영 API 설계"
+        ],
+        "sourcePageId": "5852434379"
+    },
+    {
+        "id": "AUTO-082",
+        "question": "[CS챗봇] 5. 화면 기획서 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[CS챗봇] 5. 화면 기획서"
+        ],
+        "sourcePageId": "5457674660"
+    },
+    {
+        "id": "AUTO-083",
+        "question": "CS 챗봇 화면 디자인 가이드 어디서 볼 수 있어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[CS챗봇] 5. 화면 기획서"
+        ],
+        "sourcePageId": "5457674660"
+    },
+    {
+        "id": "AUTO-084",
+        "question": "고객상담봇 화면 어떻게 생겼어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[CS챗봇] 5. 화면 기획서"
+        ],
+        "sourcePageId": "5457674660"
+    },
+    {
+        "id": "AUTO-085",
+        "question": "2026Q2, 도메인 현황 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026Q2, 도메인 현황"
+        ],
+        "sourcePageId": "5837938404"
+    },
+    {
+        "id": "AUTO-086",
+        "question": "2026년 2분기 도메인 구조는 어떻게 되나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026Q2, 도메인 현황"
+        ],
+        "sourcePageId": "5837938404"
+    },
+    {
+        "id": "AUTO-087",
+        "question": "올해 2분기 각 팀 영역이 어떻게 정리돼?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026Q2, 도메인 현황"
+        ],
+        "sourcePageId": "5837938404"
+    },
+    {
+        "id": "AUTO-088",
+        "question": "Domain Proficiency 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "Domain Proficiency"
+        ],
+        "sourcePageId": "5585109186"
+    },
+    {
+        "id": "AUTO-089",
+        "question": "결제 도메인은 누가 제일 잘 알고 있어?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "Domain Proficiency"
+        ],
+        "sourcePageId": "5585109186"
+    },
+    {
+        "id": "AUTO-090",
+        "question": "누가 어떤 분야 전문가인지 어디서 확인해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "Domain Proficiency"
+        ],
+        "sourcePageId": "5585109186"
+    },
+    {
+        "id": "AUTO-091",
+        "question": "Weekly | 2026-W17 (04.20 ~ 04.24) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "Weekly | 2026-W17 (04.20 ~ 04.24)"
+        ],
+        "sourcePageId": "5857577106"
+    },
+    {
+        "id": "AUTO-092",
+        "question": "이번주에 어떤 일들이 있었나?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "Weekly | 2026-W17 (04.20 ~ 04.24)"
+        ],
+        "sourcePageId": "5857577106"
+    },
+    {
+        "id": "AUTO-093",
+        "question": "4월 셋째주 업무 정리 어디서 봐?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "Weekly | 2026-W17 (04.20 ~ 04.24)"
+        ],
+        "sourcePageId": "5857577106"
+    },
+    {
+        "id": "AUTO-094",
+        "question": "회원 과제 검토 의견 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "회원 과제 검토 의견"
+        ],
+        "sourcePageId": "5858757278"
+    },
+    {
+        "id": "AUTO-095",
+        "question": "마이컬리 첫 구매 무료배송 띠배너는 언제 적용되나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "회원 과제 검토 의견"
+        ],
+        "sourcePageId": "5858757278"
+    },
+    {
+        "id": "AUTO-096",
+        "question": "멤버 프로젝트 리뷰 어디 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "회원 과제 검토 의견"
+        ],
+        "sourcePageId": "5858757278"
+    },
+    {
+        "id": "AUTO-097",
+        "question": "카테고리/컬렉션 필터 서비스 ES 전환 고려 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "카테고리/컬렉션 필터 서비스 ES 전환 고려"
+        ],
+        "sourcePageId": "5859411153"
+    },
+    {
+        "id": "AUTO-098",
+        "question": "카테고리 필터 서비스 성능이 느린데 RDS 대신 다른 기술로 개선할 방법이 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "카테고리/컬렉션 필터 서비스 ES 전환 고려"
+        ],
+        "sourcePageId": "5859411153"
+    },
+    {
+        "id": "AUTO-099",
+        "question": "상품 필터링 시스템을 엘라스틱서치로 바꾸는 거 어때?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "카테고리/컬렉션 필터 서비스 ES 전환 고려"
+        ],
+        "sourcePageId": "5859411153"
+    },
+    {
+        "id": "AUTO-100",
+        "question": "2026-04-27 CAC TF Weekly 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026-04-27 CAC TF Weekly"
+        ],
+        "sourcePageId": "5858963534"
+    },
+    {
+        "id": "AUTO-101",
+        "question": "CAC TF 이번 주 진행 상황이나 백로그 어떻게 되어 있나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026-04-27 CAC TF Weekly"
+        ],
+        "sourcePageId": "5858963534"
+    },
+    {
+        "id": "AUTO-102",
+        "question": "고객획득 팀 주간 회의록 어디 있어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026-04-27 CAC TF Weekly"
+        ],
+        "sourcePageId": "5858963534"
+    },
+    {
+        "id": "AUTO-103",
+        "question": "2026.00｜PDP 후기탭 &#39;추천순&#39; 정렬 고도화 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026.00｜PDP 후기탭 &#39;추천순&#39; 정렬 고도화"
+        ],
+        "sourcePageId": "5824712188"
+    },
+    {
+        "id": "AUTO-104",
+        "question": "PDP 후기 추천순 정렬이 어떻게 개선되었나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "2026.00｜PDP 후기탭 &#39;추천순&#39; 정렬 고도화"
+        ],
+        "sourcePageId": "5824712188"
+    },
+    {
+        "id": "AUTO-105",
+        "question": "상품 페이지에서 리뷰 순서 어떻게 바뀌나요?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "2026.00｜PDP 후기탭 &#39;추천순&#39; 정렬 고도화"
+        ],
+        "sourcePageId": "5824712188"
+    },
+    {
+        "id": "AUTO-106",
+        "question": "26.00 [쿠폰] La-CMS 쿠폰 발행 관리의 검색 필터 최적화 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "26.00 [쿠폰] La-CMS 쿠폰 발행 관리의 검색 필터 최적화"
+        ],
+        "sourcePageId": "5857741491"
+    },
+    {
+        "id": "AUTO-107",
+        "question": "La-CMS에서 쿠폰 검색할 때 서버가 느려지는 문제를 어떻게 개선했나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "26.00 [쿠폰] La-CMS 쿠폰 발행 관리의 검색 필터 최적화"
+        ],
+        "sourcePageId": "5857741491"
+    },
+    {
+        "id": "AUTO-108",
+        "question": "쿠폰 검색이 너무 느린데 어떻게 개선해?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "26.00 [쿠폰] La-CMS 쿠폰 발행 관리의 검색 필터 최적화"
+        ],
+        "sourcePageId": "5857741491"
+    },
+    {
+        "id": "AUTO-109",
+        "question": "[26. 03] 레퍼럴(친구초대) 이벤트 개편 상세 기획서 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[26. 03] 레퍼럴(친구초대) 이벤트 개편 상세 기획서"
+        ],
+        "sourcePageId": "5791416614"
+    },
+    {
+        "id": "AUTO-110",
+        "question": "친구초대 시스템 개편 계획이 어떻게 되나요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "[26. 03] 레퍼럴(친구초대) 이벤트 개편 상세 기획서"
+        ],
+        "sourcePageId": "5791416614"
+    },
+    {
+        "id": "AUTO-111",
+        "question": "친구 추천 시스템이 어떻게 바뀌나요?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "[26. 03] 레퍼럴(친구초대) 이벤트 개편 상세 기획서"
+        ],
+        "sourcePageId": "5791416614"
+    },
+    {
+        "id": "AUTO-112",
+        "question": "진행현황 공유 후 대응방향 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "진행현황 공유 후 대응방향"
+        ],
+        "sourcePageId": "5859411514"
+    },
+    {
+        "id": "AUTO-113",
+        "question": "챗봇 오픈 스펙에서 제외된 페이지는 어디인가요?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "진행현황 공유 후 대응방향"
+        ],
+        "sourcePageId": "5859411514"
+    },
+    {
+        "id": "AUTO-114",
+        "question": "챗봇 프로젝트 현재 어디까지 됐어?",
+        "category": "PARAPHRASE",
+        "expectedDocTitles": [
+            "진행현황 공유 후 대응방향"
+        ],
+        "sourcePageId": "5859411514"
+    },
+    {
+        "id": "AUTO-115",
+        "question": "홈 패널 GrowthBook 실험 연동 설계 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "홈 패널 GrowthBook 실험 연동 설계"
+        ],
+        "sourcePageId": "5852662523"
+    },
+    {
+        "id": "AUTO-116",
+        "question": "홈 패널에서 GrowthBook A/B 테스트 어떻게 연동해?",
+        "category": "LLM_GENERATED",
+        "expectedDocTitles": [
+            "홈 패널 GrowthBook 실험 연동 설계"
+        ],
+        "sourcePageId": "5852662523"
+    },
+    {
+        "id": "AUTO-117",
+        "question": "Weekly - 2026년 4월 21일 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "Weekly - 2026년 4월 21일"
+        ],
+        "sourcePageId": "5851334467"
+    },
+    {
+        "id": "AUTO-118",
+        "question": "[상시] 후기 백로그 목록 &amp; 기능 개선 관리 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "[상시] 후기 백로그 목록 &amp; 기능 개선 관리"
+        ],
+        "sourcePageId": "5812946196"
+    },
+    {
+        "id": "AUTO-119",
+        "question": "Architecture TF Weekly @ 2026/04/24 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "Architecture TF Weekly @ 2026/04/24"
+        ],
+        "sourcePageId": "5856269108"
+    },
+    {
+        "id": "AUTO-120",
+        "question": "홈 AB 실험 운영 자동화 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "홈 AB 실험 운영 자동화"
+        ],
+        "sourcePageId": "5837561716"
+    },
+    {
+        "id": "AUTO-121",
+        "question": "홈 첫구매 무료배송 지면 확장 지원 (퀵메뉴) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "홈 첫구매 무료배송 지면 확장 지원 (퀵메뉴)"
+        ],
+        "sourcePageId": "5859509064"
+    },
+    {
+        "id": "AUTO-122",
+        "question": "컬리 및 컬리멤버스 이용약관 개정안 적용건 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "컬리 및 컬리멤버스 이용약관 개정안 적용건"
+        ],
+        "sourcePageId": "5859213450"
+    },
+    {
+        "id": "AUTO-123",
+        "question": "2026-04-23 홈전시광고개발 업무상세 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2026-04-23 홈전시광고개발 업무상세"
+        ],
+        "sourcePageId": "5857265115"
+    },
+    {
+        "id": "AUTO-124",
+        "question": "2차 개선 데모 품질 검토 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "2차 개선 데모 품질 검토"
+        ],
+        "sourcePageId": "5838668047"
+    },
+    {
+        "id": "AUTO-125",
+        "question": "01. [P0 Feature 상세 기획서] 패널 A/B 테스트 운영 자동화 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "01. [P0 Feature 상세 기획서] 패널 A/B 테스트 운영 자동화"
+        ],
+        "sourcePageId": "5853137502"
+    },
+    {
+        "id": "AUTO-126",
+        "question": "쇼케이스 운영 가이드 (26.04 업데이트) 알려줘",
+        "category": "TITLE_BASED",
+        "expectedDocTitles": [
+            "쇼케이스 운영 가이드 (26.04 업데이트)"
+        ],
+        "sourcePageId": "4211640530"
+    }
+]
