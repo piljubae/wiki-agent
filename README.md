@@ -12,7 +12,12 @@ SlackBotGateway (Bolt Socket Mode)
     │
     ▼
 OrchestratorAgent (Koog AIAgent)
-    ├── ConfluenceTool ──► ConfluenceSearchAgent ──► Confluence REST API (CQL)
+    ├── ConfluenceTool ──► ConfluenceSearchAgent
+    │                          ├─ 1단계: title 검색 (설정 스페이스)        ──► Confluence REST API
+    │                          ├─ 2단계(parallel): text 검색              ──► Confluence REST API
+    │                          │                   전체 스페이스 확장 검색  ──► Confluence REST API
+    │                          │                   RAG fallback            ──► ChromaDB
+    │                          └─ 3단계: SearchStage 가중치 랭킹 + 중복 제거
     ├── GitHubWikiTool ──► GitHubWikiSearchAgent ──► GitHub Search API  (github.enabled=true 시)
     └── VectorSearchTool ──► VectorSearchAgent ──► ChromaDB            (rag.enabled=true 시)
 
@@ -20,7 +25,33 @@ VectorIndexAgent ◄── /wiki reindex  (Confluence 전체 페이지 → Chrom
 ```
 
 OrchestratorAgent가 LLM을 통해 질문 의도를 파악하고 적절한 Tool을 선택합니다.  
-GitHub Wiki와 RAG는 각각 `config.yml` 한 줄로 활성화/비활성화합니다.
+ConfluenceSearchAgent는 제목 매칭이 충분하면 API 1회로 조기 반환하고, 부족하면 text · 스페이스 확장 · RAG를 병렬로 실행합니다.
+
+## 검색 플로우 (ConfluenceSearchAgent)
+
+```
+질문 → cleanQuery() → 제목 검색 (설정 스페이스)
+                          │
+               ≥ 3건?  ──► 조기 반환 (API 1회)
+                          │
+               < 3건?  ──► 병렬 실행 ──► text 검색
+                                     ──► 전체 스페이스 제목 확장
+                                     ──► RAG (5초 타임아웃)
+                          │
+                          ▼
+                  SearchStage 가중치 랭킹 + pageId 중복 제거
+```
+
+`cleanQuery()`는 "알려줘", "어디 있어?" 같은 대화형 접미사와 CQL을 깨뜨리는 특수문자 `[]|~{}()_`를 자동으로 제거합니다.
+
+### SearchStage 가중치
+
+| Stage | 의미 | score |
+|-------|------|-------|
+| `TITLE_MATCH` | 설정 스페이스 제목 직접 매칭 | 1.0 |
+| `SPACE_EXPANSION` | 전체 스페이스 제목 확장 | 0.8 |
+| `TEXT_MATCH` | 본문 텍스트 검색 | 0.6 |
+| `RAG` | ChromaDB 벡터 유사도 | 0.5 |
 
 ## 기술 스택
 
@@ -139,7 +170,7 @@ github:
 
 ## RAG (선택)
 
-ChromaDB 기반 의미 검색을 추가할 수 있습니다.
+ChromaDB 기반 의미 검색을 추가할 수 있습니다. RAG는 ConfluenceSearchAgent의 2단계 병렬 fallback으로 자동 실행됩니다 — CQL 결과가 부족할 때 title/text 검색과 동시에 5초 타임아웃으로 실행됩니다.
 
 ### ChromaDB 실행
 
@@ -200,13 +231,33 @@ java -jar build/libs/wiki-agent-1.0.0-all.jar
 /wiki config space show         # 현재 설정 확인
 /wiki reindex                   # RAG 재인덱싱 (rag.enabled=true 시)
 /wiki reindex status            # 마지막 인덱싱 정보
+/wiki memory add <내용>         # 프로젝트 컨텍스트 추가 (도메인 용어, 팀 정보 등)
+/wiki memory show               # 저장된 프로젝트 메모리 확인
+/wiki memory clear              # 프로젝트 메모리 초기화
 ```
+
+### 프로젝트 메모리
+
+봇이 도메인 용어와 팀 컨텍스트를 기억하도록 학습시킬 수 있습니다:
+
+```
+/wiki memory add 우리 팀은 Spring Boot 3.x + Kotlin을 사용합니다
+/wiki memory add 배포 프로세스 담당: 인프라팀 (김철수)
+```
+
+저장된 메모리는 LLM 동의어 생성과 답변 생성 시 컨텍스트로 주입됩니다.
 
 ## 테스트
 
 ```bash
+# 유닛 테스트
 ./gradlew test
+
+# 검색 품질 평가 (실제 Confluence 연결 필요, CONFLUENCE_TOKEN 환경변수 필요)
+./gradlew evalTest
 ```
+
+`evalTest`는 147개 자동 생성 골든 케이스로 Recall@K, MRR을 측정하고 `docs/eval/` 에 리포트를 저장합니다.
 
 ## 프로젝트 구조
 
@@ -214,19 +265,25 @@ java -jar build/libs/wiki-agent-1.0.0-all.jar
 src/main/kotlin/io/github/veronikapj/wiki/
 ├── Main.kt
 ├── agent/
-│   ├── ConfluenceSearchAgent.kt    # CQL 검색 + 결과 포맷
+│   ├── ConfluenceSearchAgent.kt    # 3단계 검색 플로우 + cleanQuery + SearchStage 랭킹
 │   ├── GitHubWikiSearchAgent.kt    # GitHub Search API + 결과 포맷
-│   ├── OrchestratorAgent.kt        # Koog AIAgent (Tool 라우팅)
+│   ├── OrchestratorAgent.kt        # Koog AIAgent (Tool 라우팅 + 대화 이력 + 프로젝트 메모리)
+│   ├── SearchResult.kt             # SearchResult + SearchStage(score) enum
+│   ├── SearchProgressListener.kt   # 검색 진행 콜백 인터페이스
 │   └── tool/
 │       ├── ConfluenceTool.kt       # @Tool 래퍼 → ConfluenceSearchAgent
 │       ├── GitHubWikiTool.kt       # @Tool 래퍼 → GitHubWikiSearchAgent
+│       ├── SourceTracker.kt        # 검색 소스 출처 추적
 │       └── VectorSearchTool.kt     # @Tool 래퍼 → VectorSearchAgent
 ├── config/
 │   ├── WikiConfig.kt               # 설정 데이터 클래스 (RagConfig, GithubConfig 포함)
 │   ├── ConfigLoader.kt             # YAML 파서
 │   └── SecretLoader.kt             # env → .env → config 시크릿 로딩
 ├── confluence/
-│   └── ConfluenceClient.kt         # Confluence REST API (CQL)
+│   └── ConfluenceClient.kt         # Confluence REST API (searchByTitle / searchByText / CQL)
+├── context/
+│   ├── ConversationStore.kt        # JSONL 기반 세션별 대화 이력 영속화
+│   └── ProjectMemory.kt            # .wiki/memory.md 기반 프로젝트 메모리
 ├── github/
 │   └── GitHubWikiClient.kt         # GitHub Search API + raw wiki 콘텐츠 조회
 ├── llm/
@@ -236,8 +293,16 @@ src/main/kotlin/io/github/veronikapj/wiki/
 │   ├── ChromaClient.kt             # ChromaDB HTTP REST 클라이언트
 │   ├── EmbeddingClient.kt          # LlmExpandClient + GoogleEmbeddingClient
 │   ├── VectorIndexAgent.kt         # Confluence → ChromaDB 인덱싱
-│   └── VectorSearchAgent.kt        # ChromaDB 검색
+│   └── VectorSearchAgent.kt        # ChromaDB 검색 (searchStructured 포함)
 └── slack/
     ├── SlackBotGateway.kt          # Bolt Socket Mode 게이트웨이
     └── SlackConfigHandler.kt       # 슬래시 커맨드 핸들러
+
+src/test/kotlin/io/github/veronikapj/wiki/
+└── eval/
+    ├── EvalMetrics.kt              # Recall@K, MRR, honest-zero, word-overlap 매칭
+    ├── EvalReporter.kt             # 카테고리/SearchStage별 리포트 생성
+    ├── GoldenCase.kt               # 골든 케이스 데이터 클래스 + Category enum
+    ├── GoldenDatasetGenerator.kt   # Confluence 페이지 기반 자동 골든 케이스 생성
+    └── SearchQualityEvalTest.kt    # evalTest 실행 + docs/eval/ 리포트 저장
 ```
