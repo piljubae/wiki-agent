@@ -1,6 +1,6 @@
 package io.github.veronikapj.wiki.config
 
-enum class ModelProvider { ANTHROPIC, GOOGLE, CLAUDE_CODE }
+enum class ModelProvider { ANTHROPIC, GOOGLE, CLAUDE_CODE, GEMINI_CODE }
 enum class EmbeddingMode { LLM_EXPAND, GOOGLE_EMBEDDING }
 
 data class WikiConfig(

@@ -16,6 +16,7 @@ object LLMExecutorBuilder {
     fun build(config: ModelConfig): MultiLLMPromptExecutor =
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> MultiLLMPromptExecutor(ClaudeCodeLLMClient())
+            ModelProvider.GEMINI_CODE -> MultiLLMPromptExecutor(GeminiCodeLLMClient())
             ModelProvider.ANTHROPIC -> MultiLLMPromptExecutor(
                 AnthropicLLMClient(
                     apiKey = requireNotNull(config.apiKey) { "ANTHROPIC apiKey required" }
@@ -31,7 +32,8 @@ object LLMExecutorBuilder {
     fun defaultModel(config: ModelConfig): LLModel =
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> AnthropicModels.Sonnet_4
+            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
             ModelProvider.ANTHROPIC -> AnthropicModels.Sonnet_4
-            ModelProvider.GOOGLE -> GoogleModels.Gemini2_0Flash
+            ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
         }
 }
