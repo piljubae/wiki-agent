@@ -1,31 +1,34 @@
 # wiki-agent
 
-슬랙에서 `@wiki 질문` 하면 Confluence 위키를 검색해 요약 + 링크를 스레드로 답변하는 Slack 봇입니다.
+슬랙에서 `@wiki 질문` 하면 로컬 지식베이스 · Confluence · GitHub Wiki에서 관련 문서를 찾아 요약 + 링크를 스레드로 답변하는 Slack 봇입니다.
 
 ## 아키텍처
 
 ```
-Slack (mention / slash command)
+Slack (mention / slash command / DM)
     │
     ▼
 SlackBotGateway (Bolt Socket Mode)
-    │
+    │   DM URL 감지 → IngestAgent (자동 저장)
     ▼
 OrchestratorAgent (Koog AIAgent)
-    ├── ConfluenceTool ──► ConfluenceSearchAgent
-    │                          ├─ 1단계: title 검색 (설정 스페이스)        ──► Confluence REST API
-    │                          ├─ 2단계(parallel): text 검색              ──► Confluence REST API
-    │                          │                   전체 스페이스 확장 검색  ──► Confluence REST API
-    │                          │                   RAG fallback            ──► ChromaDB
+    ├── KnowledgeTool   ──► KnowledgeStore (.wiki/knowledge/)       ← 1순위
+    ├── ConfluenceTool  ──► ConfluenceSearchAgent                   ← 2순위
+    │                          ├─ 1단계: title 검색 (설정 스페이스)  ──► Confluence REST API
+    │                          ├─ 2단계(parallel): text 검색        ──► Confluence REST API
+    │                          │                   스페이스 확장     ──► Confluence REST API
+    │                          │                   RAG fallback      ──► ChromaDB
     │                          └─ 3단계: SearchStage 가중치 랭킹 + 중복 제거
-    ├── GitHubWikiTool ──► GitHubWikiSearchAgent ──► GitHub Search API  (github.enabled=true 시)
-    └── VectorSearchTool ──► VectorSearchAgent ──► ChromaDB            (rag.enabled=true 시)
+    ├── GitHubWikiTool  ──► GitHubWikiSearchAgent ──► GitHub Wiki   ← 3순위 (github.enabled=true 시)
+    └── VectorSearchTool ──► VectorSearchAgent ──► ChromaDB         ← 4순위 (rag.enabled=true 시)
 
+IngestAgent ◄── /wiki ingest <URL>  (URL → LLM 컴파일 → KnowledgeStore + ChromaDB)
+LintAgent   ◄── /wiki lint          (지식베이스 모순·고아 감지)
 VectorIndexAgent ◄── /wiki reindex  (Confluence 전체 페이지 → ChromaDB 인덱싱)
 ```
 
 OrchestratorAgent가 LLM을 통해 질문 의도를 파악하고 적절한 Tool을 선택합니다.  
-ConfluenceSearchAgent는 제목 매칭이 충분하면 API 1회로 조기 반환하고, 부족하면 text · 스페이스 확장 · RAG를 병렬로 실행합니다.
+검색 우선순위: **로컬 지식베이스 → Confluence → GitHub Wiki → RAG**
 
 ## 검색 플로우 (ConfluenceSearchAgent)
 
@@ -222,11 +225,13 @@ java -jar build/libs/wiki-agent-1.0.0-all.jar
 @wiki 배포 프로세스 알려줘
 ```
 
-봇이 OrchestratorAgent를 통해 질문 의도를 파악하고, Confluence · GitHub Wiki · ChromaDB(RAG) 중 적절한 소스를 선택해 관련 문서 목록과 링크를 스레드로 답변합니다.
+봇이 OrchestratorAgent를 통해 질문 의도를 파악하고, 로컬 지식베이스 · Confluence · GitHub Wiki · ChromaDB(RAG) 순으로 검색해 관련 문서 목록과 링크를 스레드로 답변합니다.
 
 슬래시 커맨드:
 
 ```
+/wiki ingest <URL>              # URL 내용을 지식베이스에 저장
+/wiki lint                      # 지식베이스 품질 검사 (모순·고아 감지)
 /wiki config space DEV,PM,HR   # 검색 스페이스 설정
 /wiki config space show         # 현재 설정 확인
 /wiki reindex                   # RAG 재인덱싱 (rag.enabled=true 시)
@@ -234,6 +239,16 @@ java -jar build/libs/wiki-agent-1.0.0-all.jar
 /wiki memory add <내용>         # 프로젝트 컨텍스트 추가 (도메인 용어, 팀 정보 등)
 /wiki memory show               # 저장된 프로젝트 메모리 확인
 /wiki memory clear              # 프로젝트 메모리 초기화
+```
+
+### 지식베이스
+
+URL을 ingest하면 LLM이 내용을 분석해 `concepts/`, `entities/`, `sources/` 구조로 `.wiki/knowledge/`에 저장합니다. 이후 `@wiki 질문` 시 Confluence보다 먼저 검색됩니다.
+
+DM에 URL을 붙여넣으면 `/wiki ingest` 없이 자동으로 저장됩니다.
+
+```
+/wiki ingest https://팀내문서.example.com/배포가이드
 ```
 
 ### 프로젝트 메모리
@@ -273,8 +288,14 @@ src/main/kotlin/io/github/veronikapj/wiki/
 │   └── tool/
 │       ├── ConfluenceTool.kt       # @Tool 래퍼 → ConfluenceSearchAgent
 │       ├── GitHubWikiTool.kt       # @Tool 래퍼 → GitHubWikiSearchAgent
+│       ├── KnowledgeTool.kt        # @Tool 래퍼 → KnowledgeStore (1순위 검색)
 │       ├── SourceTracker.kt        # 검색 소스 출처 추적
 │       └── VectorSearchTool.kt     # @Tool 래퍼 → VectorSearchAgent
+├── knowledge/
+│   ├── KnowledgeStore.kt           # .wiki/knowledge/ 파일 I/O (thread-safe)
+│   ├── IngestAgent.kt              # URL fetch → LLM 컴파일 → KnowledgeStore + ChromaDB
+│   ├── LintAgent.kt                # 지식베이스 모순·고아·오래됨 감지
+│   └── KnowledgeTool.kt            # @Tool 래퍼 → KnowledgeStore 키워드 검색
 ├── config/
 │   ├── WikiConfig.kt               # 설정 데이터 클래스 (RagConfig, GithubConfig 포함)
 │   ├── ConfigLoader.kt             # YAML 파서
