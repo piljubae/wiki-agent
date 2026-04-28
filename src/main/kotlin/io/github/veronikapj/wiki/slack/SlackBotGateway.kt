@@ -6,6 +6,7 @@ import com.slack.api.bolt.socket_mode.SocketModeApp
 import com.slack.api.methods.MethodsClient
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
+import io.github.veronikapj.wiki.knowledge.IngestAgent
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
@@ -22,6 +23,7 @@ class SlackBotGateway(
     private val configHandler: SlackConfigHandler,
     private val projectMemory: ProjectMemory? = null,
     private val confluenceClient: ConfluenceClient? = null,
+    private val ingestAgent: IngestAgent? = null,
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
@@ -31,10 +33,19 @@ class SlackBotGateway(
     )
 
     private val toolDisplayNames = mapOf(
+        "knowledgeSearch" to "지식베이스",
         "confluenceSearch" to "Confluence",
         "githubWikiSearch" to "GitHub Wiki",
         "vectorSearch" to "RAG",
     )
+
+    private enum class DmInputType { URL, LONG_TEXT, NORMAL }
+
+    private fun classifyDmInput(text: String): DmInputType = when {
+        text.startsWith("http://") || text.startsWith("https://") -> DmInputType.URL
+        text.length > 500 -> DmInputType.LONG_TEXT
+        else -> DmInputType.NORMAL
+    }
 
     // 봇이 보낸 답변 메시지의 ts를 추적 (리액션 피드백 필터링용)
     private val botMessageTimestamps = ConcurrentHashMap.newKeySet<String>()
@@ -206,15 +217,32 @@ class SlackBotGateway(
             if (event.channelType != "im" || event.botId != null || event.subtype != null) {
                 return@event ctx.ack()
             }
-            val query = extractQuery(event.text?.trim() ?: return@event ctx.ack())
+            val rawText = event.text?.trim() ?: return@event ctx.ack()
+            val query = extractQuery(rawText)
             if (query.isBlank()) return@event ctx.ack()
             val channel = event.channel
-            log.info("DM received: '{}'", query)
+            log.info("DM received: '{}'", query.take(80))
             if (isOnboarding(channel)) {
                 runCatching { handleOnboarding(channel, null, query) }
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
-            } else if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
-                slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+            } else when (classifyDmInput(query)) {
+                DmInputType.URL -> if (ingestAgent != null) {
+                    messageExecutor.submit {
+                        val result = runBlocking { ingestAgent.ingestUrl(query) }
+                        slackClient.chatPostMessage { it.channel(channel).text(result) }
+                    }
+                } else if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
+                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+                }
+                DmInputType.LONG_TEXT -> slackClient.chatPostMessage {
+                    it.channel(channel).text(
+                        "긴 텍스트를 지식베이스에 저장하려면 `/wiki ingest <URL>` 형식으로 URL을 입력해주세요.\n" +
+                        "질문이 있으시면 채널에서 `@wiki <질문>`으로 검색하실 수 있습니다."
+                    )
+                }
+                DmInputType.NORMAL -> if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
+                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+                }
             }
             ctx.ack()
         }

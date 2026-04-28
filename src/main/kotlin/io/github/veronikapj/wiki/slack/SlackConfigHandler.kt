@@ -13,6 +13,8 @@ class SlackConfigHandler(
     private val configPath: String = ".wikiq/config.yml",
     private val persistOnChange: Boolean = false,
     private val onReindex: (suspend () -> Int)? = null,
+    private val onIngest: (suspend (String) -> String)? = null,
+    private val onLint: (suspend () -> String)? = null,
     private val projectMemory: ProjectMemory? = null,
 ) {
     private var lastIndexTime: LocalDateTime? = null
@@ -25,6 +27,8 @@ class SlackConfigHandler(
         return when {
             parts.size >= 2 && parts[1] == "help" -> helpMessage()
             parts.size >= 2 && parts[1] == "memory" -> handleMemory(parts.drop(2))
+            parts.size >= 3 && parts[1] == "ingest" -> handleIngest(parts.drop(2).joinToString(" "))
+            parts.size >= 2 && parts[1] == "lint" -> handleLint()
             parts.size >= 3 && parts[1] == "config" && parts[2] == "space" -> {
                 val arg = parts.getOrNull(3)
                 if (arg == "show" || arg == null) showSpaces()
@@ -74,6 +78,19 @@ class SlackConfigHandler(
         else "현재 검색 스페이스: ${spaces.joinToString(", ")}"
     }
 
+    private fun handleIngest(url: String): String {
+        val fn = onIngest ?: return "Knowledge Base가 비활성화 상태입니다."
+        if (url.isBlank() || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+            return "사용법: /wiki ingest <URL>\n예: /wiki ingest https://example.com/doc"
+        }
+        return runBlocking { fn(url) }
+    }
+
+    private fun handleLint(): String {
+        val fn = onLint ?: return "Knowledge Base가 비활성화 상태입니다."
+        return runBlocking { fn() }
+    }
+
     private fun handleMemory(args: List<String>): String {
         val mem = projectMemory ?: return "프로젝트 메모리가 비활성화 상태입니다."
         return when (args.firstOrNull()) {
@@ -104,6 +121,10 @@ class SlackConfigHandler(
         • `/wiki config space show` — 현재 설정 확인
         • `/wiki reindex` — RAG 재인덱싱
         • `/wiki reindex status` — 마지막 인덱싱 정보
+
+        :books: *지식베이스*
+        • `/wiki ingest <URL>` — URL 내용을 지식베이스에 저장
+        • `/wiki lint` — 지식베이스 품질 검사 (모순·고아 감지)
 
         :brain: *프로젝트 메모리*
         • `/wiki memory add <내용>` — 프로젝트 정보 저장 (도메인 용어, 팀 정보 등)

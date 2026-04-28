@@ -20,11 +20,13 @@ import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
+import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.context.Turn
 import org.slf4j.LoggerFactory
 
 class OrchestratorAgent(
+    private val knowledgeTool: KnowledgeTool? = null,
     private val confluenceTool: ConfluenceTool? = null,
     private val githubWikiTool: GitHubWikiTool? = null,
     private val vectorSearchTool: VectorSearchTool? = null,
@@ -34,7 +36,7 @@ class OrchestratorAgent(
     private val projectMemory: ProjectMemory? = null,
 ) {
     init {
-        require(confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
+        require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
             "At least one tool must be enabled"
         }
     }
@@ -64,6 +66,7 @@ class OrchestratorAgent(
         }
 
         val availableTools = listOfNotNull(
+            knowledgeTool?.let { "knowledgeSearch" },
             confluenceTool?.let { "confluenceSearch" },
             githubWikiTool?.let { "githubWikiSearch" },
             vectorSearchTool?.let { "vectorSearch" },
@@ -186,6 +189,7 @@ class OrchestratorAgent(
         // Single call — synonyms are now handled inside CQL OR clause
         val result = runCatching {
             when (toolName) {
+                "knowledgeSearch" -> knowledgeTool?.knowledgeSearch(query)
                 "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
                 "confluenceSearch" -> confluenceTool?.confluenceSearch(query)
                 "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
@@ -201,6 +205,7 @@ class OrchestratorAgent(
         val results = availableTools.mapNotNull { tool ->
             runCatching {
                 when (tool) {
+                    "knowledgeSearch" -> knowledgeTool?.knowledgeSearch(question)
                     "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
                     "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
                     "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
@@ -261,6 +266,7 @@ class OrchestratorAgent(
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
+                if (knowledgeTool != null) "로컬 지식베이스" else null,
                 if (confluenceTool != null) "Confluence 위키" else null,
                 if (githubWikiTool != null) "GitHub Wiki" else null,
                 if (vectorSearchTool != null) "벡터 검색(RAG)" else null,
@@ -268,6 +274,9 @@ class OrchestratorAgent(
             appendLine("당신은 ${sources.joinToString("와 ")} 검색 전문가입니다.")
             appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
             appendLine("검색 없이 직접 답변하지 마세요.")
+            if (knowledgeTool != null) {
+                appendLine("먼저 knowledgeSearch로 로컬 지식베이스를 검색하세요. 결과가 부족하면 다른 도구를 사용하세요.")
+            }
             if (confluenceTool != null && vectorSearchTool != null) {
                 appendLine("confluenceSearch로 먼저 검색하고, 결과가 부족하면 vectorSearch도 사용하세요.")
             }
@@ -303,6 +312,7 @@ class OrchestratorAgent(
                 maxAgentIterations = 10,
             ),
             toolRegistry = ToolRegistry {
+                if (knowledgeTool != null) tool(knowledgeTool::knowledgeSearch)
                 if (confluenceTool != null) tool(confluenceTool::confluenceSearch)
                 if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
                 if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
