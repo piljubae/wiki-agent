@@ -45,6 +45,20 @@ class ConfluenceTool(private val searchAgent: ConfluenceSearchAgent) {
 @LLMDescription("검색 함수")  // 너무 짧아서 LLM이 언제 써야 할지 판단 못 함
 ```
 
+## Description 품질이 Tool 선택에 미치는 영향
+
+description이 모호하거나 여러 Tool 간 설명이 겹치면 LLM이 잘못된 Tool을 선택하거나 아무것도 선택하지 않을 수 있습니다.
+
+### 연구 및 공식 문서 근거
+
+| 출처 | 핵심 내용 |
+|------|----------|
+| [Learning to Rewrite Tool Descriptions for Reliable LLM-Agent Tool Use](https://arxiv.org/abs/2602.20426) (2026) | tool description이 agent 성능의 주요 병목. 100개 이상 Tool 환경에서 description 품질이 선택 정확도에 직접 영향 |
+| [MetaTool Benchmark](https://arxiv.org/abs/2310.03128) (2023) | LLM이 Tool을 사용할지, 어떤 Tool을 쓸지 결정하는 벤치마크. description 명확도와 선택 정확도 간 직접적 상관관계 측정 |
+| [ToolLLM: Facilitating LLMs to Master 16000+ Real-world APIs](https://arxiv.org/abs/2307.16789) (2023) | 16,464개 API 대상 실험. 잘 정의된 description일수록 pass rate 향상 |
+| [Anthropic Tool Use 공식 문서](https://docs.anthropic.com/en/docs/tool-use) | tool selection이 description 기반으로 작동함을 명시 |
+| [OpenAI Function Calling 가이드](https://platform.openai.com/docs/guides/function-calling) | "overlapping or vague descriptions → wrong tool or no tool called" 명시 |
+
 ## runBlocking 사용 이유
 
 Tool 메서드는 일반 함수(`fun`)여야 하지만, 내부 구현은 `suspend` 함수를 호출합니다.  

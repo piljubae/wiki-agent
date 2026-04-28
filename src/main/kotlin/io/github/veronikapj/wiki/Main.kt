@@ -145,7 +145,8 @@ fun main() {
         githubWikiTool = githubWikiTool,
         vectorSearchTool = vectorSearchTool,
         executor = executor,
-        useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE,
+        useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE ||
+                config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
         projectMemory = projectMemory,
     )
@@ -159,6 +160,7 @@ fun main() {
             persistOnChange = true,
             onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
             onIngest = { url -> ingestAgent.ingestUrl(url) },
+            onIngestWiki = { ingestAgent.ingestLocalWikiDocs() },
             onLint = { lintAgent.lint() },
             projectMemory = projectMemory,
         )

@@ -14,6 +14,7 @@ class SlackConfigHandler(
     private val persistOnChange: Boolean = false,
     private val onReindex: (suspend () -> Int)? = null,
     private val onIngest: (suspend (String) -> String)? = null,
+    private val onIngestWiki: (() -> String)? = null,
     private val onLint: (suspend () -> String)? = null,
     private val projectMemory: ProjectMemory? = null,
 ) {
@@ -27,6 +28,7 @@ class SlackConfigHandler(
         return when {
             parts.size >= 2 && parts[1] == "help" -> helpMessage()
             parts.size >= 2 && parts[1] == "memory" -> handleMemory(parts.drop(2))
+            parts.size >= 2 && parts[1] == "ingest-wiki" -> onIngestWiki?.invoke() ?: "Knowledge Base가 비활성화 상태입니다."
             parts.size >= 3 && parts[1] == "ingest" -> handleIngest(parts.drop(2).joinToString(" "))
             parts.size >= 2 && parts[1] == "lint" -> handleLint()
             parts.size >= 3 && parts[1] == "config" && parts[2] == "space" -> {
@@ -124,6 +126,7 @@ class SlackConfigHandler(
 
         :books: *지식베이스*
         • `/wiki ingest <URL>` — URL 내용을 지식베이스에 저장
+        • `/wiki ingest-wiki` — docs/wiki/ 문서 전체를 지식베이스에 로드
         • `/wiki lint` — 지식베이스 품질 검사 (모순·고아 감지)
 
         :brain: *프로젝트 메모리*

@@ -51,6 +51,26 @@ class IngestAgent(
         return compileAndSave(text, null)
     }
 
+    fun ingestLocalWikiDocs(docsDir: String = "docs/wiki"): String {
+        val dir = java.io.File(docsDir)
+        if (!dir.exists() || !dir.isDirectory) return "디렉터리를 찾을 수 없습니다: $docsDir"
+        val files = dir.listFiles { f -> f.isFile && f.extension == "md" } ?: return "파일 없음"
+        var count = 0
+        files.forEach { file ->
+            val targetPath = "concepts/wiki-${file.nameWithoutExtension}.md"
+            if (!store.pageExists(targetPath)) {
+                store.savePage(targetPath, file.readText())
+                val summary = file.readLines().firstOrNull { it.startsWith("#") }
+                    ?.removePrefix("#")?.trim() ?: file.nameWithoutExtension
+                store.updateIndex(targetPath, summary)
+                count++
+            }
+        }
+        store.appendLog("ingest-local-wiki", "$count 페이지 저장 (총 ${files.size}개 중 신규)")
+        log.info("ingestLocalWikiDocs: {}/{} pages saved from {}", count, files.size, docsDir)
+        return ":white_check_mark: wiki 문서 ${count}개 로드 완료 (총 ${files.size}개, 기존 등록 제외)"
+    }
+
     private suspend fun compileAndSave(text: String, sourcePath: String?): String {
         val existingIndex = store.loadIndex() ?: ""
         val prompt = buildCompilePrompt(text, existingIndex)
