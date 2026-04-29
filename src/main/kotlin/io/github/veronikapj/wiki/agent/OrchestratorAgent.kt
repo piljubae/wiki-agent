@@ -115,11 +115,24 @@ class OrchestratorAgent(
 
         // 2단계: tool 실행 (파싱 실패 시 기본 도구로 원본 질문 검색)
         val toolName = Regex("TOOL:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
-        if (toolName != null) listener?.onSearchStarted(toolName)
-        var searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
-        if (toolName != null) listener?.onSearchCompleted(toolName)
+        val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
+        val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
 
-        // RAG fallback은 ConfluenceSearchAgent 내부에서 병렬 처리됨
+        val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
+        listener?.onSearchStarted(searchLabel)
+
+        val wikiTool = githubWikiTool
+        var searchResult = if (toolName == "githubWikiSearch" && wikiTool != null) {
+            runCatching { wikiTool.githubWikiSearch(query) }.getOrNull()
+                ?.takeIf { !it.contains("찾을 수 없습니다") }
+        } else {
+            runCatching { executeParallel(query) }.getOrNull()
+        }
+
+        listener?.onSearchCompleted(searchLabel)
+
+        log.info("Search query: {} synonyms: {}", query, synonyms)
 
         // Final fallback: 모든 도구로 원본 질문 검색
         if (searchResult == null) {
