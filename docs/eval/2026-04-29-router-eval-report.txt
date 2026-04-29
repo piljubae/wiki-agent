@@ -1,0 +1,23 @@
+=== Router Eval Report (2026-04-29) ===
+Scope: SYNONYM_GAP, ABBREVIATION cases only
+
+=== Search Quality Eval Report (2026-04-29) ===
+
+[Summary]
+Total cases: 12 | Recall@5: 83.3% | Recall@1: 83.3% | MRR: 0.83
+Zero-hit: 0.0% | Honest-zero: 0.0%
+Avg latency: 15,812ms | Avg API calls: 1.0/query
+
+[By Category]
+Category         | Count |   R@5 |   R@1 |  MRR | Avg ms
+SYNONYM_GAP      |     9 | 88.9% | 88.9% | 0.89 |  15506
+ABBREVIATION     |     3 | 66.7% | 66.7% | 0.67 |  16730
+
+[By Search Stage (hit source)]
+Stage            | Count | %
+TITLE_MATCH      |    10 | 100.0%
+
+[Failed Cases]
+ID       | Question              | Expected             | Got (top 3)
+GC-003   | PR 리뷰 규칙              | Pull Request 리뷰 가이드  | 컬리버드 PR 자동 코드 리뷰 도입, [2026-04-13] 코드 리뷰 스, 당일 품절 예상 코드 리뷰 및 정리
+GC-CTX-008| 풀필먼트 앱 신규 멤버 입사 준비 자… | 풀필먼트앱 온보딩            | 홈전시광고개발팀 OnBoarding , ED팀 업무 가이드 (신규 입사 OJ, Appsflyer onboarding

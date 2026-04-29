@@ -1217,5 +1217,85 @@
             "쇼케이스 운영 가이드 (26.04 업데이트)"
         ],
         "sourcePageId": "4211640530"
+    },
+    {
+        "id": "GC-CTX-001",
+        "question": "안드로이드 tech talk 위키 찾아줘",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["Tech Talk Talk"],
+        "keyPoints": ["테크톡", "기술 공유"],
+        "sourcePageId": "5137334846"
+    },
+    {
+        "id": "GC-CTX-002",
+        "question": "모바일 테크톡 발표 자료 어디 있어?",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["Tech Talk Talk"],
+        "keyPoints": ["tech talk", "기술 발표"],
+        "sourcePageId": "5137334846"
+    },
+    {
+        "id": "GC-CTX-003",
+        "question": "iOS 스몰 테크톡 주제 목록 보여줘",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["Small Tech Talk"],
+        "keyPoints": ["스몰 테크톡", "기술 토론"],
+        "sourcePageId": "5142577345"
+    },
+    {
+        "id": "GC-CTX-004",
+        "question": "안드로이드팀 아키텍처 TF 주간 공유 자료",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["Architecture TF Weekly"],
+        "keyPoints": ["아키텍처", "주간 회의"],
+        "sourcePageId": "5856269108"
+    },
+    {
+        "id": "GC-CTX-005",
+        "question": "클라이언트 아키 TF 4월 24일 미팅 내용",
+        "category": "ABBREVIATION",
+        "expectedDocTitles": ["Architecture TF Weekly @ 2026/04/24"],
+        "keyPoints": ["아키텍처 TF", "공유"],
+        "sourcePageId": "5856269108"
+    },
+    {
+        "id": "GC-CTX-006",
+        "question": "클라이언트 아키 TF 4월 10일 내용",
+        "category": "ABBREVIATION",
+        "expectedDocTitles": ["Architecture TF Weekly @ 2026/04/10"],
+        "keyPoints": ["아키텍처 TF"],
+        "sourcePageId": "5829695942"
+    },
+    {
+        "id": "GC-CTX-007",
+        "question": "물류팀 신규 입사자 온보딩 가이드 어디 있어?",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["신규 입사자 온보딩 가이드"],
+        "keyPoints": ["물류", "온보딩", "신규 입사자"],
+        "sourcePageId": "5686886664"
+    },
+    {
+        "id": "GC-CTX-008",
+        "question": "풀필먼트 앱 신규 멤버 입사 준비 자료",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["풀필먼트앱 온보딩"],
+        "keyPoints": ["풀필먼트", "온보딩"],
+        "sourcePageId": "5509840947"
+    },
+    {
+        "id": "GC-CTX-009",
+        "question": "안드로이드 홈 GrowthBook 실험 연동 어떻게 해?",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["홈 패널 GrowthBook 실험 연동 설계"],
+        "keyPoints": ["GrowthBook", "실험", "연동"],
+        "sourcePageId": "5852662523"
+    },
+    {
+        "id": "GC-CTX-010",
+        "question": "라이더 앱 PR 자동 코드 리뷰 설정 방법",
+        "category": "SYNONYM_GAP",
+        "expectedDocTitles": ["컬리버드 PR 자동 코드 리뷰 도입"],
+        "keyPoints": ["자동 코드 리뷰", "PR"],
+        "sourcePageId": "5859905629"
     }
 ]

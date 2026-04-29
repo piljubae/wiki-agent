@@ -93,15 +93,15 @@ class OrchestratorAgent(
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
             if (githubWikiTool != null) {
-                appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
+                appendLine("출력 형식 (필수 3줄 + 선택 2줄, 다른 텍스트 금지):")
                 appendLine("TOOL: githubWikiSearch 또는 confluenceSearch")
-                appendLine("QUERY: <핵심 검색어>")
-                appendLine("SYNONYMS: <확장 검색어 3-4개, 쉼표 구분>")
             } else {
-                appendLine("출력 형식 (두 줄만 출력, 다른 텍스트 금지):")
-                appendLine("QUERY: <핵심 검색어>")
-                appendLine("SYNONYMS: <확장 검색어 3-4개, 쉼표 구분>")
+                appendLine("출력 형식 (필수 2줄 + 선택 2줄, 다른 텍스트 금지):")
             }
+            appendLine("QUERY: <핵심 검색어>")
+            appendLine("SYNONYMS: <확장 검색어 3-6개, 쉼표 구분>")
+            appendLine("DATE_AFTER: <YYYY-MM-DD>  ← 최신 문서 의도일 때만 출력")
+            appendLine("DATE_BEFORE: <YYYY-MM-DD>  ← 범위 종료일이 있을 때만 출력")
             appendLine()
             appendLine("규칙:")
             if (githubWikiTool != null) {
@@ -116,11 +116,18 @@ class OrchestratorAgent(
             appendLine("- 예: \"안드로이드 tech talk 위키 찾아줘\" → QUERY: tech talk")
             appendLine("- 예: \"iOS 배포 프로세스 어떻게 돼?\" → QUERY: 배포 프로세스")
             appendLine()
-            appendLine("SYNONYMS 작성 원칙 — 아래 유형을 조합해 3-4개 생성:")
+            appendLine("SYNONYMS 작성 원칙 — 아래 유형을 조합해 3-6개 생성 (각 항목이 CQL OR 절로 검색됨):")
             appendLine("1. 수식어 포함 버전: 플랫폼·컨텍스트 붙인 원래 표현 (예: 안드로이드 tech talk)")
             appendLine("2. 단축/핵심 버전: 수식어 뺀 핵심 단어 (예: Tech Talk Talk, 테크톡)")
             appendLine("3. 의미 동의어: 같은 개념의 다른 표현 (예: 기술 공유, 기술 세션)")
-            appendLine("4. 영한 변환: 영어면 한국어, 한국어면 영어 (예: tech talk → 테크톡)")
+            appendLine("4. 영문 변환: 한국어 용어를 영어로도 포함 — 문서 제목이 영문일 수 있음 (예: 아키 TF → Architecture TF Weekly, 온보딩 → Onboarding Guide)")
+            appendLine("5. 약어 확장: 약어가 있으면 전체 표현도 포함 (예: PR → Pull Request, TF → 태스크포스)")
+            appendLine("6. 날짜 포맷 변환: 날짜가 있으면 여러 포맷으로 추가 — 각 포맷이 제목에 OR 매칭됨 (예: 4월 24일 → 2026/04/24, 04/24, 4/24)")
+            appendLine()
+            appendLine("DATE_AFTER/DATE_BEFORE 사용 규칙:")
+            appendLine("- 특정 날짜 문서 (예: \"4월 24일 미팅 내용\"): DATE_* 미사용, 대신 날짜 포맷을 SYNONYMS에 포함")
+            appendLine("- 최신/최근 의도 (예: \"최근 변경된\", \"지난주 업데이트된\"): DATE_AFTER 사용")
+            appendLine("- 기간 범위 (예: \"3월~4월 사이\"): DATE_AFTER + DATE_BEFORE 모두 사용")
             appendLine()
             appendLine("질문: $question")
         }
@@ -136,6 +143,8 @@ class OrchestratorAgent(
         val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
         val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
             ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+        val dateAfter = Regex("DATE_AFTER:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
+        val dateBefore = Regex("DATE_BEFORE:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
 
         val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
         listener?.onSearchStarted(searchLabel)
@@ -145,12 +154,12 @@ class OrchestratorAgent(
             runCatching { wikiTool.githubWikiSearch(query) }.getOrNull()
                 ?.takeIf { !it.contains("찾을 수 없습니다") }
         } else {
-            runCatching { executeParallel(query, synonyms) }.getOrNull()
+            runCatching { executeParallel(query, synonyms, dateAfter, dateBefore) }.getOrNull()
         }
 
         listener?.onSearchCompleted(searchLabel)
 
-        log.info("Search query: {} synonyms: {}", query, synonyms)
+        log.info("Search query: {} synonyms: {} dateAfter: {} dateBefore: {}", query, synonyms, dateAfter, dateBefore)
 
         // Final fallback: 모든 도구로 원본 질문 검색
         if (searchResult == null) {
@@ -207,7 +216,10 @@ class OrchestratorAgent(
         return answer
     }
 
-    internal suspend fun executeParallel(query: String, synonyms: List<String> = emptyList()): String? {
+    internal suspend fun executeParallel(
+        query: String, synonyms: List<String> = emptyList(),
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): String? {
         val (knowledgeResult, confluenceResult) = coroutineScope {
             val kDeferred = async {
                 if (knowledgeTool != null)
@@ -216,7 +228,7 @@ class OrchestratorAgent(
             }
             val cDeferred = async {
                 if (confluenceTool != null)
-                    runCatching { confluenceTool.confluenceSearchSuspend(query, synonyms) }.getOrNull()
+                    runCatching { confluenceTool.confluenceSearchSuspend(query, synonyms, dateAfter, dateBefore) }.getOrNull()
                 else null
             }
             kDeferred.await() to cDeferred.await()
