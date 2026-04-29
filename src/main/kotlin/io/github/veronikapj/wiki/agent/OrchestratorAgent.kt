@@ -20,6 +20,8 @@ import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.context.Turn
@@ -198,6 +200,36 @@ class OrchestratorAgent(
         }.getOrNull()
 
         return result?.takeIf { !it.contains("찾을 수 없습니다") }
+    }
+
+    internal suspend fun executeParallel(query: String, synonyms: List<String>): String? {
+        val (knowledgeResult, confluenceResult) = coroutineScope {
+            val kDeferred = async {
+                if (knowledgeTool != null)
+                    runCatching { knowledgeTool.knowledgeSearch(query) }.getOrNull()
+                else null
+            }
+            val cDeferred = async {
+                if (confluenceTool != null)
+                    runCatching { confluenceTool.confluenceSearchSuspend(query) }.getOrNull()
+                else null
+            }
+            kDeferred.await() to cDeferred.await()
+        }
+
+        val kValid = knowledgeResult?.takeIf { result ->
+            !result.contains("찾을 수 없습니다") && !result.contains("비어있습니다")
+        }
+        val cValid = confluenceResult?.takeIf { result ->
+            !result.contains("찾을 수 없습니다")
+        }
+
+        return when {
+            kValid != null && cValid != null -> "[지식베이스]\n$kValid\n\n---\n\n[Confluence]\n$cValid"
+            kValid != null -> kValid
+            cValid != null -> cValid
+            else -> null
+        }
     }
 
     private fun executeDefault(question: String, availableTools: List<String>): String? {
