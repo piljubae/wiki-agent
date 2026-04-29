@@ -20,6 +20,8 @@ import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.context.Turn
@@ -91,16 +93,24 @@ class OrchestratorAgent(
             appendLine("SYNONYMS는 프로젝트 정보의 도메인 맥락에 맞는 동의어를 생성하세요.")
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
-            appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
-            appendLine("TOOL: <도구이름>")
-            appendLine("QUERY: <핵심 검색어>")
-            appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
+            if (githubWikiTool != null) {
+                appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
+                appendLine("TOOL: githubWikiSearch (코드/API/기술구현 질문) 또는 confluenceSearch (그 외)")
+                appendLine("QUERY: <핵심 검색어>")
+                appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
+            } else {
+                appendLine("출력 형식 (두 줄만 출력, 다른 텍스트 금지):")
+                appendLine("QUERY: <핵심 검색어>")
+                appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
+            }
             appendLine()
             appendLine("규칙:")
-            appendLine("- 어떤 질문이든 반드시 검색해야 합니다.")
+            if (githubWikiTool != null) {
+                appendLine("- githubWikiSearch: 코드, API, 기술 구현 질문에만 선택하세요.")
+                appendLine("- confluenceSearch: 프로세스, 가이드, 팀 문서 질문 시 선택 (지식베이스+Confluence 병렬 검색).")
+            }
             appendLine("- QUERY는 핵심 키워드만 간결하게.")
             appendLine("- SYNONYMS에 같은 의미의 다른 표현을 포함하세요. 예: 신입 온보딩 → 신규 입사자, 입사 가이드, 온보딩 체크리스트")
-            appendLine("- TOOL, QUERY, SYNONYMS 세 줄만 출력하세요.")
             appendLine()
             appendLine("질문: $question")
         }
@@ -113,11 +123,28 @@ class OrchestratorAgent(
 
         // 2단계: tool 실행 (파싱 실패 시 기본 도구로 원본 질문 검색)
         val toolName = Regex("TOOL:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
-        if (toolName != null) listener?.onSearchStarted(toolName)
-        var searchResult = runCatching { executeFromDecision(decision) }.getOrNull()
-        if (toolName != null) listener?.onSearchCompleted(toolName)
+        val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
+        // SYNONYMS는 현재 executeParallel에 직접 전달되지 않음.
+        // ConfluenceSearchAgent 내부 CQL OR절에서 동의어를 자체 처리하며,
+        // KnowledgeTool은 키워드 기반 필터라 동의어 확장이 별도로 불필요.
+        // 로깅 목적으로 파싱만 수행.
+        val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
 
-        // RAG fallback은 ConfluenceSearchAgent 내부에서 병렬 처리됨
+        val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
+        listener?.onSearchStarted(searchLabel)
+
+        val wikiTool = githubWikiTool
+        var searchResult = if (toolName == "githubWikiSearch" && wikiTool != null) {
+            runCatching { wikiTool.githubWikiSearch(query) }.getOrNull()
+                ?.takeIf { !it.contains("찾을 수 없습니다") }
+        } else {
+            runCatching { executeParallel(query) }.getOrNull()
+        }
+
+        listener?.onSearchCompleted(searchLabel)
+
+        log.info("Search query: {} synonyms: {}", query, synonyms)
 
         // Final fallback: 모든 도구로 원본 질문 검색
         if (searchResult == null) {
@@ -174,30 +201,34 @@ class OrchestratorAgent(
         return answer
     }
 
-    private fun executeFromDecision(decision: String): String? {
-        val toolMatch = Regex("TOOL:\\s*(\\S+)").find(decision) ?: return null
-        val queryMatch = Regex("QUERY:\\s*(.+)").find(decision) ?: return null
-        val toolName = toolMatch.groupValues[1].trim()
-        val query = queryMatch.groupValues[1].trim()
-        val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
-            ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-
-        if (query.isBlank()) return null
-
-        log.info("Executing tool: {} query: {} synonyms: {}", toolName, query, synonyms)
-
-        // Single call — synonyms are now handled inside CQL OR clause
-        val result = runCatching {
-            when (toolName) {
-                "knowledgeSearch" -> knowledgeTool?.knowledgeSearch(query)
-                "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(query)
-                "confluenceSearch" -> confluenceTool?.confluenceSearch(query)
-                "vectorSearch" -> vectorSearchTool?.vectorSearch(query)
-                else -> null
+    internal suspend fun executeParallel(query: String): String? {
+        val (knowledgeResult, confluenceResult) = coroutineScope {
+            val kDeferred = async {
+                if (knowledgeTool != null)
+                    runCatching { knowledgeTool.knowledgeSearch(query) }.getOrNull()
+                else null
             }
-        }.getOrNull()
+            val cDeferred = async {
+                if (confluenceTool != null)
+                    runCatching { confluenceTool.confluenceSearchSuspend(query) }.getOrNull()
+                else null
+            }
+            kDeferred.await() to cDeferred.await()
+        }
 
-        return result?.takeIf { !it.contains("찾을 수 없습니다") }
+        val kValid = knowledgeResult?.takeIf { result ->
+            !result.contains("찾을 수 없습니다") && !result.contains("비어있습니다")
+        }
+        val cValid = confluenceResult?.takeIf { result ->
+            !result.contains("찾을 수 없습니다")
+        }
+
+        return when {
+            kValid != null && cValid != null -> "[지식베이스]\n$kValid\n\n---\n\n[Confluence]\n$cValid"
+            kValid != null -> kValid
+            cValid != null -> cValid
+            else -> null
+        }
     }
 
     private fun executeDefault(question: String, availableTools: List<String>): String? {

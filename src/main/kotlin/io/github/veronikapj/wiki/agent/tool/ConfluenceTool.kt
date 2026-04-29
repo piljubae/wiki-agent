@@ -19,4 +19,9 @@ class ConfluenceTool(
         tracker?.record("Confluence")
         searchAgent.search(query)
     }
+
+    suspend fun confluenceSearchSuspend(query: String): String {
+        tracker?.record("Confluence")
+        return searchAgent.search(query)
+    }
 }
