@@ -92,13 +92,13 @@ class ConfluenceClientTest {
     }
 
     @Test
-    fun `buildTextCqlSearchUrl includes short keywords like UI and QA`() {
-        // Single-char keyword "A" should survive the new filter (length >= 1)
+    fun `buildTextCqlSearchUrl uses full phrase including short keywords like UI and QA`() {
+        // Full phrase search — short keywords are included as part of the phrase
         val url = client.buildTextCqlSearchUrl("A UI QA 가이드", listOf("DEV"), limit = 5)
         val decoded = java.net.URLDecoder.decode(url, "UTF-8")
-        assertTrue(decoded.contains("text ~ \"A\""), "Single-char keyword 'A' should not be filtered out")
-        assertTrue(decoded.contains("UI"), "Short keyword 'UI' should not be filtered out")
-        assertTrue(decoded.contains("QA"), "Short keyword 'QA' should not be filtered out")
+        assertTrue(decoded.contains("text ~ \"A UI QA 가이드\""), "Full phrase should be used as a single text clause")
+        assertTrue(decoded.contains("UI"), "Short keyword 'UI' should appear in the phrase")
+        assertTrue(decoded.contains("QA"), "Short keyword 'QA' should appear in the phrase")
     }
 
     @Test

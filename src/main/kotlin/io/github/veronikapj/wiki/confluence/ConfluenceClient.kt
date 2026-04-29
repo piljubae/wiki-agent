@@ -58,15 +58,9 @@ class ConfluenceClient(
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
         val safeQuery = escapeCql(query)
-        val words = query.trim().split(Regex("\\s+"))
-            .filter { it.length >= 1 && it !in STOPWORDS }
 
-        val textClauses = mutableListOf<String>()
-        if (words.size <= 1) {
-            textClauses.add("text ~ \"$safeQuery\"")
-        } else {
-            words.forEach { w -> textClauses.add("text ~ \"${escapeCql(w)}\"") }
-        }
+        // 전체 구문을 첫 번째 절로 — 단어 분리 OR보다 정밀
+        val textClauses = mutableListOf("text ~ \"$safeQuery\"")
         val remainingSlots = (MAX_TEXT_CLAUSES - textClauses.size).coerceAtLeast(0)
         synonyms.take(remainingSlots).forEach { s ->
             textClauses.add("text ~ \"${escapeCql(s)}\"")

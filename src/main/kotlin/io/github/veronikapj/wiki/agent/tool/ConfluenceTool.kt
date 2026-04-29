@@ -20,8 +20,8 @@ class ConfluenceTool(
         searchAgent.search(query)
     }
 
-    suspend fun confluenceSearchSuspend(query: String): String {
+    suspend fun confluenceSearchSuspend(query: String, synonyms: List<String> = emptyList()): String {
         tracker?.record("Confluence")
-        return searchAgent.search(query)
+        return searchAgent.search(query, synonyms)
     }
 }
