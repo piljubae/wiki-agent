@@ -98,16 +98,16 @@ class OrchestratorAgent(
                 appendLine("TOOL: githubWikiSearch (코드/API/기술구현 질문) 또는 confluenceSearch (그 외)")
                 appendLine("QUERY: <핵심 검색어>")
                 appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
-                appendLine()
-                appendLine("규칙:")
-                appendLine("- githubWikiSearch: 코드, API, 기술 구현 질문에만 선택하세요.")
-                appendLine("- confluenceSearch: 프로세스, 가이드, 팀 문서 질문 시 선택 (지식베이스+Confluence 병렬 검색).")
             } else {
                 appendLine("출력 형식 (두 줄만 출력, 다른 텍스트 금지):")
                 appendLine("QUERY: <핵심 검색어>")
                 appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
-                appendLine()
-                appendLine("규칙:")
+            }
+            appendLine()
+            appendLine("규칙:")
+            if (githubWikiTool != null) {
+                appendLine("- githubWikiSearch: 코드, API, 기술 구현 질문에만 선택하세요.")
+                appendLine("- confluenceSearch: 프로세스, 가이드, 팀 문서 질문 시 선택 (지식베이스+Confluence 병렬 검색).")
             }
             appendLine("- QUERY는 핵심 키워드만 간결하게.")
             appendLine("- SYNONYMS에 같은 의미의 다른 표현을 포함하세요. 예: 신입 온보딩 → 신규 입사자, 입사 가이드, 온보딩 체크리스트")
