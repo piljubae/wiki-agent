@@ -27,19 +27,20 @@
 
 **`executeParallel()` 신규 함수 추가**
 ```
-suspend fun executeParallel(query, synonyms): String?
-  - knowledgeTool.knowledgeSearch(query) + confluenceTool.confluenceSearch(query) 병렬 실행
+suspend fun executeParallel(query: String): String?
+  - knowledgeTool.knowledgeSearch(query) + confluenceTool.confluenceSearchSuspend(query) 병렬 실행
   - 둘 다 결과 있으면: "[지식베이스]\n...\n\n---\n\n[Confluence]\n..." 합산
   - 한 쪽 실패 시: 나머지 결과만 반환
   - 둘 다 "찾을 수 없습니다" → null 반환 → 기존 executeDefault() fallback
+  - synonyms 파라미터 없음 (ConfluenceSearchAgent CQL 내부에서 처리)
 ```
 
 **`answerWithManualLoop()` 호출 순서 변경**
 ```
-기존: executeFromDecision(decision)
+기존: executeFromDecision(decision) 단독 호출
 신규: 
-  1. githubWikiSearch 선택 시 → executeFromDecision() 유지
-  2. 그 외 → executeParallel(query, synonyms)
+  1. githubWikiSearch 선택 시 → githubWikiTool.githubWikiSearch(query) 단독 실행
+  2. 그 외 → executeParallel(query) (지식베이스 + Confluence 병렬)
 ```
 
 ### 2. `ConfluenceTool.kt`

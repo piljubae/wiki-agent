@@ -124,6 +124,10 @@ class OrchestratorAgent(
         // 2단계: tool 실행 (파싱 실패 시 기본 도구로 원본 질문 검색)
         val toolName = Regex("TOOL:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
         val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
+        // SYNONYMS는 현재 executeParallel에 직접 전달되지 않음.
+        // ConfluenceSearchAgent 내부 CQL OR절에서 동의어를 자체 처리하며,
+        // KnowledgeTool은 키워드 기반 필터라 동의어 확장이 별도로 불필요.
+        // 로깅 목적으로 파싱만 수행.
         val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
             ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
 
