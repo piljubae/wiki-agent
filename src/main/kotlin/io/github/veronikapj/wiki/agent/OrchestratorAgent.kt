@@ -89,30 +89,38 @@ class OrchestratorAgent(
                 contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(150)}...") }
                 appendLine()
             }
-            appendLine("당신은 검색 라우터입니다. 사용자의 질문을 분석해 검색어를 생성합니다.")
-            appendLine("SYNONYMS는 프로젝트 정보의 도메인 맥락에 맞는 동의어를 생성하세요.")
+            appendLine("당신은 검색 라우터입니다. 사용자의 질문 의도를 파악해 Confluence 검색에 최적화된 검색어를 생성합니다.")
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
             if (githubWikiTool != null) {
                 appendLine("출력 형식 (이 세 줄만 출력, 다른 텍스트 금지):")
                 appendLine("TOOL: githubWikiSearch 또는 confluenceSearch")
                 appendLine("QUERY: <핵심 검색어>")
-                appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
+                appendLine("SYNONYMS: <확장 검색어 3-4개, 쉼표 구분>")
             } else {
                 appendLine("출력 형식 (두 줄만 출력, 다른 텍스트 금지):")
                 appendLine("QUERY: <핵심 검색어>")
-                appendLine("SYNONYMS: <동의어/유사 표현 2-3개, 쉼표 구분>")
+                appendLine("SYNONYMS: <확장 검색어 3-4개, 쉼표 구분>")
             }
             appendLine()
             appendLine("규칙:")
             if (githubWikiTool != null) {
                 appendLine("- githubWikiSearch: 소스코드·함수·클래스 사용법, PR·커밋 내용, 코드 구현 방법을 묻는 질문에만 선택.")
                 appendLine("- confluenceSearch: 그 외 모든 질문 (지식베이스+Confluence 병렬 검색).")
-                appendLine("  포함 예: 팀 가이드, 프로세스, 정책, 온보딩, 회의록, 세션/발표/테크톡, \"위키 찾아줘\", \"문서 있어?\"")
-                appendLine("  핵심 판단 원칙: 기술 주제를 다루더라도 내부 문서를 찾는 질문이면 confluenceSearch를 선택하세요.")
+                appendLine("  핵심 판단 원칙: 기술 주제라도 내부 문서를 찾는 질문이면 confluenceSearch.")
             }
-            appendLine("- QUERY는 핵심 키워드만 간결하게.")
-            appendLine("- SYNONYMS에 같은 의미의 다른 표현을 포함하세요. 예: 신입 온보딩 → 신규 입사자, 입사 가이드, 온보딩 체크리스트")
+            appendLine()
+            appendLine("QUERY 작성 원칙:")
+            appendLine("- Confluence 페이지 제목에 들어갈 법한 핵심 용어로 추출하세요.")
+            appendLine("- 플랫폼(안드로이드/iOS), 팀명 등 수식어보다 문서 이름 자체를 우선하세요.")
+            appendLine("- 예: \"안드로이드 tech talk 위키 찾아줘\" → QUERY: tech talk")
+            appendLine("- 예: \"iOS 배포 프로세스 어떻게 돼?\" → QUERY: 배포 프로세스")
+            appendLine()
+            appendLine("SYNONYMS 작성 원칙 — 아래 유형을 조합해 3-4개 생성:")
+            appendLine("1. 수식어 포함 버전: 플랫폼·컨텍스트 붙인 원래 표현 (예: 안드로이드 tech talk)")
+            appendLine("2. 단축/핵심 버전: 수식어 뺀 핵심 단어 (예: Tech Talk Talk, 테크톡)")
+            appendLine("3. 의미 동의어: 같은 개념의 다른 표현 (예: 기술 공유, 기술 세션)")
+            appendLine("4. 영한 변환: 영어면 한국어, 한국어면 영어 (예: tech talk → 테크톡)")
             appendLine()
             appendLine("질문: $question")
         }

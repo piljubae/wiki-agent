@@ -44,14 +44,9 @@ class ConfluenceClient(
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
         val safeQuery = escapeCql(query)
-        // 제목 매칭: 원본 쿼리 + sub-phrase(첫 단어 제거) + 동의어를 title에서 검색
-        // 예: "안드로이드 tech talk" → title ~ "안드로이드 tech talk" OR title ~ "tech talk"
+        // 제목 매칭: 원본 쿼리 + 동의어를 title에서 검색
         val titleClauses = mutableListOf("title ~ \"$safeQuery\"")
-        val words = query.trim().split(Regex("\\s+"))
-        if (words.size >= 3) {
-            titleClauses.add("title ~ \"${escapeCql(words.drop(1).joinToString(" "))}\"")
-        }
-        synonyms.take((MAX_TEXT_CLAUSES - titleClauses.size).coerceAtLeast(0)).forEach { s ->
+        synonyms.take(MAX_TEXT_CLAUSES - 1).forEach { s ->
             titleClauses.add("title ~ \"${escapeCql(s)}\"")
         }
         val cql = URLEncoder.encode("(${titleClauses.joinToString(" OR ")}) AND type = page$spaceCql", "UTF-8")
