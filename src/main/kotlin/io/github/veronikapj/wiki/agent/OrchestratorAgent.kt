@@ -202,7 +202,7 @@ class OrchestratorAgent(
         return result?.takeIf { !it.contains("찾을 수 없습니다") }
     }
 
-    internal suspend fun executeParallel(query: String, synonyms: List<String>): String? {
+    internal suspend fun executeParallel(query: String): String? {
         val (knowledgeResult, confluenceResult) = coroutineScope {
             val kDeferred = async {
                 if (knowledgeTool != null)

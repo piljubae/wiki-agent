@@ -90,7 +90,7 @@ class OrchestratorAgentTest {
             confluenceTool = confluenceTool,
             executor = LLMExecutorBuilder.build(ModelConfig()),
         )
-        val result = agent.executeParallel("배포", emptyList())
+        val result = agent.executeParallel("배포")
         assertContains(result!!, "[지식베이스]")
         assertContains(result, "[Confluence]")
         assertContains(result, "Confluence 결과")
@@ -110,7 +110,7 @@ class OrchestratorAgentTest {
             confluenceTool = confluenceTool,
             executor = LLMExecutorBuilder.build(ModelConfig()),
         )
-        val result = agent.executeParallel("배포", emptyList())
+        val result = agent.executeParallel("배포")
         assertContains(result!!, "배포 가이드")
         assert(!result.contains("[Confluence]")) { "Confluence 섹션이 포함되면 안 됩니다" }
     }
@@ -129,7 +129,7 @@ class OrchestratorAgentTest {
             confluenceTool = confluenceTool,
             executor = LLMExecutorBuilder.build(ModelConfig()),
         )
-        val result = agent.executeParallel("없는내용", emptyList())
+        val result = agent.executeParallel("없는내용")
         assertNull(result)
     }
 }
