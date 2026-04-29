@@ -39,24 +39,31 @@ class ConfluenceClient(
         }
     }
 
-    fun buildTitleCqlSearchUrl(query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5): String {
+    fun buildTitleCqlSearchUrl(
+        query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): String {
         val spaceCql = if (spaces.isNotEmpty())
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
+        val dateCql = buildDateCql(dateAfter, dateBefore)
         val safeQuery = escapeCql(query)
-        // 제목 매칭: 원본 쿼리 + 동의어를 title에서 검색
         val titleClauses = mutableListOf("title ~ \"$safeQuery\"")
         synonyms.take(MAX_TEXT_CLAUSES - 1).forEach { s ->
             titleClauses.add("title ~ \"${escapeCql(s)}\"")
         }
-        val cql = URLEncoder.encode("(${titleClauses.joinToString(" OR ")}) AND type = page$spaceCql", "UTF-8")
+        val cql = URLEncoder.encode("(${titleClauses.joinToString(" OR ")}) AND type = page$spaceCql$dateCql", "UTF-8")
         return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
     }
 
-    fun buildTextCqlSearchUrl(query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5): String {
+    fun buildTextCqlSearchUrl(
+        query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): String {
         val spaceCql = if (spaces.isNotEmpty())
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
+        val dateCql = buildDateCql(dateAfter, dateBefore)
         val safeQuery = escapeCql(query)
 
         // 전체 구문을 첫 번째 절로 — 단어 분리 OR보다 정밀
@@ -66,8 +73,13 @@ class ConfluenceClient(
             textClauses.add("text ~ \"${escapeCql(s)}\"")
         }
 
-        val cql = URLEncoder.encode("(${textClauses.joinToString(" OR ")}) AND type = page$spaceCql", "UTF-8")
+        val cql = URLEncoder.encode("(${textClauses.joinToString(" OR ")}) AND type = page$spaceCql$dateCql", "UTF-8")
         return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+    }
+
+    private fun buildDateCql(dateAfter: String?, dateBefore: String?): String = buildString {
+        if (dateAfter != null) append(" AND lastModified >= \"$dateAfter\"")
+        if (dateBefore != null) append(" AND lastModified <= \"$dateBefore\"")
     }
 
     private fun escapeCql(value: String): String =
@@ -135,8 +147,9 @@ class ConfluenceClient(
 
     suspend fun searchByTitle(
         query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
     ): List<ConfluencePageRef> {
-        val url = buildTitleCqlSearchUrl(query, spaces, synonyms, limit)
+        val url = buildTitleCqlSearchUrl(query, spaces, synonyms, limit, dateAfter, dateBefore)
         log.info("Confluence title search: {}", url)
         val response = httpClient.get(url) {
             header("Authorization", "Basic $token")
@@ -147,8 +160,9 @@ class ConfluenceClient(
 
     suspend fun searchByText(
         query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
     ): List<ConfluencePageRef> {
-        val url = buildTextCqlSearchUrl(query, spaces, synonyms, limit)
+        val url = buildTextCqlSearchUrl(query, spaces, synonyms, limit, dateAfter, dateBefore)
         log.info("Confluence text search: {}", url)
         val response = httpClient.get(url) {
             header("Authorization", "Basic $token")
@@ -157,13 +171,16 @@ class ConfluenceClient(
         return parseSearchResults(response, baseUrl)
     }
 
-    suspend fun searchPages(query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5): List<ConfluencePageRef> {
-        val titleResults = searchByTitle(query, spaces, synonyms, limit)
+    suspend fun searchPages(
+        query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): List<ConfluencePageRef> {
+        val titleResults = searchByTitle(query, spaces, synonyms, limit, dateAfter, dateBefore)
         log.info("Title search: {} results", titleResults.size)
         if (titleResults.size >= limit) return titleResults.take(limit)
 
         val remaining = limit - titleResults.size
-        val textResults = searchByText(query, spaces, synonyms, remaining)
+        val textResults = searchByText(query, spaces, synonyms, remaining, dateAfter, dateBefore)
         val titleIds = titleResults.map { it.id }.toSet()
         return titleResults + textResults.filter { it.id !in titleIds }
     }

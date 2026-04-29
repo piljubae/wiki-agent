@@ -16,12 +16,14 @@ class ConfluenceSearchAgent(
 ) {
     suspend fun searchStructured(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
     ): List<SearchResult> {
         val cleaned = cleanQuery(query)
-        log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}", query, cleaned, synonyms, spaces)
+        log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
+            query, cleaned, synonyms, spaces, dateAfter, dateBefore)
 
         // 1단계: 설정 스페이스에서 제목 검색
-        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, topK)
+        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, topK, dateAfter, dateBefore)
         log.info("Title search: {} results", titleResults.size)
 
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
@@ -34,11 +36,11 @@ class ConfluenceSearchAgent(
         log.info("Insufficient title matches ({}<{}), parallel fallback", titleResults.size, sufficientThreshold)
         val (textResults, expandedResults, ragResults) = coroutineScope {
             val textDeferred = async {
-                runCatching { confluenceClient.searchByText(cleaned, spaces, synonyms, topK) }.getOrElse { emptyList() }
+                runCatching { confluenceClient.searchByText(cleaned, spaces, synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
             }
             val expandedDeferred = async {
                 if (spaces.isNotEmpty()) {
-                    runCatching { confluenceClient.searchByTitle(cleaned, emptyList(), synonyms, topK) }.getOrElse { emptyList() }
+                    runCatching { confluenceClient.searchByTitle(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
                 } else emptyList()
             }
             val ragDeferred = async {
@@ -80,8 +82,11 @@ class ConfluenceSearchAgent(
         pageId = id, title = title, url = webUrl, snippet = excerpt, stage = stage,
     )
 
-    suspend fun search(query: String, synonyms: List<String> = emptyList(), topK: Int = 5): String {
-        val results = searchStructured(query, synonyms, topK)
+    suspend fun search(
+        query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): String {
+        val results = searchStructured(query, synonyms, topK, dateAfter, dateBefore)
         if (results.isEmpty()) return "관련 문서를 찾을 수 없습니다. (query: $query)"
         return results.formatForSlack()
     }
