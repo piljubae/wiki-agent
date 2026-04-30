@@ -51,7 +51,7 @@ class GitHubWikiClient(private val token: String = "") {
         log.info("Found {} .md files in {}", paths.size, repoFullName)
 
         val results = mutableListOf<GitHubWikiPage>()
-        for (path in paths.take(30)) {
+        for (path in paths.take(50)) {
             val rawUrl = buildRawUrl(repoFullName, path, isWiki)
             val content = runCatching { fetchContent(rawUrl) }.getOrDefault("")
             if (content.isBlank()) continue
