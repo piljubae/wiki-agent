@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** `piljubae/wiki-agent-workshop` 레포를 생성한다 — Koog 에이전트 세션 실습용 스켈레톤으로, 참가자가 @LLMDescription과 system-prompt.txt만 수정해서 봇 동작이 바뀌는 7단계를 체험한다.
+**Goal:** `piljubae/wiki-agent-workshop` 레포를 생성한다 — Koog 에이전트 세션 실습용 스켈레톤으로, 참가자가 @LLMDescription과 system-prompt.txt만 수정해서 봇 동작이 바뀌는 7단계 + 심화 2단계(대화 히스토리, 내 Tool 만들기)를 체험한다.
 
 **Architecture:** WorkshopAgent는 Koog AIAgent를 사용하지 않고 manual loop로 동작한다. @LLMDescription 텍스트를 런타임에 reflection으로 읽어 routing prompt에 주입 → LLM이 해당 설명을 보고 tool을 선택 → 이것이 "description = tool 선택 정확도"의 실제 메커니즘임을 보여준다. PersonaTool의 @LLMDescription은 별도로 읽어 final answer prompt의 스타일 지시로 주입한다.
 
@@ -1036,7 +1036,225 @@ git commit -m "step-bonus: add MZ intern persona to PersonaTool"
 
 ---
 
-### Task 13: GitHub 레포 생성 및 푸시
+### Task 13: 심화 브랜치 — Step 8 대화 히스토리
+
+**Files:**
+- Modify: `src/main/kotlin/io/github/piljubae/workshop/agent/WorkshopAgent.kt`
+
+참가자가 직접 추가하는 코드를 브랜치로 제공. step-5 기반으로 분기.
+
+**Step 1: step-8 브랜치 생성**
+
+```bash
+git checkout main
+git checkout -b step-8
+```
+
+step-5 내용 적용 (@LLMDescription 채움, system-prompt.txt Tool 호출 강제 포함).
+
+**Step 2: WorkshopAgent.kt에 히스토리 추가**
+
+클래스 상단에 필드 추가:
+```kotlin
+private val history = ArrayDeque<Pair<String, String>>() // (질문, 답변) 최대 3턴
+```
+
+`buildSummaryPrompt` 파라미터에 `history: List<Pair<String,String>>` 추가 후 내부에서 사용:
+```kotlin
+private fun buildSummaryPrompt(
+    question: String,
+    searchResult: String,
+    systemPrompt: String,
+    personaDesc: String,
+    history: List<Pair<String, String>> = emptyList(),
+): String = buildString {
+    if (systemPrompt.isNotBlank()) { appendLine(systemPrompt); appendLine() }
+    if (history.isNotEmpty()) {
+        appendLine("이전 대화 (참고용):")
+        history.forEach { (q, a) -> appendLine("Q: $q\nA: ${a.take(200)}") }
+        appendLine()
+    }
+    if (personaDesc.isNotBlank()) { appendLine("답변 스타일: $personaDesc"); appendLine() }
+    appendLine("질문: $question")
+    appendLine()
+    appendLine("검색 결과:")
+    appendLine(searchResult)
+    appendLine()
+    appendLine("위 검색 결과를 바탕으로 질문에 답변하세요. 이전 대화가 있으면 맥락을 반영하세요.")
+    appendLine("검색 결과에 없는 내용을 지어내지 마세요.")
+}
+```
+
+`answer()` 함수 마지막에 히스토리 저장:
+```kotlin
+// summary 생성 후
+val result = executor.execute(prompt("summary") { user(summaryPrompt) }, model)
+    .joinToString("") { it.content }
+
+history.addLast(question to result)
+if (history.size > 3) history.removeFirst()
+
+return result
+```
+
+**Step 3: 동작 확인**
+
+```bash
+./gradlew run
+```
+
+테스트 시나리오:
+```
+질문 > wiki-agent 기획서 v1이 뭐야?
+[답변 확인]
+
+질문 > 그거 v2랑 뭐가 달라?   ← "그거"가 v1을 가리킴 — 맥락 유지 확인
+[v1 → v2 변경사항 답변 확인]
+```
+
+**Step 4: 커밋**
+
+```bash
+git add .
+git commit -m "step-8: add in-memory conversation history (3 turns)"
+```
+
+---
+
+### Task 14: 심화 브랜치 — Step 9 내 Tool 만들기
+
+**Files:**
+- Create: `src/main/kotlin/io/github/piljubae/workshop/agent/tool/MyTool.kt`
+- Modify: `src/main/kotlin/io/github/piljubae/workshop/Main.kt`
+- Create: `prompts/my-tool-guide.md`
+
+참가자가 직접 Tool을 작성하는 단계. step-8 기반으로 분기.
+
+**Step 1: step-9 브랜치 생성**
+
+```bash
+git checkout step-8
+git checkout -b step-9
+```
+
+**Step 2: MyTool.kt 템플릿 작성**
+
+참가자가 TODO를 채우도록 stub 제공:
+```kotlin
+package io.github.piljubae.workshop.agent.tool
+
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.agents.core.tools.annotations.Tool
+
+/**
+ * 심화 Step 9: 내 Tool 만들기
+ *
+ * 아래 @LLMDescription과 함수 본문을 채우고 Main.kt에 등록하세요.
+ * Tool 하나 = 에이전트 능력 하나.
+ */
+class MyTool {
+
+    @Tool("mySearch")
+    @LLMDescription("") // ← 내 Tool이 하는 일을 설명하세요 (예: "날씨 정보를 검색합니다")
+    fun mySearch(
+        @LLMDescription("검색할 내용이나 키워드")
+        query: String,
+    ): String {
+        // TODO: 내 로직 구현
+        // 예시: 외부 API 호출, 파일 읽기, DB 조회 등
+        return "MyTool 결과: $query (TODO: 실제 로직 구현)"
+    }
+}
+```
+
+**Step 3: WorkshopAgent 생성자에 MyTool 파라미터 추가**
+
+`WorkshopAgent.kt`:
+```kotlin
+class WorkshopAgent(
+    private val knowledgeTool: KnowledgeTool,
+    private val githubWikiTool: GitHubWikiTool,
+    private val personaTool: PersonaTool,
+    private val myTool: MyTool? = null,   // ← 추가 (null이면 비활성)
+    private val executor: MultiLLMPromptExecutor,
+    private val model: LLModel,
+)
+```
+
+routing prompt에 myTool 포함:
+```kotlin
+val myToolDesc = myTool?.let { toolDescription(it) } ?: ""
+
+// buildRoutingPrompt에서
+if (myToolDesc.isNotBlank()) appendLine("- mySearch: $myToolDesc")
+
+// tool 실행 분기에서
+"mySearch" -> runCatching { myTool?.mySearch(query) ?: "MyTool이 등록되지 않았습니다." }
+    .getOrElse { it.message ?: "실패" }
+```
+
+**Step 4: Main.kt에 MyTool 등록**
+
+```kotlin
+val myTool = MyTool()
+
+val agent = WorkshopAgent(
+    knowledgeTool = knowledgeTool,
+    githubWikiTool = githubWikiTool,
+    personaTool = personaTool,
+    myTool = myTool,   // ← 추가
+    executor = executor,
+    model = model,
+)
+```
+
+**Step 5: my-tool-guide.md 작성**
+
+```markdown
+# Step 9 — 내 Tool 만들기
+
+## 아이디어 예시
+
+| Tool 이름 | 할 일 | 구현 힌트 |
+|-----------|------|----------|
+| 날씨 검색 | OpenWeatherMap API 호출 | ktor HttpClient GET |
+| 계산기 | 수식 파싱 후 계산 | kotlin.math, ScriptEngine |
+| 파일 읽기 | 로컬 .txt/.md 파일 내용 반환 | File("path").readText() |
+| 번역 | DeepL/Google Translate API | HttpClient POST |
+| 공지 조회 | 사내 REST API 호출 | 기존 HttpClient 재사용 |
+| Git 로그 | git log 명령 실행 | ProcessBuilder |
+
+## 작성 순서
+
+1. `MyTool.kt` 열기
+2. `@LLMDescription("이 Tool이 하는 일")` 채우기
+3. `fun mySearch(query: String): String` 본문 구현
+4. `./gradlew run` 실행
+5. Tool이 선택되는지 확인: `"[내 Tool 이름]으로 검색할 수 있는 거 있어?"`
+
+## 팁
+
+- @LLMDescription이 비어있으면 LLM이 Tool을 선택하지 않습니다 (Step 2 복습)
+- 함수가 예외를 던지면 에이전트가 멈춥니다 — runCatching으로 감싸세요
+- Tool 이름은 영문 camelCase (`mySearch`, `weatherSearch`)
+```
+
+**Step 6: 빌드 확인**
+
+```bash
+./gradlew build
+```
+
+**Step 7: 커밋**
+
+```bash
+git add .
+git commit -m "step-9: add MyTool template and guide for custom tool creation"
+```
+
+---
+
+### Task 15: GitHub 레포 생성 및 푸시
 
 **Step 1: GitHub 레포 생성**
 
@@ -1055,7 +1273,7 @@ git push -u origin main
 **Step 3: 단계별 브랜치 모두 푸시**
 
 ```bash
-git push origin step-2 step-4 step-5 step-6 step-7 step-bonus
+git push origin step-2 step-4 step-5 step-6 step-7 step-bonus step-8 step-9
 ```
 
 **Step 4: 확인**
