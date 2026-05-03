@@ -16,6 +16,7 @@ class SlackConfigHandler(
     private val onIngest: (suspend (String) -> String)? = null,
     private val onIngestWiki: (() -> String)? = null,
     private val onLint: (suspend () -> String)? = null,
+    private val onReindexCode: (suspend () -> Int)? = null,
     private val projectMemory: ProjectMemory? = null,
 ) {
     private var lastIndexTime: LocalDateTime? = null
@@ -36,6 +37,8 @@ class SlackConfigHandler(
                 if (arg == "show" || arg == null) showSpaces()
                 else setSpaces(parts.drop(3).joinToString(" "))
             }
+            parts.size >= 2 && parts[1] == "reindex-code" ->
+                triggerReindexCode()
             parts.size >= 2 && parts[1] == "reindex" && parts.getOrNull(2) == "status" ->
                 reindexStatus()
             parts.size >= 2 && parts[1] == "reindex" ->
@@ -58,6 +61,20 @@ class SlackConfigHandler(
             }
         }.start()
         return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/wiki reindex status`로 진행 상황을 확인하세요."
+    }
+
+    private fun triggerReindexCode(): String {
+        val indexer = onReindexCode
+            ?: return "코드 인덱싱이 비활성화 상태입니다. config.yml에서 codeRepos를 설정하세요."
+        Thread {
+            runCatching {
+                val count = runBlocking { indexer() }
+                log.info("Code reindex completed: {} entries", count)
+            }.onFailure { e ->
+                log.error("Code reindex failed", e)
+            }
+        }.start()
+        return ":hourglass_flowing_sand: 코드 인덱싱을 시작했습니다."
     }
 
     private fun reindexStatus(): String {
@@ -123,6 +140,7 @@ class SlackConfigHandler(
         • `/wiki config space show` — 현재 설정 확인
         • `/wiki reindex` — RAG 재인덱싱
         • `/wiki reindex status` — 마지막 인덱싱 정보
+        • `/wiki reindex-code` — Kurly Android 소스코드 재인덱싱
 
         :books: *지식베이스*
         • `/wiki ingest <URL>` — URL 내용을 지식베이스에 저장
