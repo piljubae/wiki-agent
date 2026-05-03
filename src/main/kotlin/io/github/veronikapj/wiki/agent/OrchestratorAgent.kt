@@ -19,6 +19,8 @@ import ai.koog.prompt.llm.LLModel
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
+import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
+import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -32,13 +34,15 @@ class OrchestratorAgent(
     private val confluenceTool: ConfluenceTool? = null,
     private val githubWikiTool: GitHubWikiTool? = null,
     private val vectorSearchTool: VectorSearchTool? = null,
+    private val prHistoryTool: PrHistoryTool? = null,
+    private val codeSearchTool: CodeSearchTool? = null,
     private val executor: MultiLLMPromptExecutor,
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
     private val projectMemory: ProjectMemory? = null,
 ) {
     init {
-        require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null) {
+        require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null || prHistoryTool != null || codeSearchTool != null) {
             "At least one tool must be enabled"
         }
     }
@@ -72,6 +76,8 @@ class OrchestratorAgent(
             confluenceTool?.let { "confluenceSearch" },
             githubWikiTool?.let { "githubWikiSearch" },
             vectorSearchTool?.let { "vectorSearch" },
+            prHistoryTool?.let { "prHistory" },
+            codeSearchTool?.let { "codeSearch" },
         )
         val model = AnthropicModels.Haiku_4_5
 
@@ -92,9 +98,16 @@ class OrchestratorAgent(
             appendLine("당신은 검색 라우터입니다. 사용자의 질문 의도를 파악해 Confluence 검색에 최적화된 검색어를 생성합니다.")
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
-            if (githubWikiTool != null) {
+            val toolOptions = listOfNotNull(
+                if (githubWikiTool != null) "githubWikiSearch" else null,
+                if (confluenceTool != null) "confluenceSearch" else null,
+                if (prHistoryTool != null) "prHistory" else null,
+                if (codeSearchTool != null) "codeSearch" else null,
+                if (prHistoryTool != null && codeSearchTool != null) "prHistory+codeSearch" else null,
+            )
+            if (toolOptions.isNotEmpty()) {
                 appendLine("출력 형식 (필수 3줄 + 선택 2줄, 다른 텍스트 금지):")
-                appendLine("TOOL: githubWikiSearch 또는 confluenceSearch")
+                appendLine("TOOL: ${toolOptions.joinToString(" 또는 ")}")
             } else {
                 appendLine("출력 형식 (필수 2줄 + 선택 2줄, 다른 텍스트 금지):")
             }
@@ -108,6 +121,11 @@ class OrchestratorAgent(
                 appendLine("- githubWikiSearch: 소스코드·함수·클래스 사용법, PR·커밋 내용, 코드 구현 방법을 묻는 질문에만 선택.")
                 appendLine("- confluenceSearch: 그 외 모든 질문 (지식베이스+Confluence 병렬 검색).")
                 appendLine("  핵심 판단 원칙: 기술 주제라도 내부 문서를 찾는 질문이면 confluenceSearch.")
+            }
+            if (prHistoryTool != null || codeSearchTool != null) {
+                appendLine("- codeSearch: 클래스/함수 위치, 구현 방법, '어디있어?' 질문.")
+                appendLine("- prHistory: PR 변경 이력, KMA-XXXX 티켓 작업 내용, 누가 언제 변경했는지.")
+                appendLine("  티켓 번호 + 코드 질문이 동시에 있으면 TOOL: prHistory+codeSearch (병렬 실행).")
             }
             appendLine()
             appendLine("QUERY 작성 원칙:")
@@ -150,11 +168,18 @@ class OrchestratorAgent(
         listener?.onSearchStarted(searchLabel)
 
         val wikiTool = githubWikiTool
-        var searchResult = if (toolName == "githubWikiSearch" && wikiTool != null) {
-            runCatching { wikiTool.githubWikiSearch(query) }.getOrNull()
-                ?.takeIf { !it.contains("찾을 수 없습니다") }
-        } else {
-            runCatching { executeParallel(query, synonyms, dateAfter, dateBefore) }.getOrNull()
+        var searchResult = when {
+            toolName == "githubWikiSearch" && wikiTool != null ->
+                runCatching { wikiTool.githubWikiSearch(query) }.getOrNull()
+                    ?.takeIf { !it.contains("찾을 수 없습니다") }
+            toolName == "prHistory+codeSearch" ->
+                runCatching { executeCodeParallel(query) }.getOrNull()
+            toolName == "prHistory" && prHistoryTool != null ->
+                runCatching { prHistoryTool!!.prHistory(query) }.getOrNull()
+            toolName == "codeSearch" && codeSearchTool != null ->
+                runCatching { codeSearchTool!!.codeSearch(query) }.getOrNull()
+            else ->
+                runCatching { executeParallel(query, synonyms, dateAfter, dateBefore) }.getOrNull()
         }
 
         listener?.onSearchCompleted(searchLabel)
@@ -249,6 +274,32 @@ class OrchestratorAgent(
         }
     }
 
+    internal suspend fun executeCodeParallel(query: String): String? {
+        val (prResult, codeResult) = coroutineScope {
+            val prDeferred = async {
+                if (prHistoryTool != null)
+                    runCatching { prHistoryTool.prHistory(query) }.getOrNull()
+                else null
+            }
+            val codeDeferred = async {
+                if (codeSearchTool != null)
+                    runCatching { codeSearchTool.codeSearch(query) }.getOrNull()
+                else null
+            }
+            prDeferred.await() to codeDeferred.await()
+        }
+
+        val prValid = prResult?.takeIf { !it.contains("찾을 수 없습니다") }
+        val codeValid = codeResult?.takeIf { !it.contains("찾을 수 없습니다") }
+
+        return when {
+            prValid != null && codeValid != null -> "[PR 이력]\n$prValid\n\n---\n\n[코드]\n$codeValid"
+            prValid != null -> prValid
+            codeValid != null -> codeValid
+            else -> null
+        }
+    }
+
     private fun executeDefault(question: String, availableTools: List<String>): String? {
         log.info("Fallback: searching all available tools with original question: {}", availableTools)
         val results = availableTools.mapNotNull { tool ->
@@ -258,6 +309,8 @@ class OrchestratorAgent(
                     "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
                     "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
                     "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
+                    "prHistory" -> prHistoryTool?.prHistory(question)
+                    "codeSearch" -> codeSearchTool?.codeSearch(question)
                     else -> null
                 }
             }.getOrNull()
@@ -319,6 +372,8 @@ class OrchestratorAgent(
                 if (confluenceTool != null) "Confluence 위키" else null,
                 if (githubWikiTool != null) "GitHub Wiki" else null,
                 if (vectorSearchTool != null) "벡터 검색(RAG)" else null,
+                if (prHistoryTool != null) "PR 이력 검색" else null,
+                if (codeSearchTool != null) "코드 검색" else null,
             )
             appendLine("당신은 ${sources.joinToString("와 ")} 검색 전문가입니다.")
             appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
@@ -331,6 +386,12 @@ class OrchestratorAgent(
             }
             if (githubWikiTool != null) {
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
+            }
+            if (prHistoryTool != null) {
+                appendLine("PR 변경 이력이나 티켓 관련 질문은 prHistory를 사용하세요.")
+            }
+            if (codeSearchTool != null) {
+                appendLine("클래스/함수 위치나 구현 방법 질문은 codeSearch를 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 답변하세요.")
             appendLine()
@@ -365,6 +426,8 @@ class OrchestratorAgent(
                 if (confluenceTool != null) tool(confluenceTool::confluenceSearch)
                 if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
                 if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
+                if (prHistoryTool != null) tool(prHistoryTool::prHistory)
+                if (codeSearchTool != null) tool(codeSearchTool::codeSearch)
             },
             installFeatures = {
                 if (listener != null) install(SearchProgressFeature(listener))
