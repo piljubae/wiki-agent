@@ -30,13 +30,16 @@ class CodeIndexAgentTest {
             sealed interface BannerEvent {
                 data object Click : BannerEvent
             }
+
+            enum class BannerState { LOADING, SUCCESS, ERROR }
         """.trimIndent()
 
         val classes = agent.extractClasses(content)
-        assertEquals(3, classes.size)
+        assertEquals(4, classes.size)
         assertTrue(classes.any { it.name == "BannerViewModel" })
         assertTrue(classes.any { it.name == "BannerUiState" })
         assertTrue(classes.any { it.name == "BannerEvent" })
+        assertTrue(classes.any { it.name == "BannerState" })
     }
 
     @Test

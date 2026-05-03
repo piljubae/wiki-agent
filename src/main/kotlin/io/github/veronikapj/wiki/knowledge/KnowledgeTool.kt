@@ -17,7 +17,7 @@ class KnowledgeTool(
     ): String {
         tracker?.record("KnowledgeBase")
         val pages = store.loadAll()
-        if (pages.isEmpty()) return "지식베이스가 비어있습니다. `/wiki ingest <URL>`로 문서를 추가하세요."
+        if (pages.isEmpty()) return "지식베이스에서 관련 내용을 찾을 수 없습니다. `/wiki ingest <URL>`로 문서를 추가하세요."
 
         val terms = query.lowercase().split(" ", "　").filter { it.length >= 2 }
         val matched = pages.filter { (path, content) ->

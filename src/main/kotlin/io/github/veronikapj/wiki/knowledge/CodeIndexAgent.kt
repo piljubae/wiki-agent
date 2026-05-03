@@ -27,6 +27,13 @@ class CodeIndexAgent(
 
         for (repo in repos) {
             val filePaths = codeClient.fetchKotlinFilePaths(repo, branch)
+            if (filePaths.size > 500) {
+                log.warn(
+                    "Large repo {}: {} files to index — this will consume significant GitHub API quota",
+                    repo,
+                    filePaths.size,
+                )
+            }
             log.info("Indexing {} Kotlin files from {}", filePaths.size, repo)
 
             filePaths.chunked(5).forEach { batch ->
@@ -57,8 +64,9 @@ class CodeIndexAgent(
                 }
 
                 if (ids.isNotEmpty()) {
-                    chromaClient.addDocuments(collectionId, ids, docs, metadatas = metas)
+                    chromaClient.upsertDocuments(collectionId, ids, docs, metadatas = metas)
                 }
+                kotlinx.coroutines.delay(100) // rate-limit protection
             }
         }
 
@@ -71,7 +79,7 @@ class CodeIndexAgent(
         // Matches top-level declarations only: line must start with the modifiers (no leading spaces)
         // (data |sealed |abstract |open )*(class|object|interface) Name
         val classPattern = Regex(
-            "^((?:data |sealed |abstract |open )*(?:class|object|interface))\\s+(\\w+)",
+            "^((?:data |sealed |abstract |open |enum )*(?:class|object|interface))\\s+(\\w+)",
             RegexOption.MULTILINE,
         )
         // Matches public/suspend fun — captures name + params + optional return type

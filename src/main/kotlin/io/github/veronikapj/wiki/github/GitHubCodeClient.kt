@@ -193,6 +193,9 @@ class GitHubCodeClient(private val token: String = "") {
     suspend fun fetchKotlinFilePaths(repo: String, branch: String): List<String> {
         val treeUrl = "https://api.github.com/repos/$repo/git/trees/$branch?recursive=1"
         val json = apiGet(treeUrl) ?: return emptyList()
+        if (json.contains("\"truncated\":true")) {
+            log.warn("Git tree for {}/{} is truncated — index will be incomplete", repo, branch)
+        }
         return Regex("\"path\"\\s*:\\s*\"([^\"]+\\.kt)\"")
             .findAll(json)
             .map { it.groupValues[1] }
