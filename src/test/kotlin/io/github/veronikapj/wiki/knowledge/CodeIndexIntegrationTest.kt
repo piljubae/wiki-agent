@@ -154,6 +154,69 @@ class CodeIndexIntegrationTest {
         println("\n✅ ClassA:funA (벡터 1위 + BM25 2위) → RRF 1위")
     }
 
+    @Test
+    fun `extractFunctionChunks - 멀티라인 파라미터 처리`() {
+        val content = """
+            package com.example
+
+            class MyViewModel {
+                fun createClickFusionSignal(
+                    clickType: FusionSignalType,
+                    product: ProductModel,
+                    position: Int
+                ): FusionSignal? {
+                    return null
+                }
+
+                fun singleLine(id: String): String {
+                    return id
+                }
+            }
+        """.trimIndent()
+
+        val agent = makeAgent()
+        val chunks = agent.extractFunctionChunks(content, "test/MyViewModel.kt")
+
+        println("\n=== 멀티라인 파라미터 테스트 ===")
+        chunks.forEach { c ->
+            println("• [${c.className}] ${c.signature}")
+        }
+
+        assertTrue(chunks.any { it.functionName == "createClickFusionSignal" },
+            "멀티라인 파라미터 함수가 추출되어야 합니다")
+        val multiline = chunks.first { it.functionName == "createClickFusionSignal" }
+        assertTrue(multiline.signature.contains("clickType"), "파라미터가 시그니처에 포함되어야 합니다")
+        assertTrue(multiline.className == "MyViewModel", "className이 MyViewModel이어야 합니다")
+        assertTrue(multiline.signature.contains("FusionSignal"), "반환 타입이 포함되어야 합니다")
+        println("✅ 멀티라인 파라미터 정상 추출: ${multiline.signature}")
+    }
+
+    @Test
+    fun `extractFunctionChunks - companion object 함수 className`() {
+        val content = """
+            package com.example
+
+            class BannerUtils {
+                fun outerFun() {}
+
+                companion object {
+                    fun create(): BannerUtils = BannerUtils()
+                    fun fromId(id: String): BannerUtils = BannerUtils()
+                }
+            }
+        """.trimIndent()
+
+        val agent = makeAgent()
+        val chunks = agent.extractFunctionChunks(content, "test/BannerUtils.kt")
+
+        println("\n=== companion object 테스트 ===")
+        chunks.forEach { c -> println("• [${c.className}] ${c.functionName}") }
+
+        val createFn = chunks.firstOrNull { it.functionName == "create" }
+        assertTrue(createFn != null, "companion object 함수 create가 추출되어야 합니다")
+        println("✅ companion object 함수: className=${createFn?.className}")
+    }
+
     // ── 헬퍼 ─────────────────────────────────────────────────────────────────
 
     private fun makeAgent() = CodeIndexAgent(

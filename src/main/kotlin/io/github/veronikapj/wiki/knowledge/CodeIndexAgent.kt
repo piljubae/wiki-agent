@@ -157,82 +157,161 @@ class CodeIndexAgent(
         return count
     }
 
-    // ── Step 2: 함수 단위 청크 추출 ────────────────────────────────────────────
+    // ── Step 4: 라인 기반 파서 (멀티라인 파라미터 + 중첩 클래스 스택) ──────────
 
     /**
      * 파일 내용에서 함수 단위 CodeChunk 목록을 추출합니다.
      *
-     * - top-level과 클래스 내부 함수 모두 추출
-     * - abstract/interface 선언 함수는 body = ""
-     * - 함수 바디는 최대 500자로 잘라냄 (Cursor 기준)
+     * Step 4 개선 사항 (Tree-sitter 등가, 순수 JVM):
+     * - 중괄호 깊이 스택으로 정확한 className 추적 (companion object, 중첩 클래스)
+     * - 괄호 깊이 카운팅으로 멀티라인 파라미터 지원
+     * - extension receiver 처리 (ViewModel.getString 등)
+     * - abstract/interface 선언 함수 (body = "")
+     * - 함수 바디 최대 500자
      */
     internal fun extractFunctionChunks(content: String, filePath: String): List<CodeChunk> {
         val packageName = Regex("^package\\s+([\\w.]+)").find(content)?.groupValues?.get(1) ?: ""
         val chunks = mutableListOf<CodeChunk>()
+        val lines = content.lines()
 
-        // 클래스 선언 위치 수집 — 함수가 어떤 클래스에 속하는지 판단용
-        val classPattern = Regex(
-            "^((?:data |sealed |abstract |open |enum )*(?:class|object|interface))\\s+(\\w+)",
-            RegexOption.MULTILINE,
+        // 클래스 선언 감지: class/object/interface/companion object
+        val classLinePattern = Regex(
+            """^[ \t]*(?:(?:data|sealed|abstract|open|enum|inner|private|internal)\s+)*(?:class|object|interface)\s+(\w+)""",
         )
-        data class ClassPos(val name: String, val pos: Int)
-        val classPositions = classPattern.findAll(content)
-            .map { ClassPos(it.groupValues[2], it.range.first) }
-            .toList()
+        val companionPattern = Regex("""^[ \t]*companion\s+object(?:\s+\w+)?""")
 
-        // 함수 시그니처 패턴
-        // - 선택적 modifier: override/suspend/private/protected/internal/public/open/abstract/inline/operator
-        // - 파라미터: 단일 라인만 지원 (Step 4 Tree-sitter에서 멀티라인 처리 예정)
-        val funPattern = Regex(
-            // (?:\w+\.)* = extension receiver 선택적 처리 (e.g. ViewModel.getString)
-            """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(?:\w+\.)*(\w+)\s*(\([^)]*\))(?:\s*:\s*([^\n{=]+))?""",
-            setOf(RegexOption.MULTILINE),
+        // 함수 선언 시작 감지 (파라미터 열린 괄호까지)
+        val funStartPattern = Regex(
+            """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(?:\w+\.)*(\w+)\s*\(""",
         )
 
-        funPattern.findAll(content).forEach { match ->
-            val functionName = match.groupValues[1]
-            val params = match.groupValues[2]
-            val returnType = match.groupValues[3].trim().trimEnd { it == '{' || it.isWhitespace() }
+        // className 스택: Pair(name, braceDepth) — 진입 시점의 누적 중괄호 깊이를 기록
+        data class ClassFrame(val name: String, val entryDepth: Int)
+        val classStack = ArrayDeque<ClassFrame>()
+        var braceDepth = 0
 
-            val signature = buildString {
-                append("fun ")
-                append(functionName)
-                append(params)
-                if (returnType.isNotBlank()) {
-                    append(": ")
-                    append(returnType)
-                }
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            val trimmed = line.trimStart()
+
+            // 주석 라인 스킵
+            if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+                braceDepth += line.count { it == '{' } - line.count { it == '}' }
+                i++; continue
             }
 
-            // 이 함수보다 앞서 나온 클래스 선언 중 가장 마지막 = 이 함수가 속한 클래스
-            val funcPos = match.range.first
-            val className = classPositions.lastOrNull { it.pos <= funcPos }?.name ?: ""
-
-            // 함수 바디 추출
-            val afterSignature = content.substring(match.range.last + 1)
-            val trimmed = afterSignature.trimStart(' ', '\t')
-            val body = when {
-                trimmed.startsWith("\n{") || trimmed.startsWith(" {") || trimmed.startsWith("{") -> {
-                    val braceStart = trimmed.indexOf('{')
-                    if (braceStart >= 0) extractBraceBlock(trimmed.substring(braceStart), maxChars = 500)
-                    else ""
+            // companion object 우선 체크 (class 패턴보다 먼저)
+            if (companionPattern.containsMatchIn(line)) {
+                val openCount = line.count { it == '{' }
+                braceDepth += openCount
+                classStack.addLast(ClassFrame("(companion)", braceDepth))
+                braceDepth -= line.count { it == '}' }
+                // 닫힌 프레임 정리
+                while (classStack.isNotEmpty() && braceDepth < classStack.last().entryDepth) {
+                    classStack.removeLast()
                 }
-                trimmed.trimStart('\n').startsWith("=") -> {
-                    "= " + trimmed.trimStart('\n').removePrefix("=").trim().lines().first().take(498)
-                }
-                else -> "" // abstract 또는 interface 선언
+                i++; continue
             }
 
-            chunks.add(
-                CodeChunk(
-                    filePath = filePath,
-                    className = className,
-                    functionName = functionName,
-                    signature = signature,
-                    body = body,
-                    packageName = packageName,
-                ),
-            )
+            // class/object/interface 선언
+            val classMatch = classLinePattern.find(line)
+            if (classMatch != null) {
+                val openCount = line.count { it == '{' }
+                braceDepth += openCount
+                classStack.addLast(ClassFrame(classMatch.groupValues[1], braceDepth))
+                braceDepth -= line.count { it == '}' }
+                while (classStack.isNotEmpty() && braceDepth < classStack.last().entryDepth) {
+                    classStack.removeLast()
+                }
+                i++; continue
+            }
+
+            // 함수 선언 시작
+            val funMatch = funStartPattern.find(line)
+            if (funMatch != null) {
+                val functionName = funMatch.groupValues[1]
+
+                // 멀티라인 파라미터 수집: ')' 가 닫힐 때까지 라인 병합
+                val sigLines = mutableListOf<String>()
+                var j = i
+                var parenDepth = 0
+                while (j < lines.size) {
+                    val sigLine = lines[j]
+                    sigLines.add(if (j == i) sigLine.trimStart() else sigLine.trim())
+                    parenDepth += sigLine.count { it == '(' } - sigLine.count { it == ')' }
+                    if (parenDepth <= 0) break
+                    j++
+                }
+
+                // 반환 타입 — 파라미터 다음 줄에 ": Type" 형태로 올 수 있음
+                var returnType = ""
+                val sigJoined = sigLines.joinToString(" ")
+                val afterParen = sigJoined.substringAfter(")", "")
+                val rtMatch = Regex("""^\s*:\s*([^\n{=]+)""").find(afterParen)
+                if (rtMatch != null) {
+                    returnType = rtMatch.groupValues[1].trim().trimEnd { it == '{' || it.isWhitespace() }
+                } else if (j + 1 < lines.size) {
+                    // 반환 타입이 다음 줄에 있는 경우: ): ReturnType {
+                    val nextLine = lines[j + 1].trim()
+                    val rtNext = Regex("""^:\s*([^\n{=]+)""").find(nextLine)
+                    if (rtNext != null) {
+                        returnType = rtNext.groupValues[1].trim().trimEnd { it == '{' || it.isWhitespace() }
+                        j++
+                    }
+                }
+
+                val signature = buildString {
+                    // 파라미터만 단일 라인으로 요약
+                    val paramsRaw = sigJoined.substringAfter("(").substringBefore(")")
+                    val paramsShort = if (paramsRaw.length > 120) paramsRaw.lines()
+                        .joinToString(", ") { it.trim() }.take(120) + "…"
+                    else paramsRaw
+                    append("fun $functionName($paramsShort)")
+                    if (returnType.isNotBlank()) append(": $returnType")
+                }
+
+                // className: 스택 최상위 (companion은 내부용 이름)
+                val className = classStack.lastOrNull { it.name != "(companion)" }?.name
+                    ?: classStack.lastOrNull()?.name ?: ""
+
+                // 바디 추출 — j 이후 줄에서 시작
+                val afterSigOffset = lines.take(j + 1).sumOf { it.length + 1 }.coerceAtMost(content.length)
+                val afterSig = content.substring(afterSigOffset).trimStart(' ', '\t', '\n', '\r')
+                val body = when {
+                    afterSig.startsWith("{") -> extractBraceBlock(afterSig, maxChars = 500)
+                    afterSig.startsWith("=") -> "= " + afterSig.removePrefix("=").trim().lines().first().take(498)
+                    else -> ""
+                }
+
+                chunks.add(
+                    CodeChunk(
+                        filePath = filePath,
+                        className = className,
+                        functionName = functionName,
+                        signature = signature,
+                        body = body,
+                        packageName = packageName,
+                    ),
+                )
+
+                // 중괄호 깊이 업데이트 (시그니처 범위만큼)
+                for (k in i..j) {
+                    braceDepth += lines[k].count { it == '{' } - lines[k].count { it == '}' }
+                }
+                while (classStack.isNotEmpty() && braceDepth < classStack.last().entryDepth) {
+                    classStack.removeLast()
+                }
+                i = j + 1
+                continue
+            }
+
+            // 일반 라인: 중괄호 깊이만 업데이트
+            braceDepth += line.count { it == '{' } - line.count { it == '}' }
+            while (classStack.isNotEmpty() && braceDepth < classStack.last().entryDepth) {
+                classStack.removeLast()
+            }
+            i++
         }
 
         return chunks
