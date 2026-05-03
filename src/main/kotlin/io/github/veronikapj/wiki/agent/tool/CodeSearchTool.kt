@@ -16,7 +16,6 @@ class CodeSearchTool(
     private val branch: String = "develop",
     private val tracker: SourceTracker? = null,
     private val collectionName: String = "code_index",
-    /** Step 3: BM25 키워드 검색 인덱스. null이면 벡터 검색만 사용. */
     private val bm25Index: BM25Index? = null,
 ) {
 
@@ -35,38 +34,27 @@ class CodeSearchTool(
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
 
-            // Step 3: 하이브리드 검색 — BM25 + 벡터, RRF로 순위 병합
-            val orderedIds: List<String> = if (bm25Index != null) {
-                val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
-                val vectorIds = vectorResults.map { r ->
-                    val repo = r.metadata["repo"] ?: ""
-                    val path = r.metadata["file_path"] ?: ""
-                    val cls = r.metadata["class_name"] ?: ""
-                    val fn = r.metadata["function_name"] ?: ""
-                    "$repo:$path:$cls:$fn"
-                }
+            // 벡터 검색 — ChromaDB 1회만 호출
+            val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+
+            fun resultToId(r: io.github.veronikapj.wiki.rag.ChromaQueryResult): String {
+                val repo    = r.metadata["repo"] ?: ""
+                val path    = r.metadata["file_path"] ?: ""
+                val cls     = r.metadata["class_name"] ?: ""
+                val fn      = r.metadata["function_name"] ?: ""
+                val sigHash = r.metadata["sig_hash"] ?: ""
+                return "$repo:$path:$cls:$fn:$sigHash"
+            }
+
+            val vectorIds = vectorResults.map { resultToId(it) }
+            val metaById  = vectorResults.associateBy { resultToId(it) }
+
+            // Step 3: BM25 키워드 검색 + RRF 병합 (BM25 없으면 벡터 순서 그대로)
+            val orderedIds = if (bm25Index != null) {
                 val bm25Ids = bm25Index.search(query, limit = 10)
                 BM25Index.mergeRRF(vectorIds, bm25Ids)
             } else {
-                // BM25 없으면 벡터만 사용
-                chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
-                    .map { r ->
-                        val repo = r.metadata["repo"] ?: ""
-                        val path = r.metadata["file_path"] ?: ""
-                        val cls = r.metadata["class_name"] ?: ""
-                        val fn = r.metadata["function_name"] ?: ""
-                        "$repo:$path:$cls:$fn"
-                    }
-            }
-
-            // id 기준으로 ChromaDB 결과 메타데이터 조회
-            val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
-            val metaById = vectorResults.associateBy { r ->
-                val repo = r.metadata["repo"] ?: ""
-                val path = r.metadata["file_path"] ?: ""
-                val cls = r.metadata["class_name"] ?: ""
-                val fn = r.metadata["function_name"] ?: ""
-                "$repo:$path:$cls:$fn"
+                vectorIds
             }
 
             val topIds = orderedIds.take(5)

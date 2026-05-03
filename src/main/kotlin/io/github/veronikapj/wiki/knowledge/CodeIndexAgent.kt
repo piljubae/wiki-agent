@@ -95,17 +95,19 @@ class CodeIndexAgent(
 
                         chunks.forEach { chunk ->
                             val doc = buildChunkDocument(chunk)
-                            val id = "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}"
+                            val id = chunkId(repo, chunk)
                             ids += id
                             docs += doc
                             embeddingFn?.let { fn ->
                                 embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
                             }
+                            val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
                             metas += mapOf(
                                 "repo" to repo,
                                 "file_path" to chunk.filePath,
                                 "class_name" to chunk.className,
                                 "function_name" to chunk.functionName,
+                                "sig_hash" to sigHash,
                                 "branch" to branch,
                             )
                             bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
@@ -378,17 +380,19 @@ class CodeIndexAgent(
 
                     chunks.forEach { chunk ->
                         val doc = buildChunkDocument(chunk)
-                        val id = "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}"
+                        val id = chunkId(repo, chunk)
                         ids += id
                         docs += doc
                         embeddingFn?.let { fn ->
                             embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
                         }
+                        val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
                         metas += mapOf(
                             "repo" to repo,
                             "file_path" to chunk.filePath,
                             "class_name" to chunk.className,
                             "function_name" to chunk.functionName,
+                            "sig_hash" to sigHash,
                             "branch" to branch,
                         )
                         bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
@@ -477,5 +481,16 @@ class CodeIndexAgent(
     companion object {
         private val log = LoggerFactory.getLogger(CodeIndexAgent::class.java)
         private val json = Json { ignoreUnknownKeys = true }
+
+        /**
+         * 청크 ID — 오버로드 함수 구별을 위해 시그니처 해시 6자리를 suffix로 붙임.
+         * 예: "thefarmersfront/kurly-android:path/Foo.kt:FooViewModel:load:1a2b3c"
+         *
+         * CodeSearchTool.resultToId()와 포맷을 맞춰야 합니다.
+         */
+        fun chunkId(repo: String, chunk: CodeChunk): String {
+            val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
+            return "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}:$sigHash"
+        }
     }
 }
