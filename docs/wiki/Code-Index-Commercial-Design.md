@@ -89,29 +89,63 @@ suspend fun syncAndIndexChanged(repo: String): Int {
 
 ---
 
-### Step 2: 함수 단위 청킹 (예정)
+### Step 2: 함수 단위 청킹 ✅ (완료)
 
-**문제**: 현재는 클래스 전체를 하나의 청크로 저장.
+**문제**: 클래스 전체를 하나의 청크로 저장하면 관련 없는 코드가 LLM 컨텍스트에 포함됨.
 
 ```
 "배너 클릭 처리 어디서?" 쿼리 →
-현재: BannerViewModel 전체 반환 (200줄 포함)
-개선: onBannerClick() 함수만 반환 (10줄)
+이전: BannerViewModel 전체 반환 (200줄 포함)
+이후: onBannerClick() 함수만 반환 (10~20줄)
 ```
 
-**구현 방향**:
+**구현**: `CodeIndexAgent.extractFunctionChunks()` + `buildChunkDocument()`
+
 ```kotlin
-// 클래스 안에서 함수 단위로 청킹
+// CodeIndexAgent.kt — CodeChunk 데이터 클래스
 data class CodeChunk(
     val filePath: String,
-    val className: String,
-    val functionName: String,  // 추가
-    val signature: String,     // fun onBannerClick(bannerId: String): Unit
-    val body: String,          // 함수 바디 최대 500자
+    val className: String,      // "" = top-level 함수
+    val functionName: String,
+    val signature: String,      // "fun onBannerClick(bannerId: String): Unit"
+    val body: String,           // 함수 바디 최대 500자
+    val packageName: String,
 )
 ```
 
-ChromaDB id도 `{repo}:{path}:{class}:{function}` 으로 세분화.
+**ChromaDB id 세분화**: `{repo}:{path}:{class}:{function}`
+
+```kotlin
+// 이전 (클래스 단위)
+id = "$repo:$path:${cls.name}"
+
+// 이후 (함수 단위)
+id = "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}"
+```
+
+**문서 포맷** (ChromaDB에 저장되는 텍스트):
+```
+package com.kurly.feature.banner
+file: features/banner/BannerViewModel.kt
+class: BannerViewModel
+
+fun onBannerClick(bannerId: String): Unit {
+    viewModelScope.launch {
+        _events.send(BannerEvent.Navigate(bannerId))
+    }
+}
+```
+
+**처리 흐름**:
+```
+Kotlin 파일 → extractFunctionChunks() → 함수별 CodeChunk
+  → buildChunkDocument() → 임베딩 → ChromaDB upsert
+```
+
+**Regex 방식의 한계** (Step 4에서 해결 예정):
+- 멀티라인 파라미터 지원 안 됨
+- companion object 안 함수는 className이 외부 클래스로 기록됨
+- extension function 처리 불완전
 
 ---
 
@@ -158,13 +192,13 @@ Step 2 함수 청킹을 먼저 regex 기반으로 구현하고, 이후 Tree-sitt
 
 각 Step이 실제 쿼리에 미치는 영향:
 
-| 쿼리 예시 | 현재 | Step2 후 | Step3 후 |
+| 쿼리 예시 | 이전 | Step2 후 | Step3 후 |
 |-----------|------|---------|---------|
 | "BannerViewModel 어디있어?" | ✅ | ✅ | ✅ |
-| "배너 클릭 이벤트 처리" | 클래스 전체 반환 | 함수 직접 반환 | ✅ |
+| "배너 클릭 이벤트 처리" | 클래스 전체 반환 | **함수 직접 반환** ✅ | ✅ |
 | "KMA-7275" | 운에 맡김 | 운에 맡김 | 정확히 매칭 |
 | "panelCode 어디서 쓰여?" | 보통 | ✅ | ✅ |
-| companion object 안 함수 | 누락 | 누락 | Step4 후 ✅ |
+| companion object 안 함수 | 누락 | 누락 (Step4 후 ✅) | Step4 후 ✅ |
 
 ---
 

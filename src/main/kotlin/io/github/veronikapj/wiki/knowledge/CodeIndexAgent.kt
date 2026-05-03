@@ -21,13 +21,29 @@ class CodeIndexAgent(
     private val indexStateFile: String = ".wiki/code-index-state.json",
 ) {
 
+    /**
+     * Step 2: 함수 단위 청킹 — Cursor 방식처럼 함수 하나가 하나의 ChromaDB 청크.
+     * className이 빈 문자열이면 top-level 함수.
+     */
+    data class CodeChunk(
+        val filePath: String,
+        val className: String,      // "" = top-level function
+        val functionName: String,
+        val signature: String,      // "fun onBannerClick(bannerId: String): Unit"
+        val body: String,           // 함수 바디, 최대 500자
+        val packageName: String,
+    )
+
+    // ── 하위 호환 — extractClasses는 buildIndexDocument와 함께 유지 ─────────────
     data class KotlinClassInfo(
         val name: String,
-        val kind: String,           // "class", "data class", "object", "interface", "sealed class", etc.
+        val kind: String,
         val packageName: String,
         val publicFunctions: List<String>,
         val firstLines: String,
     )
+
+    // ── 인덱싱 진입점 ───────────────────────────────────────────────────────────
 
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
@@ -72,23 +88,22 @@ class CodeIndexAgent(
                             codeClient.fetchFileContent(repo, path, branch)
                         content ?: return@forEach
 
-                        val classes = extractClasses(content)
-                        if (classes.isEmpty()) return@forEach
+                        val chunks = extractFunctionChunks(content, path)
+                        if (chunks.isEmpty()) return@forEach
 
-                        classes.forEach { cls ->
-                            val baseDoc = buildIndexDocument(path, cls)
-                            // embeddingFn が ある場合は LLM enrichment をスキップ (コスト削減)
-                            val doc = if (embeddingFn != null) baseDoc
-                                      else runCatching { llmFn(buildEnrichPrompt(path, cls)) }.getOrDefault(baseDoc)
-                            ids += "$repo:$path:${cls.name}"
+                        chunks.forEach { chunk ->
+                            val doc = buildChunkDocument(chunk)
+                            val id = "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}"
+                            ids += id
                             docs += doc
                             embeddingFn?.let { fn ->
                                 embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
                             }
                             metas += mapOf(
                                 "repo" to repo,
-                                "file_path" to path,
-                                "class_name" to cls.name,
+                                "file_path" to chunk.filePath,
+                                "class_name" to chunk.className,
+                                "function_name" to chunk.functionName,
                                 "branch" to branch,
                             )
                             total++
@@ -104,79 +119,12 @@ class CodeIndexAgent(
             }
         }
 
-        log.info("Code index complete: {} class entries", total)
+        log.info("Code index complete: {} function chunks", total)
         return total
-    }
-
-    internal fun extractClasses(content: String): List<KotlinClassInfo> {
-        val packageName = Regex("^package\\s+([\\w.]+)").find(content)?.groupValues?.get(1) ?: ""
-        // Matches top-level declarations only: line must start with the modifiers (no leading spaces)
-        // (data |sealed |abstract |open )*(class|object|interface) Name
-        val classPattern = Regex(
-            "^((?:data |sealed |abstract |open |enum )*(?:class|object|interface))\\s+(\\w+)",
-            RegexOption.MULTILINE,
-        )
-        // Matches public/suspend fun — captures name + params + optional return type
-        val funSignaturePattern = Regex("(?:suspend )?fun\\s+(\\w+\\([^)]*\\))(?:\\s*:\\s*(\\S+))?")
-        val privateFunPattern = Regex("(?:private|protected)\\s+(?:suspend )?fun\\s+")
-
-        return classPattern.findAll(content).map { match ->
-            val kind = match.groupValues[1].trim()
-            val name = match.groupValues[2]
-            val startIdx = match.range.first
-            val classBlock = content.substring(startIdx).take(2000)
-
-            // Extract fun signatures, skip private/protected
-            val publicFunctions = classBlock.lines()
-                .filter { line ->
-                    line.contains("fun ") && !privateFunPattern.containsMatchIn(line)
-                }
-                .mapNotNull { line ->
-                    val m = funSignaturePattern.find(line) ?: return@mapNotNull null
-                    val nameAndParams = m.groupValues[1]
-                    val returnType = m.groupValues[2].trimEnd { it == '{' || it.isWhitespace() }
-                    if (returnType.isNotBlank()) "$nameAndParams: $returnType" else nameAndParams
-                }
-                .filter { it.isNotBlank() }
-                .take(10)
-                .toList()
-
-            KotlinClassInfo(
-                name = name,
-                kind = kind,
-                packageName = packageName,
-                publicFunctions = publicFunctions,
-                firstLines = classBlock.lines().take(3).joinToString("\n"),
-            )
-        }.toList()
-    }
-
-    internal fun buildIndexDocument(filePath: String, cls: KotlinClassInfo): String = buildString {
-        appendLine("package ${cls.packageName}")
-        appendLine("file: $filePath")
-        appendLine()
-        appendLine("${cls.kind} ${cls.name}")
-        if (cls.publicFunctions.isNotEmpty()) {
-            appendLine("public functions:")
-            cls.publicFunctions.forEach { appendLine("  fun $it") }
-        }
-    }
-
-    private fun buildEnrichPrompt(filePath: String, cls: KotlinClassInfo): String = buildString {
-        appendLine("Kotlin 클래스를 검색 최적화된 한국어 설명으로 변환하세요. 50자 이내.")
-        appendLine("클래스: ${cls.name} (${cls.kind})")
-        appendLine("파일: $filePath")
-        appendLine("패키지: ${cls.packageName}")
-        if (cls.publicFunctions.isNotEmpty()) {
-            appendLine("주요 함수: ${cls.publicFunctions.take(5).joinToString(", ")}")
-        }
-        appendLine("출력: 한 문단, 한국어, 이 클래스가 무엇을 하는지 + 어디서 쓰이는지")
     }
 
     /**
      * 증분 인덱싱: 마지막 인덱싱 커밋 이후 변경된 .kt 파일만 재처리합니다.
-     * 이전 상태가 없으면 indexAll()로 폴백합니다.
-     * localRepoSync가 null이면 즉시 0을 반환합니다.
      */
     suspend fun syncAndIndexChanged(repo: String, branch: String = this.branch): Int {
         if (localRepoSync == null) {
@@ -206,10 +154,125 @@ class CodeIndexAgent(
         return count
     }
 
+    // ── Step 2: 함수 단위 청크 추출 ────────────────────────────────────────────
+
     /**
-     * 지정한 파일 경로 목록만 인덱싱합니다 (localRepoPath 기준 상대 경로).
-     * 로컬 파일시스템에서 읽으므로 API rate-limit delay 없음.
+     * 파일 내용에서 함수 단위 CodeChunk 목록을 추출합니다.
+     *
+     * - top-level과 클래스 내부 함수 모두 추출
+     * - abstract/interface 선언 함수는 body = ""
+     * - 함수 바디는 최대 500자로 잘라냄 (Cursor 기준)
      */
+    internal fun extractFunctionChunks(content: String, filePath: String): List<CodeChunk> {
+        val packageName = Regex("^package\\s+([\\w.]+)").find(content)?.groupValues?.get(1) ?: ""
+        val chunks = mutableListOf<CodeChunk>()
+
+        // 클래스 선언 위치 수집 — 함수가 어떤 클래스에 속하는지 판단용
+        val classPattern = Regex(
+            "^((?:data |sealed |abstract |open |enum )*(?:class|object|interface))\\s+(\\w+)",
+            RegexOption.MULTILINE,
+        )
+        data class ClassPos(val name: String, val pos: Int)
+        val classPositions = classPattern.findAll(content)
+            .map { ClassPos(it.groupValues[2], it.range.first) }
+            .toList()
+
+        // 함수 시그니처 패턴
+        // - 선택적 modifier: override/suspend/private/protected/internal/public/open/abstract/inline/operator
+        // - 파라미터: 단일 라인만 지원 (Step 4 Tree-sitter에서 멀티라인 처리 예정)
+        val funPattern = Regex(
+            """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(\w+)\s*(\([^)]*\))(?:\s*:\s*([^\n{=]+))?""",
+            setOf(RegexOption.MULTILINE),
+        )
+
+        funPattern.findAll(content).forEach { match ->
+            val functionName = match.groupValues[1]
+            val params = match.groupValues[2]
+            val returnType = match.groupValues[3].trim().trimEnd { it == '{' || it.isWhitespace() }
+
+            val signature = buildString {
+                append("fun ")
+                append(functionName)
+                append(params)
+                if (returnType.isNotBlank()) {
+                    append(": ")
+                    append(returnType)
+                }
+            }
+
+            // 이 함수보다 앞서 나온 클래스 선언 중 가장 마지막 = 이 함수가 속한 클래스
+            val funcPos = match.range.first
+            val className = classPositions.lastOrNull { it.pos <= funcPos }?.name ?: ""
+
+            // 함수 바디 추출
+            val afterSignature = content.substring(match.range.last + 1)
+            val trimmed = afterSignature.trimStart(' ', '\t')
+            val body = when {
+                trimmed.startsWith("\n{") || trimmed.startsWith(" {") || trimmed.startsWith("{") -> {
+                    val braceStart = trimmed.indexOf('{')
+                    if (braceStart >= 0) extractBraceBlock(trimmed.substring(braceStart), maxChars = 500)
+                    else ""
+                }
+                trimmed.trimStart('\n').startsWith("=") -> {
+                    "= " + trimmed.trimStart('\n').removePrefix("=").trim().lines().first().take(498)
+                }
+                else -> "" // abstract 또는 interface 선언
+            }
+
+            chunks.add(
+                CodeChunk(
+                    filePath = filePath,
+                    className = className,
+                    functionName = functionName,
+                    signature = signature,
+                    body = body,
+                    packageName = packageName,
+                ),
+            )
+        }
+
+        return chunks
+    }
+
+    /** 중괄호 블록 전체를 추출, maxChars 초과 시 잘라냄. */
+    private fun extractBraceBlock(text: String, maxChars: Int): String {
+        var depth = 0
+        val sb = StringBuilder()
+        for (ch in text) {
+            sb.append(ch)
+            when (ch) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) break
+                }
+            }
+            if (sb.length >= maxChars) break
+        }
+        return sb.toString()
+    }
+
+    /** ChromaDB에 저장할 함수 단위 문서를 생성합니다. */
+    internal fun buildChunkDocument(chunk: CodeChunk): String = buildString {
+        appendLine("package ${chunk.packageName}")
+        appendLine("file: ${chunk.filePath}")
+        if (chunk.className.isNotBlank()) {
+            appendLine("class: ${chunk.className}")
+        }
+        appendLine()
+        if (chunk.body.isNotBlank()) {
+            appendLine(chunk.signature)
+            append(chunk.body)
+            if (!chunk.body.trimEnd().endsWith("}") && !chunk.body.trimEnd().startsWith("=")) {
+                appendLine()
+            }
+        } else {
+            appendLine(chunk.signature) // abstract / interface 선언
+        }
+    }
+
+    // ── 내부 유틸: 파일 목록 인덱싱 ───────────────────────────────────────────
+
     private suspend fun indexFiles(filePaths: List<String>, repo: String): Int {
         val localRoot = localRepoPath?.let { File(it) }
             ?: run { log.warn("indexFiles called but localRepoPath is null"); return 0 }
@@ -227,22 +290,22 @@ class CodeIndexAgent(
                     val content = File(localRoot, path).takeIf { it.exists() }?.readText()
                         ?: return@forEach
 
-                    val classes = extractClasses(content)
-                    if (classes.isEmpty()) return@forEach
+                    val chunks = extractFunctionChunks(content, path)
+                    if (chunks.isEmpty()) return@forEach
 
-                    classes.forEach { cls ->
-                        val baseDoc = buildIndexDocument(path, cls)
-                        val doc = if (embeddingFn != null) baseDoc
-                                  else runCatching { llmFn(buildEnrichPrompt(path, cls)) }.getOrDefault(baseDoc)
-                        ids += "$repo:$path:${cls.name}"
+                    chunks.forEach { chunk ->
+                        val doc = buildChunkDocument(chunk)
+                        val id = "$repo:${chunk.filePath}:${chunk.className}:${chunk.functionName}"
+                        ids += id
                         docs += doc
                         embeddingFn?.let { fn ->
                             embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
                         }
                         metas += mapOf(
                             "repo" to repo,
-                            "file_path" to path,
-                            "class_name" to cls.name,
+                            "file_path" to chunk.filePath,
+                            "class_name" to chunk.className,
+                            "function_name" to chunk.functionName,
                             "branch" to branch,
                         )
                         total++
@@ -259,6 +322,8 @@ class CodeIndexAgent(
         return total
     }
 
+    // ── 인덱스 상태 파일 ────────────────────────────────────────────────────────
+
     private fun loadIndexState(): Map<String, String> {
         val file = File(indexStateFile)
         if (!file.exists()) return emptyMap()
@@ -273,6 +338,56 @@ class CodeIndexAgent(
         val tmp = File("$indexStateFile.tmp")
         tmp.writeText(Json.encodeToString(mapOf("lastCommit" to commitSha)))
         tmp.renameTo(file)
+    }
+
+    // ── 하위 호환 — 클래스 단위 추출 (이전 버전 / 단위 테스트 참조용) ──────────
+
+    internal fun extractClasses(content: String): List<KotlinClassInfo> {
+        val packageName = Regex("^package\\s+([\\w.]+)").find(content)?.groupValues?.get(1) ?: ""
+        val classPattern = Regex(
+            "^((?:data |sealed |abstract |open |enum )*(?:class|object|interface))\\s+(\\w+)",
+            RegexOption.MULTILINE,
+        )
+        val funSignaturePattern = Regex("(?:suspend )?fun\\s+(\\w+\\([^)]*\\))(?:\\s*:\\s*(\\S+))?")
+        val privateFunPattern = Regex("(?:private|protected)\\s+(?:suspend )?fun\\s+")
+
+        return classPattern.findAll(content).map { match ->
+            val kind = match.groupValues[1].trim()
+            val name = match.groupValues[2]
+            val startIdx = match.range.first
+            val classBlock = content.substring(startIdx).take(2000)
+
+            val publicFunctions = classBlock.lines()
+                .filter { line -> line.contains("fun ") && !privateFunPattern.containsMatchIn(line) }
+                .mapNotNull { line ->
+                    val m = funSignaturePattern.find(line) ?: return@mapNotNull null
+                    val nameAndParams = m.groupValues[1]
+                    val returnType = m.groupValues[2].trimEnd { it == '{' || it.isWhitespace() }
+                    if (returnType.isNotBlank()) "$nameAndParams: $returnType" else nameAndParams
+                }
+                .filter { it.isNotBlank() }
+                .take(10)
+                .toList()
+
+            KotlinClassInfo(
+                name = name,
+                kind = kind,
+                packageName = packageName,
+                publicFunctions = publicFunctions,
+                firstLines = classBlock.lines().take(3).joinToString("\n"),
+            )
+        }.toList()
+    }
+
+    internal fun buildIndexDocument(filePath: String, cls: KotlinClassInfo): String = buildString {
+        appendLine("package ${cls.packageName}")
+        appendLine("file: $filePath")
+        appendLine()
+        appendLine("${cls.kind} ${cls.name}")
+        if (cls.publicFunctions.isNotEmpty()) {
+            appendLine("public functions:")
+            cls.publicFunctions.forEach { appendLine("  fun $it") }
+        }
     }
 
     companion object {
