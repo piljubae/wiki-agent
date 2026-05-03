@@ -235,12 +235,14 @@ class SlackBotGateway(
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
             } else when (classifyDmInput(query)) {
                 DmInputType.PR_URL -> if (prIndexAgent != null) {
+                    val agent = prIndexAgent
                     messageExecutor.submit {
                         slackClient.chatPostMessage { it.channel(channel).text(":hourglass_flowing_sand: PR 인덱싱 중...") }
                         val parsed = GitHubCodeClient("").parsePrUrl(query)
                         if (parsed != null) {
-                            val result = runBlocking { prIndexAgent.indexPr(parsed.first, parsed.second) }
-                            slackClient.chatPostMessage { it.channel(channel).text(":white_check_mark: $result") }
+                            runCatching { runBlocking { agent.indexPr(parsed.first, parsed.second) } }
+                                .onSuccess { result -> slackClient.chatPostMessage { it.channel(channel).text(":white_check_mark: $result") } }
+                                .onFailure { e -> slackClient.chatPostMessage { it.channel(channel).text(":x: 인덱싱 중 오류: ${e.message}") } }
                         } else {
                             slackClient.chatPostMessage { it.channel(channel).text(":x: PR URL 형식을 인식하지 못했습니다.") }
                         }
