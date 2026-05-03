@@ -47,4 +47,5 @@ data class CodeSearchConfig(
     val branch: String = "develop",
     val pollIntervalMinutes: Int = 60,
     val webhookPort: Int = 0,
+    val localRepoPath: String? = null,  // 설정 시 GitHub API 대신 로컬 체크아웃에서 파일 읽기
 )
