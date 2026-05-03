@@ -52,6 +52,10 @@ class GitHubCodeClient(private val token: String = "") {
         return filterDiffLines(diff).take(maxChars)
     }
 
+    // Note: GitHub's /pulls endpoint does not support 'since' as a filter parameter
+    // (unlike /issues). The since param is appended but ignored by the API.
+    // Deduplication of already-indexed PRs is handled client-side in PrIndexAgent
+    // via lastPrNumber comparison.
     suspend fun fetchRecentPrs(repo: String, since: String? = null): List<GithubPrInfo> {
         val url = buildString {
             append("https://api.github.com/repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=50")
@@ -61,6 +65,7 @@ class GitHubCodeClient(private val token: String = "") {
         return runCatching { parsePrListJson(repo, json) }.getOrDefault(emptyList())
     }
 
+    // Note: GitHub Code Search API indexes only the default branch — branch param is informational only
     suspend fun searchCode(repo: String, query: String, branch: String = "develop"): List<GithubCodeResult> {
         val q = "$query+repo:$repo"
         val url = "https://api.github.com/search/code?q=${q.replace(" ", "+")}&per_page=10"
@@ -132,24 +137,42 @@ class GitHubCodeClient(private val token: String = "") {
         )
     }
 
-    private fun parsePrListJson(repo: String, json: String): List<GithubPrInfo> {
-        val prBlocks = Regex("\\{[^{}]*\"number\"[^{}]*\\}").findAll(json)
-        return prBlocks.mapNotNull { match ->
-            runCatching {
-                val block = match.value
-                fun field(name: String) = Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"").find(block)?.groupValues?.get(1) ?: ""
-                val number = Regex("\"number\"\\s*:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-                GithubPrInfo(
-                    repo = repo, number = number,
-                    title = field("title"), body = "",
-                    state = field("state"),
-                    merged = field("merged_at").isNotBlank(),
-                    mergedAt = field("merged_at").ifBlank { null },
-                    author = Regex("\"login\"\\s*:\\s*\"([^\"]+)\"").find(block)?.groupValues?.get(1) ?: "",
-                    branch = "", changedFiles = emptyList(),
-                )
-            }.getOrNull()
-        }.toList()
+    internal fun parsePrListJson(repo: String, json: String): List<GithubPrInfo> {
+        val results = mutableListOf<GithubPrInfo>()
+        val numberPattern = Regex("\"number\"\\s*:\\s*(\\d+)")
+
+        numberPattern.findAll(json).forEach { numMatch ->
+            val number = numMatch.groupValues[1].toIntOrNull() ?: return@forEach
+            // Extract a window around this number occurrence to find sibling fields
+            val start = maxOf(0, numMatch.range.first - 2000)
+            val end = minOf(json.length, numMatch.range.last + 2000)
+            val window = json.substring(start, end)
+
+            fun windowField(name: String) = Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"").find(window)?.groupValues?.get(1) ?: ""
+
+            val title = windowField("title")
+            if (title.isBlank()) return@forEach  // skip non-PR number occurrences
+
+            val login = Regex("\"login\"\\s*:\\s*\"([^\"]+)\"").find(window)?.groupValues?.get(1) ?: ""
+            val state = windowField("state")
+            val mergedAt = windowField("merged_at").ifBlank { null }
+            val headRef = Regex("\"head\"[^}]*\"ref\"\\s*:\\s*\"([^\"]+)\"", RegexOption.DOT_MATCHES_ALL)
+                .find(window)?.groupValues?.get(1) ?: ""
+
+            results += GithubPrInfo(
+                repo = repo,
+                number = number,
+                title = title,
+                body = "",
+                state = state,
+                merged = mergedAt != null,
+                mergedAt = mergedAt,
+                author = login,
+                branch = headRef,
+                changedFiles = emptyList(),
+            )
+        }
+        return results.distinctBy { it.number }
     }
 
     private fun parseCodeSearchJson(repo: String, json: String): List<GithubCodeResult> {

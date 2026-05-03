@@ -47,4 +47,37 @@ class GitHubCodeClientTest {
         assertEquals("IUHG-123", client.extractTicket("IUHG-123 growth feature", ""))
         assertNull(client.extractTicket("일반 커밋", "main"))
     }
+
+    @Test
+    fun `parsePrListJson — 중첩 JSON에서 PR 목록 파싱`() {
+        val json = """
+            [
+              {
+                "number": 101,
+                "title": "KMA-1234 feature",
+                "state": "closed",
+                "merged_at": "2026-05-01T10:00:00Z",
+                "user": { "login": "dev1", "id": 1 },
+                "head": { "ref": "feature/KMA-1234", "sha": "abc" },
+                "base": { "ref": "develop", "sha": "def" }
+              },
+              {
+                "number": 102,
+                "title": "fix typo",
+                "state": "open",
+                "merged_at": null,
+                "user": { "login": "dev2", "id": 2 },
+                "head": { "ref": "fix/typo", "sha": "ghi" },
+                "base": { "ref": "develop", "sha": "jkl" }
+              }
+            ]
+        """.trimIndent()
+
+        val results = client.parsePrListJson("owner/repo", json)
+        assertEquals(2, results.size)
+        assertEquals(101, results[0].number)
+        assertEquals("KMA-1234 feature", results[0].title)
+        assertEquals("dev1", results[0].author)
+        assertEquals(102, results[1].number)
+    }
 }
