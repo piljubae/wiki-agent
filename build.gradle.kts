@@ -26,6 +26,8 @@ dependencies {
     implementation("org.glassfish.tyrus.bundles:tyrus-standalone-client:1.21")
     implementation("com.neovisionaries:nv-websocket-client:2.14")
     implementation("io.ktor:ktor-client-cio:3.1.2")
+    implementation("io.ktor:ktor-server-cio:3.1.2")
+    implementation("io.ktor:ktor-server-core:3.1.2")
     implementation("com.charleskorn.kaml:kaml:0.67.0")
     implementation("ch.qos.logback:logback-classic:1.5.13")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
