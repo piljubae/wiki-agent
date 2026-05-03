@@ -180,6 +180,55 @@ github:
 - OrchestratorAgent가 기술 문서 / 코드 관련 질문에서 `githubWikiSearch` Tool을 선택합니다
 - GitHub Search API로 `.wiki` 레포에서 관련 페이지를 찾고 내용을 요약합니다
 
+## 코드 검색 + PR 이력 (선택)
+
+Kurly Android 소스코드와 PR 기반 작업 이력을 검색할 수 있습니다.
+
+### 필수 조건
+- `rag.enabled: true` (ChromaDB 필요)
+- `GITHUB_TOKEN` — `repo` scope 필요 (private repo 접근)
+
+### 활성화
+
+`config.yml`:
+```yaml
+github:
+  codeRepos:
+    - thefarmersfront/kurly-android
+  codeSearch:
+    branch: develop
+    pollIntervalMinutes: 60    # 0이면 비활성
+    webhookPort: 8080          # 0이면 비활성
+
+rag:
+  enabled: true
+  chromaUrl: http://localhost:8000
+```
+
+### 초기 인덱싱
+```
+/wiki reindex-code    # 전체 코드베이스 인덱싱 (최초 1회)
+```
+
+### 사용법
+```
+@wiki BannerViewModel 어디있어?
+@wiki panelCode 어디서 쓰여?
+@wiki KMA-7275 어떤 작업이었어?
+@wiki 배너 클릭 이벤트 누가 만들었어?
+```
+
+DM에 PR URL을 붙여넣으면 자동 인덱싱됩니다:
+```
+https://github.com/thefarmersfront/kurly-android/pull/7400
+```
+
+### Webhook 설정 (선택)
+PR merge 시 자동 인덱싱하려면 GitHub Repo Settings → Webhooks에서:
+- Payload URL: `http://your-server:8080/webhook/github`
+- Content type: `application/json`
+- Events: `Pull requests`
+
 ## RAG (선택)
 
 ChromaDB 기반 의미 검색을 추가할 수 있습니다. RAG는 ConfluenceSearchAgent의 2단계 병렬 fallback으로 자동 실행됩니다 — CQL 결과가 부족할 때 title/text 검색과 동시에 5초 타임아웃으로 실행됩니다.
