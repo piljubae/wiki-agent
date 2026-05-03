@@ -174,10 +174,14 @@ class OrchestratorAgent(
                     ?.takeIf { !it.contains("찾을 수 없습니다") }
             toolName == "prHistory+codeSearch" ->
                 runCatching { executeCodeParallel(query) }.getOrNull()
-            toolName == "prHistory" && prHistoryTool != null ->
-                runCatching { prHistoryTool!!.prHistory(query) }.getOrNull()
-            toolName == "codeSearch" && codeSearchTool != null ->
-                runCatching { codeSearchTool!!.codeSearch(query) }.getOrNull()
+            toolName == "prHistory" && prHistoryTool != null -> {
+                val tool = prHistoryTool
+                runCatching { tool.prHistory(query) }.getOrNull()
+            }
+            toolName == "codeSearch" && codeSearchTool != null -> {
+                val tool = codeSearchTool
+                runCatching { tool.codeSearch(query) }.getOrNull()
+            }
             else ->
                 runCatching { executeParallel(query, synonyms, dateAfter, dateBefore) }.getOrNull()
         }
@@ -275,6 +279,8 @@ class OrchestratorAgent(
     }
 
     internal suspend fun executeCodeParallel(query: String): String? {
+        if (prHistoryTool == null) log.warn("executeCodeParallel called but prHistoryTool is null")
+        if (codeSearchTool == null) log.warn("executeCodeParallel called but codeSearchTool is null")
         val (prResult, codeResult) = coroutineScope {
             val prDeferred = async {
                 if (prHistoryTool != null)
