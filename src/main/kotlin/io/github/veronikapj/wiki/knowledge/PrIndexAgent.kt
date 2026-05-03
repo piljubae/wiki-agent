@@ -34,6 +34,7 @@ class PrIndexAgent(
             .getOrDefault("변경 목적: 불명\n영향 영역: 없음\n핵심 변경: 없음\n관련 티켓: 없음")
         val document = compilePrDocument(pr, llmOutput)
 
+        // KnowledgeStore prepends .wiki/knowledge/ → resolves to .wiki/knowledge/prs/owner-repo-pr-NNN.md
         val path = "prs/${repo.replace("/", "-")}-pr-${prNumber}.md"
         knowledgeStore.savePage(path, document)
 
@@ -51,7 +52,7 @@ class PrIndexAgent(
                     "repo" to repo,
                     "pr_number" to prNumber.toString(),
                     "state" to pr.state,
-                    "ticket" to (extractTicket(pr.title, pr.branch) ?: ""),
+                    "ticket" to (codeClient.extractTicket(pr.title, pr.branch) ?: ""),
                     "author" to pr.author,
                     "merged_at" to (pr.mergedAt ?: ""),
                 )),
@@ -83,6 +84,9 @@ class PrIndexAgent(
                     .onFailure { log.warn("Failed to index PR #{}: {}", pr.number, it.message) }
             }
 
+            if (prs.isNotEmpty() && maxPrNumber == state.lastPrNumber) {
+                log.warn("No PRs indexed for {} ({} fetched, all failed)", repo, prs.size)
+            }
             stateMap[repo] = PollState(
                 lastPolledAt = Instant.now().toString(),
                 lastPrNumber = maxPrNumber,
@@ -100,7 +104,7 @@ class PrIndexAgent(
         appendLine("- *작성자*: ${pr.author}")
         appendLine("- *상태*: ${pr.state}${if (pr.merged) " (merged)" else ""}")
         pr.mergedAt?.let { appendLine("- *머지*: $it") }
-        extractTicket(pr.title, pr.branch)?.let { appendLine("- *티켓*: $it") }
+        codeClient.extractTicket(pr.title, pr.branch)?.let { appendLine("- *티켓*: $it") }
         appendLine()
         appendLine(llmOutput)
         if (pr.changedFiles.isNotEmpty()) {
@@ -108,11 +112,6 @@ class PrIndexAgent(
             appendLine("## 변경 파일")
             pr.changedFiles.forEach { appendLine("- $it") }
         }
-    }
-
-    private fun extractTicket(title: String, branch: String): String? {
-        val pattern = Regex("[A-Z]+-\\d+")
-        return pattern.find(title)?.value ?: pattern.find(branch)?.value
     }
 
     private fun buildCompilePrompt(pr: GithubPrInfo, diff: String): String = buildString {
@@ -153,7 +152,9 @@ class PrIndexAgent(
     private fun savePollState(state: Map<String, PollState>) {
         val file = File(pollStateFile)
         file.parentFile?.mkdirs()
-        file.writeText(Json.encodeToString(state))
+        val tmp = File("$pollStateFile.tmp")
+        tmp.writeText(Json.encodeToString(state))
+        tmp.renameTo(file)
     }
 
     companion object {
