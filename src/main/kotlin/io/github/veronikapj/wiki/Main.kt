@@ -43,6 +43,8 @@ import io.ktor.server.response.respond
 import io.ktor.server.application.call
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -210,11 +212,14 @@ fun main() {
         projectMemory = projectMemory,
     )
 
+    // 공유 백그라운드 스코프 (polling + webhook 공용)
+    val backgroundScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    Runtime.getRuntime().addShutdownHook(Thread { backgroundScope.cancel() })
+
     // Polling 코루틴 시작
     val finalPrIndexAgent = prIndexAgent
     if (finalPrIndexAgent != null && config.github.codeSearch.pollIntervalMinutes > 0) {
-        val pollScope = CoroutineScope(Dispatchers.IO)
-        pollScope.launch {
+        backgroundScope.launch {
             val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
             log.info("PR polling started: interval={}min, repos={}", config.github.codeSearch.pollIntervalMinutes, config.github.codeRepos)
             while (true) {
@@ -230,8 +235,7 @@ fun main() {
     // GitHub Webhook 서버
     val finalPrIndexAgentForWebhook = prIndexAgent
     if (finalPrIndexAgentForWebhook != null && config.github.codeSearch.webhookPort > 0) {
-        val webhookScope = CoroutineScope(Dispatchers.IO)
-        webhookScope.launch {
+        backgroundScope.launch {
             embeddedServer(CIO, port = config.github.codeSearch.webhookPort) {
                 routing {
                     post("/webhook/github") {
@@ -239,11 +243,12 @@ fun main() {
                         val event = call.request.headers["X-GitHub-Event"]
                         if (event == "pull_request") {
                             val action = Regex("\"action\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)
+                            val merged = Regex("\"merged\"\\s*:\\s*(true|false)").find(body)?.groupValues?.get(1) == "true"
                             val repo = Regex("\"full_name\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1) ?: ""
                             val prNumber = Regex("\"number\"\\s*:\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toIntOrNull()
 
-                            if ((action == "closed" || action == "opened") && prNumber != null && repo.isNotBlank()) {
-                                webhookScope.launch {
+                            if (action == "closed" && merged && prNumber != null && repo.isNotBlank()) {
+                                backgroundScope.launch {
                                     runCatching {
                                         finalPrIndexAgentForWebhook.indexPr(repo, prNumber)
                                         log.info("Webhook: indexed PR #{} from {}", prNumber, repo)
