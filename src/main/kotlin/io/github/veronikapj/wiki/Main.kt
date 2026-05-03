@@ -30,8 +30,9 @@ import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
 import io.github.veronikapj.wiki.github.GitHubCodeClient
-import io.github.veronikapj.wiki.knowledge.PrIndexAgent
 import io.github.veronikapj.wiki.knowledge.CodeIndexAgent
+import io.github.veronikapj.wiki.knowledge.LocalRepoSync
+import io.github.veronikapj.wiki.knowledge.PrIndexAgent
 import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.ktor.server.cio.CIO
@@ -177,12 +178,22 @@ fun main() {
             llmFn = codeLlmFn,
             chromaClient = codeChromaClient,
         )
+        val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
+        val codeEmbeddingFn: (suspend (String) -> List<Float>)? =
+            if (config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING && googleApiKey != null)
+                GoogleEmbeddingClient(googleApiKey).let { client -> { text: String -> client.embed(text) } }
+            else null
+        if (codeEmbeddingFn == null) log.warn("Code indexing: no embedding function configured — using ChromaDB default embedding")
+
         codeIndexAgent = CodeIndexAgent(
             codeClient = githubCodeClient,
             llmFn = codeLlmFn,
             chromaClient = codeChromaClient,
             repos = config.github.codeRepos,
             branch = config.github.codeSearch.branch,
+            embeddingFn = codeEmbeddingFn,
+            localRepoPath = config.github.codeSearch.localRepoPath,
+            localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
         )
         prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker)
         codeSearchTool = CodeSearchTool(
@@ -228,6 +239,22 @@ fun main() {
                     val count = finalPrIndexAgent.indexRecentPrs(config.github.codeRepos)
                     if (count > 0) log.info("Polling: indexed {} new PRs", count)
                 }.onFailure { log.warn("Polling failed: {}", it.message) }
+            }
+        }
+    }
+
+    // Code incremental sync (localRepoPath 설정 시)
+    val finalCodeIndexAgent = codeIndexAgent
+    if (finalCodeIndexAgent != null && config.github.codeSearch.localRepoPath != null) {
+        backgroundScope.launch {
+            val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
+            log.info("Code incremental sync started: interval={}min", config.github.codeSearch.pollIntervalMinutes)
+            while (true) {
+                delay(intervalMs)
+                runCatching {
+                    val count = finalCodeIndexAgent.syncAndIndexChanged(config.github.codeRepos.first(), config.github.codeSearch.branch)
+                    if (count > 0) log.info("Incremental code index: {} class entries updated", count)
+                }.onFailure { log.warn("Incremental code sync failed: {}", it.message) }
             }
         }
     }
