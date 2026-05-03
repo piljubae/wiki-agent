@@ -184,7 +184,8 @@ class CodeIndexAgent(
         // - 선택적 modifier: override/suspend/private/protected/internal/public/open/abstract/inline/operator
         // - 파라미터: 단일 라인만 지원 (Step 4 Tree-sitter에서 멀티라인 처리 예정)
         val funPattern = Regex(
-            """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(\w+)\s*(\([^)]*\))(?:\s*:\s*([^\n{=]+))?""",
+            // (?:\w+\.)* = extension receiver 선택적 처리 (e.g. ViewModel.getString)
+            """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(?:\w+\.)*(\w+)\s*(\([^)]*\))(?:\s*:\s*([^\n{=]+))?""",
             setOf(RegexOption.MULTILINE),
         )
 
