@@ -4,9 +4,11 @@ Confluence 없이 **GitHub Wiki만으로도 실행 가능**합니다.
 
 ## 사전 요건
 
-- JDK 17 이상
+- JDK 17 이상 (`java -version` 으로 확인)
+  - 없는 경우: `brew install --cask temurin` 또는 [Adoptium Temurin](https://adoptium.net)
 - Slack App 토큰 2개 ([Slack-App-Setup](Slack-App-Setup) 참고)
 - Claude Code CLI 설치 (provider=CLAUDE_CODE 시, API 키 불필요)
+- Node.js 18 이상 — `provider: GEMINI_CODE` 사용 시에만 필요 (`brew install node`)
 
 ## 1. 레포 클론
 
@@ -80,6 +82,22 @@ github:
 | 로컬 (Claude Code) | `CLAUDE_CODE` | Claude Code CLI | 구독 요금만 |
 | Claude API | `ANTHROPIC` | `ANTHROPIC_API_KEY` | API 사용량 |
 | Gemini API | `GOOGLE` | `GOOGLE_API_KEY` | API 사용량 |
+
+## 트러블슈팅
+
+### `Warning: True color (24-bit) support not detected`
+`provider: GEMINI_CODE` 사용 시 표시될 수 있는 정상 경고입니다. 동작에 영향 없습니다.
+
+### `gemini: command not found`
+```bash
+npm install -g @google/gemini-cli
+export PATH="$(npm root -g)/../.bin:$PATH"
+```
+
+### Gradle 빌드 실패
+```bash
+./gradlew build --refresh-dependencies
+```
 
 ---
 
