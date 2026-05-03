@@ -189,6 +189,27 @@ class GitHubCodeClient(private val token: String = "") {
             }.toList()
     }
 
+    // Fetches all Kotlin file paths from the git tree API
+    suspend fun fetchKotlinFilePaths(repo: String, branch: String): List<String> {
+        val treeUrl = "https://api.github.com/repos/$repo/git/trees/$branch?recursive=1"
+        val json = apiGet(treeUrl) ?: return emptyList()
+        return Regex("\"path\"\\s*:\\s*\"([^\"]+\\.kt)\"")
+            .findAll(json)
+            .map { it.groupValues[1] }
+            .filter { !it.contains("Test") && !it.contains("build/") && !it.contains("generated") }
+            .toList()
+    }
+
+    // Fetches and base64-decodes a file from GitHub Contents API
+    suspend fun fetchFileContent(repo: String, path: String, branch: String): String? {
+        val url = "https://api.github.com/repos/$repo/contents/${path}?ref=$branch"
+        val json = apiGet(url) ?: return null
+        val encoded = Regex("\"content\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1) ?: return null
+        return runCatching {
+            String(java.util.Base64.getMimeDecoder().decode(encoded.replace("\\n", "\n")))
+        }.getOrNull()
+    }
+
     fun close() = httpClient.close()
 
     companion object {

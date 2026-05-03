@@ -2,14 +2,7 @@ package io.github.veronikapj.wiki.knowledge
 
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.rag.ChromaClient
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.bodyAsText
 import org.slf4j.LoggerFactory
-import java.util.Base64
 
 class CodeIndexAgent(
     private val codeClient: GitHubCodeClient,
@@ -17,7 +10,6 @@ class CodeIndexAgent(
     private val chromaClient: ChromaClient,
     private val repos: List<String>,
     private val branch: String = "develop",
-    private val token: String = "",
     private val collectionName: String = "code_index",
 ) {
 
@@ -29,16 +21,12 @@ class CodeIndexAgent(
         val firstLines: String,
     )
 
-    private val httpClient = HttpClient(CIO) {
-        install(HttpTimeout) { requestTimeoutMillis = 20_000 }
-    }
-
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
         var total = 0
 
         for (repo in repos) {
-            val filePaths = fetchKotlinFilePaths(repo)
+            val filePaths = codeClient.fetchKotlinFilePaths(repo, branch)
             log.info("Indexing {} Kotlin files from {}", filePaths.size, repo)
 
             filePaths.chunked(5).forEach { batch ->
@@ -48,7 +36,7 @@ class CodeIndexAgent(
 
                 batch.forEach { path ->
                     runCatching {
-                        val content = fetchFileContent(repo, path) ?: return@forEach
+                        val content = codeClient.fetchFileContent(repo, path, branch) ?: return@forEach
                         val classes = extractClasses(content)
                         if (classes.isEmpty()) return@forEach
 
@@ -76,37 +64,6 @@ class CodeIndexAgent(
 
         log.info("Code index complete: {} class entries", total)
         return total
-    }
-
-    private suspend fun fetchKotlinFilePaths(repo: String): List<String> {
-        val treeUrl = "https://api.github.com/repos/$repo/git/trees/$branch?recursive=1"
-        val json = runCatching {
-            httpClient.get(treeUrl) {
-                header("Accept", "application/vnd.github+json")
-                header("X-GitHub-Api-Version", "2022-11-28")
-                if (token.isNotBlank()) header("Authorization", "Bearer $token")
-            }.bodyAsText()
-        }.getOrDefault("")
-        return Regex("\"path\"\\s*:\\s*\"([^\"]+\\.kt)\"")
-            .findAll(json)
-            .map { it.groupValues[1] }
-            .filter { !it.contains("Test") && !it.contains("build/") && !it.contains("generated") }
-            .toList()
-    }
-
-    private suspend fun fetchFileContent(repo: String, path: String): String? {
-        val url = "https://api.github.com/repos/$repo/contents/$path?ref=$branch"
-        val json = runCatching {
-            httpClient.get(url) {
-                header("Accept", "application/vnd.github+json")
-                header("X-GitHub-Api-Version", "2022-11-28")
-                if (token.isNotBlank()) header("Authorization", "Bearer $token")
-            }.bodyAsText()
-        }.getOrNull() ?: return null
-        val encoded = Regex("\"content\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1) ?: return null
-        return runCatching {
-            String(Base64.getMimeDecoder().decode(encoded.replace("\\n", "\n")))
-        }.getOrNull()
     }
 
     internal fun extractClasses(content: String): List<KotlinClassInfo> {
