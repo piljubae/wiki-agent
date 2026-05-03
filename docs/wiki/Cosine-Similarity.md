@@ -8,7 +8,7 @@
 ## 왜 단순 거리(유클리드)를 안 쓰나
 
 ```
-"배너 클릭"                        →  [0.3, 0.9]
+"배너 클릭"                              →  [0.3, 0.9]
 "배너 클릭 이벤트 처리 방법을 알고 싶습니다"  →  [0.6, 1.8]
 ```
 
@@ -24,6 +24,66 @@
 
 ---
 
+## 방향이 왜 의미를 나타내나
+
+768개 숫자 각각이 어떤 의미 축의 강도를 나타냅니다.
+
+```
+              [UI 강도, 액션 강도, 네트워크 강도, ...]
+
+"클릭"       →  [0.9,   0.9,     0.0,  ...]   // UI + 액션이 강함
+"탭"         →  [0.88,  0.88,    0.0,  ...]   // 거의 같은 비율
+"API 호출"   →  [0.1,   0.4,     0.95, ...]   // 네트워크가 강함
+```
+
+"클릭"과 "탭"은 각 축의 **비율**이 비슷합니다 → 방향이 같습니다 → 유사도 높음.
+"클릭"과 "API 호출"은 비율이 다릅니다 → 방향이 다릅니다 → 유사도 낮음.
+
+---
+
+## 내적(dot product)이 하는 일
+
+```kotlin
+val dot = a.indices.sumOf { a[it] * b[it] }
+```
+
+두 벡터에서 같은 위치의 숫자를 곱해서 더합니다.
+
+```
+a = [0.9, 0.9, 0.0]    // "클릭"
+b = [0.88, 0.88, 0.0]  // "탭"
+
+dot = (0.9 × 0.88) + (0.9 × 0.88) + (0.0 × 0.0)
+    = 0.792 + 0.792 + 0
+    = 1.584   ← 같은 축이 함께 강할수록 커짐
+```
+
+같은 축이 **동시에 강할수록** 내적이 커집니다.
+이것이 "공통된 의미 축이 많다"는 뜻입니다.
+
+---
+
+## 크기로 나누는 이유
+
+```
+"클릭"                        →  [0.9, 0.9]    크기 = 1.27
+"클릭 클릭 클릭 클릭 클릭 클릭" →  [5.4, 5.4]    크기 = 7.6
+```
+
+같은 의미인데 반복만 많아서 숫자가 커졌습니다.
+크기로 나눠서 정규화하면 둘 다 같은 방향 → 유사도 1.0.
+
+```kotlin
+fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+    val dot = a.indices.sumOf { a[it] * b[it] }
+    val normA = sqrt(a.sumOf { it * it.toDouble() })
+    val normB = sqrt(b.sumOf { it * it.toDouble() })
+    return (dot / (normA * normB)).toFloat()   // 크기 제거, 방향만 남김
+}
+```
+
+---
+
 ## 값의 범위와 의미
 
 | 값 | 의미 |
@@ -35,65 +95,19 @@
 실제 검색 예시:
 
 ```
-"배너 클릭" vs "버튼 클릭"         →  0.92  (매우 유사)
-"배너 클릭" vs "BannerViewModel"   →  0.74  (관련 있음)
-"배너 클릭" vs "장바구니 결제"      →  0.21  (관련 없음)
+"배너 클릭" vs "버튼 클릭"          →  0.92  (매우 유사)
+"배너 클릭" vs "BannerViewModel"    →  0.74  (관련 있음)
+"배너 클릭" vs "장바구니 결제"       →  0.21  (관련 없음)
 ```
-
----
-
-## 계산 방식
-
-```kotlin
-fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
-    val dot = a.indices.sumOf { a[it] * b[it] }       // 내적 (dot product)
-    val normA = sqrt(a.sumOf { it * it.toDouble() })   // a의 크기
-    val normB = sqrt(b.sumOf { it * it.toDouble() })   // b의 크기
-    return (dot / (normA * normB)).toFloat()
-}
-```
-
-내적을 두 벡터의 크기로 나눠서 크기의 영향을 제거합니다.
-
----
-
-## ChromaDB에서의 동작
-
-```
-사용자 쿼리: "배너 클릭 이벤트 처리"
-    ↓ 임베딩
-쿼리 벡터: [0.23, -0.81, 0.44, ..., 0.12]
-    ↓
-ChromaDB: 저장된 32,000개 벡터와 코사인 유사도 일괄 계산
-    ↓
-유사도 높은 순 top-10 반환
-```
-
-ChromaDB는 내부적으로 HNSW(Hierarchical Navigable Small World) 인덱스를 사용해서
-32,000개 전체를 일일이 비교하지 않고 빠르게 근사 최근접 벡터를 찾습니다.
-
----
-
-## 벡터 검색의 한계
-
-코사인 유사도가 높다고 항상 원하는 결과가 나오지는 않습니다.
-
-```
-"KMA-7275 panelCode 변경"  쿼리
-  → 벡터 검색: 의미적으로 유사한 문서 반환 (실제 KMA-7275 놓칠 수 있음)
-  → BM25 검색: "KMA-7275" 문자열이 포함된 문서 정확히 매칭
-```
-
-정확한 키워드 매칭이 필요한 경우 BM25를 함께 사용합니다. → [BM25.md](BM25.md)
 
 ---
 
 ## 참고 자료
 
 - [Cosine Similarity — Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)
-- [Understanding Cosine Similarity — Pinecone](https://www.pinecone.io/learn/vector-similarity/) — 시각적 설명 포함 (추천)
-- [HNSW 알고리즘 (ChromaDB 내부 인덱스)](https://www.pinecone.io/learn/series/faiss/hnsw/) — 대규모 벡터 검색을 빠르게 하는 방법
+- [Understanding Vector Similarity — Pinecone](https://www.pinecone.io/learn/vector-similarity/) — 시각적 설명 포함 (추천)
+- [Dot Product 시각화 — 3Blue1Brown](https://www.youtube.com/watch?v=LyGKycYT2v0)
 
 ---
 
-> **관련 문서:** [Embedding.md](Embedding.md) · [BM25.md](BM25.md) · [ChromaDB-Setup.md](ChromaDB-Setup.md)
+> **관련 문서:** [Embedding.md](Embedding.md) · [Vector-Search.md](Vector-Search.md) · [BM25.md](BM25.md)
