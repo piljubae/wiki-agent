@@ -19,6 +19,8 @@ class CodeIndexAgent(
     private val localRepoPath: String? = null,
     private val localRepoSync: LocalRepoSync? = null,
     private val indexStateFile: String = ".wiki/code-index-state.json",
+    /** Step 3: BM25 키워드 검색 인덱스. null이면 벡터 검색만 사용. */
+    private val bm25Index: BM25Index? = null,
 ) {
 
     /**
@@ -106,6 +108,7 @@ class CodeIndexAgent(
                                 "function_name" to chunk.functionName,
                                 "branch" to branch,
                             )
+                            bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
                             total++
                         }
                     }.onFailure { log.warn("Failed to index {}/{}: {}", repo, path, it.message) }
@@ -308,6 +311,7 @@ class CodeIndexAgent(
                             "function_name" to chunk.functionName,
                             "branch" to branch,
                         )
+                        bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
                         total++
                     }
                 }.onFailure { log.warn("Failed to index {}/{}: {}", repo, path, it.message) }

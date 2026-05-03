@@ -3,6 +3,7 @@ package io.github.veronikapj.wiki.agent.tool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import kotlinx.coroutines.runBlocking
@@ -15,6 +16,8 @@ class CodeSearchTool(
     private val branch: String = "develop",
     private val tracker: SourceTracker? = null,
     private val collectionName: String = "code_index",
+    /** Step 3: BM25 키워드 검색 인덱스. null이면 벡터 검색만 사용. */
+    private val bm25Index: BM25Index? = null,
 ) {
 
     @Tool("codeSearch")
@@ -31,26 +34,65 @@ class CodeSearchTool(
         runCatching {
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
-            val results = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 5)
 
-            val chromaResult = if (results.isNotEmpty()) {
-                buildString {
-                    appendLine("*\"$query\"* 관련 코드 (${results.size}건):\n")
-                    results.forEachIndexed { i, r ->
+            // Step 3: 하이브리드 검색 — BM25 + 벡터, RRF로 순위 병합
+            val orderedIds: List<String> = if (bm25Index != null) {
+                val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+                val vectorIds = vectorResults.map { r ->
+                    val repo = r.metadata["repo"] ?: ""
+                    val path = r.metadata["file_path"] ?: ""
+                    val cls = r.metadata["class_name"] ?: ""
+                    val fn = r.metadata["function_name"] ?: ""
+                    "$repo:$path:$cls:$fn"
+                }
+                val bm25Ids = bm25Index.search(query, limit = 10)
+                BM25Index.mergeRRF(vectorIds, bm25Ids)
+            } else {
+                // BM25 없으면 벡터만 사용
+                chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+                    .map { r ->
                         val repo = r.metadata["repo"] ?: ""
-                        val filePath = r.metadata["file_path"] ?: ""
-                        val className = r.metadata["class_name"] ?: ""
-                        appendLine("${i + 1}. `$className` — $filePath")
+                        val path = r.metadata["file_path"] ?: ""
+                        val cls = r.metadata["class_name"] ?: ""
+                        val fn = r.metadata["function_name"] ?: ""
+                        "$repo:$path:$cls:$fn"
+                    }
+            }
+
+            // id 기준으로 ChromaDB 결과 메타데이터 조회
+            val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+            val metaById = vectorResults.associateBy { r ->
+                val repo = r.metadata["repo"] ?: ""
+                val path = r.metadata["file_path"] ?: ""
+                val cls = r.metadata["class_name"] ?: ""
+                val fn = r.metadata["function_name"] ?: ""
+                "$repo:$path:$cls:$fn"
+            }
+
+            val topIds = orderedIds.take(5)
+
+            val chromaResult = if (topIds.isNotEmpty()) {
+                buildString {
+                    val searchType = if (bm25Index != null) "하이브리드(벡터+BM25)" else "벡터"
+                    appendLine("*\"$query\"* 관련 코드 [$searchType, ${topIds.size}건]:\n")
+                    topIds.forEachIndexed { i, id ->
+                        val r = metaById[id]
+                        val repo = r?.metadata?.get("repo") ?: id.substringBefore(":")
+                        val filePath = r?.metadata?.get("file_path") ?: ""
+                        val className = r?.metadata?.get("class_name") ?: ""
+                        val functionName = r?.metadata?.get("function_name") ?: ""
+                        val label = if (functionName.isNotBlank()) "$className.$functionName()" else className
+                        appendLine("${i + 1}. `$label` — $filePath")
                         if (repo.isNotBlank() && filePath.isNotBlank()) {
                             appendLine("   <https://github.com/$repo/blob/$branch/$filePath|소스 보기>")
                         }
-                        appendLine("   > ${r.document.lines().take(2).joinToString(" ").take(200)}")
+                        r?.let { appendLine("   > ${it.document.lines().take(2).joinToString(" ").take(200)}") }
                         appendLine()
                     }
                 }.trim()
             } else null
 
-            // ChromaDB 결과 없으면 GitHub Code Search API fallback
+            // ChromaDB + BM25 모두 결과 없으면 GitHub Code Search API fallback
             if (chromaResult != null) chromaResult
             else {
                 val apiResults = codeRepos.flatMap { repo ->

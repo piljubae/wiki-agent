@@ -30,6 +30,7 @@ import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
 import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.knowledge.CodeIndexAgent
 import io.github.veronikapj.wiki.knowledge.LocalRepoSync
 import io.github.veronikapj.wiki.knowledge.PrIndexAgent
@@ -185,6 +186,11 @@ fun main() {
             else null
         if (codeEmbeddingFn == null) log.warn("Code indexing: no embedding function configured — using ChromaDB default embedding")
 
+        // Step 3: BM25 인덱스 — localRepoPath 설정 시 활성화
+        val bm25Index = if (config.github.codeSearch.localRepoPath != null) {
+            BM25Index().also { log.info("BM25 hybrid search enabled") }
+        } else null
+
         codeIndexAgent = CodeIndexAgent(
             codeClient = githubCodeClient,
             llmFn = codeLlmFn,
@@ -194,6 +200,7 @@ fun main() {
             embeddingFn = codeEmbeddingFn,
             localRepoPath = config.github.codeSearch.localRepoPath,
             localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
+            bm25Index = bm25Index,
         )
         prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker)
         codeSearchTool = CodeSearchTool(
@@ -203,6 +210,7 @@ fun main() {
             codeRepos = config.github.codeRepos,
             branch = config.github.codeSearch.branch,
             tracker = sourceTracker,
+            bm25Index = bm25Index,
         )
         log.info("Code search enabled: repos={}, branch={}", config.github.codeRepos, config.github.codeSearch.branch)
     } else if (config.github.codeRepos.isNotEmpty()) {
