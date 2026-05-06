@@ -2,6 +2,11 @@ package io.github.veronikapj.wiki.knowledge
 
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.rag.ChromaClient
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
@@ -34,6 +39,12 @@ class CodeIndexAgent(
         val signature: String,      // "fun onBannerClick(bannerId: String): Unit"
         val body: String,           // 함수 바디, 최대 500자
         val packageName: String,
+    )
+
+    private data class ChunkEntry(
+        val id: String,
+        val doc: String,
+        val meta: Map<String, String>,
     )
 
     // ── 하위 호환 — extractClasses는 buildIndexDocument와 함께 유지 ─────────────
@@ -80,12 +91,9 @@ class CodeIndexAgent(
                 filePaths.size, repo, if (localRoot != null) "local:$localRepoPath" else "github-api",
             )
 
-            filePaths.chunked(5).forEach { batch ->
-                val ids = mutableListOf<String>()
-                val docs = mutableListOf<String>()
-                val embeddings = mutableListOf<List<Float>>()
-                val metas = mutableListOf<Map<String, String>>()
-
+            filePaths.chunked(50).forEachIndexed { batchIdx, batch ->
+                // Phase 1: 청크 수집 (순차, 빠름)
+                val entries = mutableListOf<ChunkEntry>()
                 batch.forEach { path ->
                     runCatching {
                         val content = if (localRoot != null)
@@ -100,31 +108,69 @@ class CodeIndexAgent(
                         chunks.forEach { chunk ->
                             val doc = buildChunkDocument(chunk)
                             val id = chunkId(repo, chunk)
-                            ids += id
-                            docs += doc
-                            embeddingFn?.let { fn ->
-                                embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
-                            }
                             val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
-                            metas += mapOf(
-                                "repo" to repo,
-                                "file_path" to chunk.filePath,
-                                "class_name" to chunk.className,
-                                "function_name" to chunk.functionName,
-                                "sig_hash" to sigHash,
-                                "branch" to branch,
+                            entries += ChunkEntry(
+                                id = id,
+                                doc = doc,
+                                meta = mapOf(
+                                    "repo" to repo,
+                                    "file_path" to chunk.filePath,
+                                    "class_name" to chunk.className,
+                                    "function_name" to chunk.functionName,
+                                    "sig_hash" to sigHash,
+                                    "branch" to branch,
+                                ),
                             )
-                            bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
+                            bm25Index?.upsert(id, doc)
                             total++
                         }
-                    }.onFailure { log.warn("Failed to index {}/{}: {}", repo, path, it.message) }
+                    }.onFailure { log.warn("Failed to read {}/{}: {}", repo, path, it.message) }
                 }
 
-                if (ids.isNotEmpty()) {
-                    val embeds = embeddings.takeIf { it.size == ids.size }
-                    chromaClient.upsertDocuments(collectionId, ids, docs, embeddings = embeds, metadatas = metas)
+                if (entries.isEmpty()) return@forEachIndexed
+
+                // Phase 2: 이미 인덱싱된 ID 확인 → 새 것만 임베딩
+                val existingIds = chromaClient.getExistingIds(collectionId, entries.map { it.id })
+                val newEntries = entries.filter { it.id !in existingIds }
+                log.debug("Batch {}: {} total, {} cached, {} new", batchIdx, entries.size, existingIds.size, newEntries.size)
+
+                val embeddings: List<List<Float>> = if (embeddingFn != null && newEntries.isNotEmpty()) {
+                    coroutineScope {
+                        newEntries.map { entry ->
+                            async {
+                                embeddingSemaphore.withPermit {
+                                    runCatching { embeddingFn(entry.doc) }.getOrElse { emptyList() }
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                } else emptyList()
+
+                // Phase 3: ChromaDB upsert (새 항목 + 빈 임베딩 제외)
+                val validPairs = if (embeddings.size == newEntries.size) {
+                    newEntries.zip(embeddings).filter { (_, emb) -> emb.isNotEmpty() }
+                } else emptyList()
+
+                if (validPairs.isEmpty()) {
+                    if (batchIdx % 10 == 9) log.info(
+                        "Progress: ~{}/{} files", minOf((batchIdx + 1) * 50, filePaths.size), filePaths.size,
+                    )
+                    return@forEachIndexed
                 }
-                if (localRoot == null) kotlinx.coroutines.delay(100) // GitHub API rate-limit protection
+                if (validPairs.size < newEntries.size) {
+                    log.warn("Skipped {} chunks with empty embeddings (batch {})", newEntries.size - validPairs.size, batchIdx)
+                }
+                chromaClient.upsertDocuments(
+                    collectionId,
+                    validPairs.map { it.first.id },
+                    validPairs.map { it.first.doc },
+                    embeddings = validPairs.map { it.second },
+                    metadatas = validPairs.map { it.first.meta },
+                )
+                if (localRoot == null) kotlinx.coroutines.delay(100)
+                if (batchIdx % 10 == 9) log.info(
+                    "Progress: ~{}/{} files", minOf((batchIdx + 1) * 50, filePaths.size), filePaths.size,
+                )
             }
         }
 
@@ -368,12 +414,9 @@ class CodeIndexAgent(
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
         var total = 0
 
-        filePaths.chunked(5).forEach { batch ->
-            val ids = mutableListOf<String>()
-            val docs = mutableListOf<String>()
-            val embeddings = mutableListOf<List<Float>>()
-            val metas = mutableListOf<Map<String, String>>()
-
+        filePaths.chunked(50).forEach { batch ->
+            // Phase 1: 청크 수집
+            val entries = mutableListOf<ChunkEntry>()
             batch.forEach { path ->
                 runCatching {
                     val content = File(localRoot, path).takeIf { it.exists() }?.readText()
@@ -385,30 +428,59 @@ class CodeIndexAgent(
                     chunks.forEach { chunk ->
                         val doc = buildChunkDocument(chunk)
                         val id = chunkId(repo, chunk)
-                        ids += id
-                        docs += doc
-                        embeddingFn?.let { fn ->
-                            embeddings += runCatching { fn(doc) }.getOrElse { emptyList() }
-                        }
                         val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
-                        metas += mapOf(
-                            "repo" to repo,
-                            "file_path" to chunk.filePath,
-                            "class_name" to chunk.className,
-                            "function_name" to chunk.functionName,
-                            "sig_hash" to sigHash,
-                            "branch" to branch,
+                        entries += ChunkEntry(
+                            id = id,
+                            doc = doc,
+                            meta = mapOf(
+                                "repo" to repo,
+                                "file_path" to chunk.filePath,
+                                "class_name" to chunk.className,
+                                "function_name" to chunk.functionName,
+                                "sig_hash" to sigHash,
+                                "branch" to branch,
+                            ),
                         )
-                        bm25Index?.upsert(id, doc)  // Step 3: BM25 동시 저장
+                        bm25Index?.upsert(id, doc)
                         total++
                     }
-                }.onFailure { log.warn("Failed to index {}/{}: {}", repo, path, it.message) }
+                }.onFailure { log.warn("Failed to read {}/{}: {}", repo, path, it.message) }
             }
 
-            if (ids.isNotEmpty()) {
-                val embeds = embeddings.takeIf { it.size == ids.size }
-                chromaClient.upsertDocuments(collectionId, ids, docs, embeddings = embeds, metadatas = metas)
+            if (entries.isEmpty()) return@forEach
+
+            // Phase 2: 이미 인덱싱된 ID 확인 → 새 것만 임베딩
+            val existingIds = chromaClient.getExistingIds(collectionId, entries.map { it.id })
+            val newEntries = entries.filter { it.id !in existingIds }
+
+            val embeddings: List<List<Float>> = if (embeddingFn != null && newEntries.isNotEmpty()) {
+                coroutineScope {
+                    newEntries.map { entry ->
+                        async {
+                            embeddingSemaphore.withPermit {
+                                runCatching { embeddingFn(entry.doc) }.getOrElse { emptyList() }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            } else emptyList()
+
+            // Phase 3: ChromaDB upsert (새 항목 + 빈 임베딩 제외)
+            val validPairs = if (embeddings.size == newEntries.size) {
+                newEntries.zip(embeddings).filter { (_, emb) -> emb.isNotEmpty() }
+            } else emptyList()
+
+            if (validPairs.isEmpty()) return@forEach
+            if (validPairs.size < newEntries.size) {
+                log.warn("Skipped {} chunks with empty embeddings", newEntries.size - validPairs.size)
             }
+            chromaClient.upsertDocuments(
+                collectionId,
+                validPairs.map { it.first.id },
+                validPairs.map { it.first.doc },
+                embeddings = validPairs.map { it.second },
+                metadatas = validPairs.map { it.first.meta },
+            )
         }
 
         return total
@@ -485,6 +557,7 @@ class CodeIndexAgent(
     companion object {
         private val log = LoggerFactory.getLogger(CodeIndexAgent::class.java)
         private val json = Json { ignoreUnknownKeys = true }
+        private val embeddingSemaphore = Semaphore(15) // Gemini 무료 1500RPM 기준: 15 × ~70req/s 이내
 
         /**
          * 청크 ID — 오버로드 함수 구별을 위해 시그니처 해시 6자리를 suffix로 붙임.
