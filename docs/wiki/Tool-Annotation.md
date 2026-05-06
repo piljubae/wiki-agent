@@ -59,6 +59,19 @@ description이 모호하거나 여러 Tool 간 설명이 겹치면 LLM이 잘못
 | [Anthropic Tool Use 공식 문서](https://docs.anthropic.com/en/docs/tool-use) | tool selection이 description 기반으로 작동함을 명시 |
 | [OpenAI Function Calling 가이드](https://platform.openai.com/docs/guides/function-calling) | "overlapping or vague descriptions → wrong tool or no tool called" 명시 |
 
+## 동작 스타일 지정 (PersonaTool 패턴)
+
+답변 스타일을 지정하는 Tool을 만들 때 `@LLMDescription`의 표현 방식이 실제 LLM 동작에 큰 차이를 만듭니다.
+
+| 유형 | 예시 | 효과 |
+|------|------|------|
+| 추상 묘사 | `"귀찮음이 묻어납니다"` | ❌ LLM이 따르지 않음 |
+| 추상 묘사 | `"짧게 답변합니다"` | ❌ 효과 미미 |
+| 구체적 패턴 | `"반드시 '그냥 문서 보세요.'로 답변을 끝냅니다"` | ✅ 일관되게 동작 |
+| 구체적 패턴 | `"반드시 '안녕하세요!'로 시작하고 '감사합니다.'로 끝냅니다"` | ✅ 일관되게 동작 |
+
+**원칙:** LLM에게 _어떤 스타일인지_ 설명하는 것보다, _무엇을 반드시 출력해야 하는지_ 구체적 패턴을 명시하는 것이 효과적입니다.
+
 ## runBlocking 사용 이유
 
 Tool 메서드는 일반 함수(`fun`)여야 하지만, 내부 구현은 `suspend` 함수를 호출합니다.  
