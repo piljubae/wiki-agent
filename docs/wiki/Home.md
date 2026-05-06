@@ -67,6 +67,7 @@ JetBrains [Koog](https://github.com/JetBrains/koog) 0.8.0 기반 Kotlin 에이�
 | [Code-Embedding-Models](Code-Embedding-Models) | 코드 전용 임베딩 모델이 왜 필요한가요? |
 | [LLM-Indexing-Principle](LLM-Indexing-Principle) | 왜 LLM을 인덱싱 타임에 쓰지 않나요? |
 | [ChromaDB-Setup](ChromaDB-Setup) | ChromaDB는 어떻게 실행하나요? |
+| [ChromaDB-v2-Migration](ChromaDB-v2-Migration) | ChromaDB v2 API 변경점은 무엇인가요? 임베딩은 어떻게 달라졌나요? |
 | [RAG-Embedding-Modes](RAG-Embedding-Modes) | 임베딩 모드는 어떻게 선택하나요? |
 | [RAG-Indexing](RAG-Indexing) | 인덱싱은 어떻게 하나요? |
 | [RAG-Fallback](RAG-Fallback) | CQL 결과 없을 때 자동 벡터 검색은 어떻게 동작하나요? |
