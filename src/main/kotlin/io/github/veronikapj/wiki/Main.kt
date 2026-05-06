@@ -181,7 +181,7 @@ fun main() {
         )
         val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
         val codeEmbeddingFn: (suspend (String) -> List<Float>)? =
-            if (config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING && googleApiKey != null)
+            if (config.github.codeSearch.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING && googleApiKey != null)
                 GoogleEmbeddingClient(googleApiKey).let { client -> { text: String -> client.embed(text) } }
             else null
         if (codeEmbeddingFn == null) log.warn("Code indexing: no embedding function configured — using ChromaDB default embedding")

@@ -48,4 +48,6 @@ data class CodeSearchConfig(
     val pollIntervalMinutes: Int = 60,
     val webhookPort: Int = 0,
     val localRepoPath: String? = null,  // 설정 시 GitHub API 대신 로컬 체크아웃에서 파일 읽기
+    /** 코드 임베딩 모드 — rag.embeddingMode(지식 임베딩)와 독립적으로 설정 가능 */
+    val embeddingMode: EmbeddingMode = EmbeddingMode.LLM_EXPAND,
 )

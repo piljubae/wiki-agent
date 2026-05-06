@@ -29,23 +29,35 @@ object ConfigLoader {
         var githubEnabled = false
         var githubToken = ""
         val githubRepos = mutableListOf<String>()
+        val githubCodeRepos = mutableListOf<String>()
         var inGithub = false
         var inGithubRepos = false
+        var inGithubCodeRepos = false
+        var inCodeSearch = false
+        var codeSearchBranch = "develop"
+        var codeSearchPollIntervalMinutes = 60
+        var codeSearchWebhookPort = 0
+        var codeSearchLocalRepoPath: String? = null
+        var codeSearchEmbeddingMode = EmbeddingMode.LLM_EXPAND
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
+            val indent = line.length - line.trimStart().length
             when {
-                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false }
-                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false }
-                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false }
-                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false }
-                line == "github:" -> { inGithub = true; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false }
+                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false }
+                line == "github:" -> { inGithub = true; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
-                inGithub && line.trimStart().startsWith("repos:") -> inGithubRepos = true
+                inGithub && !inCodeSearch && line.trimStart().startsWith("repos:") && indent == 2 -> { inGithubRepos = true; inGithubCodeRepos = false }
+                inGithub && !inCodeSearch && line.trimStart().startsWith("codeRepos:") -> { inGithubCodeRepos = true; inGithubRepos = false }
+                inGithub && line.trimStart() == "codeSearch:" -> { inCodeSearch = true; inGithubRepos = false; inGithubCodeRepos = false }
                 inGithubRepos && line.trimStart().startsWith("- ") -> githubRepos.add(line.trimStart().removePrefix("- ").trim())
-                !line.trimStart().startsWith("- ") && inGithubRepos && line.isNotBlank() -> inGithubRepos = false
+                inGithubCodeRepos && line.trimStart().startsWith("- ") -> githubCodeRepos.add(line.trimStart().removePrefix("- ").trim())
+                !line.trimStart().startsWith("- ") && (inGithubRepos || inGithubCodeRepos) && line.isNotBlank() -> { inGithubRepos = false; inGithubCodeRepos = false }
             }
             val trimmed = line.trim()
             when {
@@ -75,10 +87,22 @@ object ConfigLoader {
                     }.getOrDefault(EmbeddingMode.LLM_EXPAND)
                 inRag && trimmed.startsWith("googleApiKey:") ->
                     ragGoogleApiKey = trimmed.substringAfter("googleApiKey:").trim().ifEmpty { null }
-                inGithub && trimmed.startsWith("enabled:") ->
+                inGithub && !inCodeSearch && trimmed.startsWith("enabled:") ->
                     githubEnabled = trimmed.substringAfter("enabled:").trim() == "true"
-                inGithub && trimmed.startsWith("token:") ->
+                inGithub && !inCodeSearch && trimmed.startsWith("token:") ->
                     githubToken = trimmed.substringAfter("token:").trim()
+                inCodeSearch && trimmed.startsWith("branch:") ->
+                    codeSearchBranch = trimmed.substringAfter("branch:").trim()
+                inCodeSearch && trimmed.startsWith("pollIntervalMinutes:") ->
+                    codeSearchPollIntervalMinutes = trimmed.substringAfter("pollIntervalMinutes:").trim().toIntOrNull() ?: 60
+                inCodeSearch && trimmed.startsWith("webhookPort:") ->
+                    codeSearchWebhookPort = trimmed.substringAfter("webhookPort:").trim().toIntOrNull() ?: 0
+                inCodeSearch && trimmed.startsWith("localRepoPath:") ->
+                    codeSearchLocalRepoPath = trimmed.substringAfter("localRepoPath:").trim().ifEmpty { null }
+                inCodeSearch && trimmed.startsWith("embeddingMode:") ->
+                    codeSearchEmbeddingMode = runCatching {
+                        EmbeddingMode.valueOf(trimmed.substringAfter("embeddingMode:").trim().uppercase())
+                    }.getOrDefault(EmbeddingMode.LLM_EXPAND)
             }
         }
 
@@ -87,7 +111,19 @@ object ConfigLoader {
             confluence = ConfluenceConfig(baseUrl, token, spaces),
             slack = SlackConfig(botToken, appToken),
             rag = RagConfig(ragEnabled, chromaUrl, embeddingMode, ragGoogleApiKey),
-            github = GithubConfig(githubEnabled, githubToken, githubRepos),
+            github = GithubConfig(
+                enabled = githubEnabled,
+                token = githubToken,
+                repos = githubRepos,
+                codeRepos = githubCodeRepos,
+                codeSearch = CodeSearchConfig(
+                    branch = codeSearchBranch,
+                    pollIntervalMinutes = codeSearchPollIntervalMinutes,
+                    webhookPort = codeSearchWebhookPort,
+                    localRepoPath = codeSearchLocalRepoPath,
+                    embeddingMode = codeSearchEmbeddingMode,
+                ),
+            ),
         )
     }
 
@@ -118,6 +154,17 @@ object ConfigLoader {
                 appendLine("  repos:")
                 config.github.repos.forEach { appendLine("    - $it") }
             }
+            if (config.github.codeRepos.isNotEmpty()) {
+                appendLine("  codeRepos:")
+                config.github.codeRepos.forEach { appendLine("    - $it") }
+            }
+            val cs = config.github.codeSearch
+            appendLine("  codeSearch:")
+            appendLine("    branch: ${cs.branch}")
+            appendLine("    pollIntervalMinutes: ${cs.pollIntervalMinutes}")
+            if (cs.webhookPort > 0) appendLine("    webhookPort: ${cs.webhookPort}")
+            cs.localRepoPath?.let { appendLine("    localRepoPath: $it") }
+            appendLine("    embeddingMode: ${cs.embeddingMode}")
         }
         File(path).writeText(yaml)
     }
