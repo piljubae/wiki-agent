@@ -20,6 +20,16 @@ class LocalRepoSync(private val repoPath: String) {
     }
 
     /**
+     * git ls-files로 tracked .kt 파일 목록 반환 (.gitignore 자동 적용).
+     * Test 파일 제외.
+     */
+    fun allKtFiles(): List<String> {
+        val output = runGit("ls-files", "*.kt") ?: return emptyList()
+        return output.lines()
+            .filter { it.endsWith(".kt") && !it.contains("Test") }
+    }
+
+    /**
      * sinceCommit 이후 변경된 .kt 파일 경로 목록 반환.
      * Test, build/, generated 경로 제외.
      */

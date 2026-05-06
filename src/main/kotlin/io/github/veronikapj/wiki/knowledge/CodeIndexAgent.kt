@@ -53,14 +53,16 @@ class CodeIndexAgent(
         val localRoot = localRepoPath?.let { File(it) }
 
         for (repo in repos) {
-            val filePaths: List<String> = if (localRoot != null) {
+            val filePaths: List<String> = if (localRoot != null && localRepoSync != null) {
+                // git ls-files로 tracked 파일만 (.gitignore 자동 적용)
+                localRepoSync.allKtFiles()
+            } else if (localRoot != null) {
                 localRoot.walk()
                     .filter {
                         it.extension == "kt"
                             && !it.path.contains("/build/")
                             && !it.path.contains("/generated/")
                             && !it.path.contains("/.gradle/")
-                            && !it.path.contains("/buildSrc/")
                             && !it.name.contains("Test")
                     }
                     .map { it.relativeTo(localRoot).path }
