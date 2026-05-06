@@ -72,6 +72,8 @@ JetBrains [Koog](https://github.com/JetBrains/koog) 0.8.0 기반 Kotlin 에이�
 | [RAG-Indexing](RAG-Indexing) | 인덱싱은 어떻게 하나요? |
 | [RAG-Fallback](RAG-Fallback) | CQL 결과 없을 때 자동 벡터 검색은 어떻게 동작하나요? |
 
+| [PR-History-Indexing](PR-History-Indexing) | PR 변경 이력은 어떻게 검색하나요? |
+
 ### 🔴 심화 (코드 인덱싱)
 
 | 페이지 | 핵심 질문 |
