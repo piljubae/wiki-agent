@@ -39,7 +39,7 @@ class GoogleEmbeddingClient(private val apiKey: String) {
     private val httpClient = HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = 15_000 }
     }
-    private val model = "text-embedding-004"
+    private val model = "gemini-embedding-001"
     private val endpoint =
         "https://generativelanguage.googleapis.com/v1beta/models/$model:embedContent?key=$apiKey"
 
