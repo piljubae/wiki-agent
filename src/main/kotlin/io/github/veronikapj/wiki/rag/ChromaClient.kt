@@ -17,15 +17,21 @@ data class ChromaQueryResult(
     val distance: Float,
 )
 
-class ChromaClient(private val baseUrl: String) {
+class ChromaClient(
+    private val baseUrl: String,
+    private val tenant: String = "default_tenant",
+    private val database: String = "default_database",
+) {
 
     private val httpClient = HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = 30_000 }
     }
 
+    private val apiBase get() = "$baseUrl/api/v2/tenants/$tenant/databases/$database"
+
     suspend fun getOrCreateCollection(name: String): String {
         val body = """{"name":"$name","get_or_create":true}"""
-        val response = httpClient.post("$baseUrl/api/v1/collections") {
+        val response = httpClient.post("$apiBase/collections") {
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
@@ -42,7 +48,7 @@ class ChromaClient(private val baseUrl: String) {
     ) {
         val body = buildAddBody(ids, documents, embeddings, metadatas)
         log.debug("addDocuments to {}: {} docs", collectionId, ids.size)
-        httpClient.post("$baseUrl/api/v1/collections/$collectionId/add") {
+        httpClient.post("$apiBase/collections/$collectionId/add") {
             contentType(ContentType.Application.Json)
             setBody(body)
         }
@@ -57,7 +63,7 @@ class ChromaClient(private val baseUrl: String) {
     ) {
         val body = buildAddBody(ids, documents, embeddings, metadatas)
         log.debug("upsertDocuments to {}: {} docs", collectionId, ids.size)
-        httpClient.post("$baseUrl/api/v1/collections/$collectionId/upsert") {
+        httpClient.post("$apiBase/collections/$collectionId/upsert") {
             contentType(ContentType.Application.Json)
             setBody(body)
         }
@@ -70,7 +76,7 @@ class ChromaClient(private val baseUrl: String) {
         nResults: Int = 5,
     ): List<ChromaQueryResult> {
         val body = buildQueryBody(queryTexts, queryEmbeddings, nResults)
-        val response = httpClient.post("$baseUrl/api/v1/collections/$collectionId/query") {
+        val response = httpClient.post("$apiBase/collections/$collectionId/query") {
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
