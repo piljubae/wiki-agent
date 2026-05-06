@@ -1,14 +1,15 @@
 # RAG 임베딩 모드
 
-wiki-agent는 두 가지 임베딩 방식을 지원합니다.
+wiki-agent는 두 가지 임베딩 방식을 지원하며, **Confluence/GitHub 문서용**과 **코드 인덱싱용**을 독립적으로 설정합니다.
 
 ## 모드 비교
 
 | 항목 | `LLM_EXPAND` | `GOOGLE_EMBEDDING` |
 |------|-------------|-------------------|
-| 방식 | LLM으로 쿼리/문서 확장 → ChromaDB 내장 sentence-transformers | Google `text-embedding-004` API로 명시적 벡터 생성 |
+| 방식 | LLM으로 쿼리/문서 확장 → ChromaDB 내장 sentence-transformers | Google `gemini-embedding-001` API로 명시적 벡터 생성 |
 | 추가 API 키 | 불필요 | `GOOGLE_API_KEY` 필요 |
 | 비용 | LLM 호출 토큰 비용 | Google Embedding API 비용 |
+| 벡터 차원 | sentence-transformers 기본값 | **3,072차원** |
 | 정확도 | 의미 확장으로 recall 향상 | 전용 임베딩 모델로 precision 향상 |
 
 ## LLM_EXPAND 동작 방식
@@ -39,23 +40,28 @@ suspend fun expandQuery(query: String): String {
 ## GOOGLE_EMBEDDING 동작 방식
 
 ```kotlin
-// GoogleEmbeddingClient.kt
-private val model = "text-embedding-004"
+// EmbeddingClient.kt
+private val model = "gemini-embedding-001"
 private val endpoint =
     "https://generativelanguage.googleapis.com/v1beta/models/$model:embedContent?key=$apiKey"
 ```
 
-Google `text-embedding-004` 모델로 768차원 벡터를 생성합니다.
+Google `gemini-embedding-001` 모델로 **3,072차원** 벡터를 생성합니다.
 
-> **Reference:** [Google text-embedding-004](https://ai.google.dev/gemini-api/docs/models/gemini#text-embedding)
+> **참고:** 이전 버전에서 사용하던 `text-embedding-004`(768차원)는 deprecated.  
+> ChromaDB 컬렉션을 새로 만들 때 차원이 자동 결정되므로, 모델 변경 시 컬렉션을 재생성해야 합니다.
 
 ## config.yml 설정
 
 ```yaml
 rag:
   enabled: true
-  chromaUrl: http://localhost:8000
-  embeddingMode: LLM_EXPAND     # 또는 GOOGLE_EMBEDDING
+  chromaUrl: http://localhost:8001
+  embeddingMode: LLM_EXPAND       # Confluence/GitHub 문서용
+
+github:
+  codeSearch:
+    embeddingMode: GOOGLE_EMBEDDING  # 코드 인덱싱 전용
 ```
 
 `GOOGLE_EMBEDDING` 사용 시 `.env`에 추가:
@@ -63,11 +69,19 @@ rag:
 GOOGLE_API_KEY=AIza...
 ```
 
+### 왜 두 개를 다르게 설정하나
+
+| 대상 | 권장 모드 | 이유 |
+|------|----------|------|
+| Confluence/GitHub 문서 | `LLM_EXPAND` | 자연어 쿼리 — 의미 확장으로 recall 향상 |
+| 코드 인덱싱 | `GOOGLE_EMBEDDING` | 코드 심볼 검색 — 정확한 벡터 매칭이 유리 |
+
 ## 선택 가이드
 
 - **빠르게 시작하려면:** `LLM_EXPAND` (추가 API 키 불필요)
-- **더 나은 벡터 품질이 필요하면:** `GOOGLE_EMBEDDING`
+- **코드 검색 품질이 중요하면:** `GOOGLE_EMBEDDING`
 
 ---
 
-> **Source:** [EmbeddingClient.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/rag/EmbeddingClient.kt) · [WikiConfig.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/config/WikiConfig.kt)
+> **Source:** [EmbeddingClient.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/rag/EmbeddingClient.kt) · [WikiConfig.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/config/WikiConfig.kt)  
+> **관련:** [ChromaDB-Setup](ChromaDB-Setup) · [ChromaDB-v2-Migration](ChromaDB-v2-Migration)
