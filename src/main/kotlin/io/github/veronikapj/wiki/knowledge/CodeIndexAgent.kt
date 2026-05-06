@@ -59,6 +59,8 @@ class CodeIndexAgent(
                         it.extension == "kt"
                             && !it.path.contains("/build/")
                             && !it.path.contains("/generated/")
+                            && !it.path.contains("/.gradle/")
+                            && !it.path.contains("/buildSrc/")
                             && !it.name.contains("Test")
                     }
                     .map { it.relativeTo(localRoot).path }
