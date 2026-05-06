@@ -233,6 +233,10 @@ class SlackBotGateway(
             if (isOnboarding(channel)) {
                 runCatching { handleOnboarding(channel, null, query) }
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
+            } else if (CONFIG_COMMANDS.any { query.startsWith(it) }) {
+                // reindex-code, reindex, ingest, lint 등 관리 커맨드 — configHandler로 직접 라우팅
+                val result = configHandler.handle("/wiki $query")
+                slackClient.chatPostMessage { it.channel(channel).text(result) }
             } else when (classifyDmInput(query)) {
                 DmInputType.PR_URL -> if (prIndexAgent != null) {
                     val agent = prIndexAgent
@@ -376,6 +380,7 @@ class SlackBotGateway(
         const val FEEDBACK_GUIDE = ":thumbsup: 도움이 됐다면 | :thumbsdown: 아쉬웠다면 리액션을 남겨주세요"
         val FEEDBACK_REACTIONS = listOf("+1", "-1", "thumbsup", "thumbsdown")
         private val HELP_KEYWORDS = setOf("도움말", "사용법", "help", "도움", "사용방법")
+        val CONFIG_COMMANDS = setOf("reindex-code", "reindex", "ingest-wiki", "ingest", "lint", "config")
 
         fun isHelpQuery(text: String): Boolean =
             text.trim().lowercase() in HELP_KEYWORDS
