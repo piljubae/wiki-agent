@@ -54,6 +54,20 @@ class ChromaClient(
         }
     }
 
+    /** ChromaDB에 이미 존재하는 ID 집합 반환. 임베딩 캐시 체크에 사용. */
+    suspend fun getExistingIds(collectionId: String, ids: List<String>): Set<String> {
+        if (ids.isEmpty()) return emptySet()
+        val idsJson = ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
+        val body = """{"ids":[$idsJson],"include":[]}"""
+        val response = httpClient.post("$apiBase/collections/$collectionId/get") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.bodyAsText()
+        val matched = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(response)
+            ?.groupValues?.get(1) ?: return emptySet()
+        return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toHashSet()
+    }
+
     suspend fun upsertDocuments(
         collectionId: String,
         ids: List<String>,
@@ -63,9 +77,12 @@ class ChromaClient(
     ) {
         val body = buildAddBody(ids, documents, embeddings, metadatas)
         log.debug("upsertDocuments to {}: {} docs", collectionId, ids.size)
-        httpClient.post("$apiBase/collections/$collectionId/upsert") {
+        val response = httpClient.post("$apiBase/collections/$collectionId/upsert") {
             contentType(ContentType.Application.Json)
             setBody(body)
+        }.bodyAsText()
+        if (response.contains("error", ignoreCase = true)) {
+            log.warn("upsertDocuments error response: {}", response.take(200))
         }
     }
 

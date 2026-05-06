@@ -129,10 +129,14 @@ class CodeIndexAgent(
 
                 if (entries.isEmpty()) return@forEachIndexed
 
-                // Phase 2: 임베딩 병렬 실행 (Semaphore로 동시 요청 수 제한)
-                val embeddings: List<List<Float>> = if (embeddingFn != null) {
+                // Phase 2: 이미 인덱싱된 ID 확인 → 새 것만 임베딩
+                val existingIds = chromaClient.getExistingIds(collectionId, entries.map { it.id })
+                val newEntries = entries.filter { it.id !in existingIds }
+                log.debug("Batch {}: {} total, {} cached, {} new", batchIdx, entries.size, existingIds.size, newEntries.size)
+
+                val embeddings: List<List<Float>> = if (embeddingFn != null && newEntries.isNotEmpty()) {
                     coroutineScope {
-                        entries.map { entry ->
+                        newEntries.map { entry ->
                             async {
                                 embeddingSemaphore.withPermit {
                                     runCatching { embeddingFn(entry.doc) }.getOrElse { emptyList() }
@@ -142,16 +146,28 @@ class CodeIndexAgent(
                     }
                 } else emptyList()
 
-                // Phase 3: ChromaDB upsert
-                val embeds = embeddings.takeIf { it.size == entries.size }
+                // Phase 3: ChromaDB upsert (새 항목 + 빈 임베딩 제외)
+                val validPairs = if (embeddings.size == newEntries.size) {
+                    newEntries.zip(embeddings).filter { (_, emb) -> emb.isNotEmpty() }
+                } else emptyList()
+
+                if (validPairs.isEmpty()) {
+                    if (batchIdx % 10 == 9) log.info(
+                        "Progress: ~{}/{} files", minOf((batchIdx + 1) * 50, filePaths.size), filePaths.size,
+                    )
+                    return@forEachIndexed
+                }
+                if (validPairs.size < newEntries.size) {
+                    log.warn("Skipped {} chunks with empty embeddings (batch {})", newEntries.size - validPairs.size, batchIdx)
+                }
                 chromaClient.upsertDocuments(
                     collectionId,
-                    entries.map { it.id },
-                    entries.map { it.doc },
-                    embeddings = embeds,
-                    metadatas = entries.map { it.meta },
+                    validPairs.map { it.first.id },
+                    validPairs.map { it.first.doc },
+                    embeddings = validPairs.map { it.second },
+                    metadatas = validPairs.map { it.first.meta },
                 )
-                if (localRoot == null) kotlinx.coroutines.delay(100) // GitHub API rate-limit protection
+                if (localRoot == null) kotlinx.coroutines.delay(100)
                 if (batchIdx % 10 == 9) log.info(
                     "Progress: ~{}/{} files", minOf((batchIdx + 1) * 50, filePaths.size), filePaths.size,
                 )
@@ -433,10 +449,13 @@ class CodeIndexAgent(
 
             if (entries.isEmpty()) return@forEach
 
-            // Phase 2: 임베딩 병렬 실행
-            val embeddings: List<List<Float>> = if (embeddingFn != null) {
+            // Phase 2: 이미 인덱싱된 ID 확인 → 새 것만 임베딩
+            val existingIds = chromaClient.getExistingIds(collectionId, entries.map { it.id })
+            val newEntries = entries.filter { it.id !in existingIds }
+
+            val embeddings: List<List<Float>> = if (embeddingFn != null && newEntries.isNotEmpty()) {
                 coroutineScope {
-                    entries.map { entry ->
+                    newEntries.map { entry ->
                         async {
                             embeddingSemaphore.withPermit {
                                 runCatching { embeddingFn(entry.doc) }.getOrElse { emptyList() }
@@ -446,14 +465,21 @@ class CodeIndexAgent(
                 }
             } else emptyList()
 
-            // Phase 3: ChromaDB upsert
-            val embeds = embeddings.takeIf { it.size == entries.size }
+            // Phase 3: ChromaDB upsert (새 항목 + 빈 임베딩 제외)
+            val validPairs = if (embeddings.size == newEntries.size) {
+                newEntries.zip(embeddings).filter { (_, emb) -> emb.isNotEmpty() }
+            } else emptyList()
+
+            if (validPairs.isEmpty()) return@forEach
+            if (validPairs.size < newEntries.size) {
+                log.warn("Skipped {} chunks with empty embeddings", newEntries.size - validPairs.size)
+            }
             chromaClient.upsertDocuments(
                 collectionId,
-                entries.map { it.id },
-                entries.map { it.doc },
-                embeddings = embeds,
-                metadatas = entries.map { it.meta },
+                validPairs.map { it.first.id },
+                validPairs.map { it.first.doc },
+                embeddings = validPairs.map { it.second },
+                metadatas = validPairs.map { it.first.meta },
             )
         }
 
@@ -531,7 +557,7 @@ class CodeIndexAgent(
     companion object {
         private val log = LoggerFactory.getLogger(CodeIndexAgent::class.java)
         private val json = Json { ignoreUnknownKeys = true }
-        private val embeddingSemaphore = Semaphore(20) // Gemini API 동시 요청 수 제한
+        private val embeddingSemaphore = Semaphore(15) // Gemini 무료 1500RPM 기준: 15 × ~70req/s 이내
 
         /**
          * 청크 ID — 오버로드 함수 구별을 위해 시그니처 해시 6자리를 suffix로 붙임.
