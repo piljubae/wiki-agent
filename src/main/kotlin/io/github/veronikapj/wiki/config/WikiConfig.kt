@@ -39,4 +39,13 @@ data class GithubConfig(
     val enabled: Boolean = false,
     val token: String = "",
     val repos: List<String> = emptyList(),
+    val codeRepos: List<String> = emptyList(),
+    val codeSearch: CodeSearchConfig = CodeSearchConfig(),
+)
+
+data class CodeSearchConfig(
+    val branch: String = "develop",
+    val pollIntervalMinutes: Int = 60,
+    val webhookPort: Int = 0,
+    val localRepoPath: String? = null,  // 설정 시 GitHub API 대신 로컬 체크아웃에서 파일 읽기
 )

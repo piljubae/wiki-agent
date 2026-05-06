@@ -48,6 +48,21 @@ class ChromaClient(private val baseUrl: String) {
         }
     }
 
+    suspend fun upsertDocuments(
+        collectionId: String,
+        ids: List<String>,
+        documents: List<String>,
+        embeddings: List<List<Float>>? = null,
+        metadatas: List<Map<String, String>> = emptyList(),
+    ) {
+        val body = buildAddBody(ids, documents, embeddings, metadatas)
+        log.debug("upsertDocuments to {}: {} docs", collectionId, ids.size)
+        httpClient.post("$baseUrl/api/v1/collections/$collectionId/upsert") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+    }
+
     suspend fun query(
         collectionId: String,
         queryTexts: List<String>? = null,

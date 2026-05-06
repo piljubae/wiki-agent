@@ -7,6 +7,8 @@ import com.slack.api.methods.MethodsClient
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.knowledge.IngestAgent
+import io.github.veronikapj.wiki.knowledge.PrIndexAgent
+import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
@@ -24,6 +26,7 @@ class SlackBotGateway(
     private val projectMemory: ProjectMemory? = null,
     private val confluenceClient: ConfluenceClient? = null,
     private val ingestAgent: IngestAgent? = null,
+    private val prIndexAgent: PrIndexAgent? = null,
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
@@ -37,11 +40,16 @@ class SlackBotGateway(
         "confluenceSearch" to "Confluence",
         "githubWikiSearch" to "GitHub Wiki",
         "vectorSearch" to "RAG",
+        "prHistory" to "PR 이력",
+        "codeSearch" to "코드 검색",
     )
 
-    private enum class DmInputType { URL, LONG_TEXT, NORMAL }
+    private enum class DmInputType { PR_URL, URL, LONG_TEXT, NORMAL }
+
+    private val prUrlPattern = Regex("github\\.com/[^/]+/[^/]+/pull/\\d+")
 
     private fun classifyDmInput(text: String): DmInputType = when {
+        prUrlPattern.containsMatchIn(text) -> DmInputType.PR_URL
         text.startsWith("http://") || text.startsWith("https://") -> DmInputType.URL
         text.length > 500 -> DmInputType.LONG_TEXT
         else -> DmInputType.NORMAL
@@ -226,6 +234,22 @@ class SlackBotGateway(
                 runCatching { handleOnboarding(channel, null, query) }
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
             } else when (classifyDmInput(query)) {
+                DmInputType.PR_URL -> if (prIndexAgent != null) {
+                    val agent = prIndexAgent
+                    messageExecutor.submit {
+                        slackClient.chatPostMessage { it.channel(channel).text(":hourglass_flowing_sand: PR 인덱싱 중...") }
+                        val parsed = GitHubCodeClient("").parsePrUrl(query)
+                        if (parsed != null) {
+                            runCatching { runBlocking { agent.indexPr(parsed.first, parsed.second) } }
+                                .onSuccess { result -> slackClient.chatPostMessage { it.channel(channel).text(":white_check_mark: $result") } }
+                                .onFailure { e -> slackClient.chatPostMessage { it.channel(channel).text(":x: 인덱싱 중 오류: ${e.message}") } }
+                        } else {
+                            slackClient.chatPostMessage { it.channel(channel).text(":x: PR URL 형식을 인식하지 못했습니다.") }
+                        }
+                    }
+                } else if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
+                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+                }
                 DmInputType.URL -> if (ingestAgent != null) {
                     messageExecutor.submit {
                         val result = runBlocking { ingestAgent.ingestUrl(query) }

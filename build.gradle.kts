@@ -26,10 +26,14 @@ dependencies {
     implementation("org.glassfish.tyrus.bundles:tyrus-standalone-client:1.21")
     implementation("com.neovisionaries:nv-websocket-client:2.14")
     implementation("io.ktor:ktor-client-cio:3.1.2")
+    implementation("io.ktor:ktor-server-cio:3.1.2")
+    implementation("io.ktor:ktor-server-core:3.1.2")
     implementation("com.charleskorn.kaml:kaml:0.67.0")
     implementation("ch.qos.logback:logback-classic:1.5.13")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+
+    implementation("org.xerial:sqlite-jdbc:3.47.1.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("io.mockk:mockk:1.13.16")

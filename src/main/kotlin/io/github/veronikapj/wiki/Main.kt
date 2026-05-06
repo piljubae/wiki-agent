@@ -29,6 +29,26 @@ import io.github.veronikapj.wiki.rag.VectorIndexAgent
 import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
+import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.knowledge.BM25Index
+import io.github.veronikapj.wiki.knowledge.CodeIndexAgent
+import io.github.veronikapj.wiki.knowledge.LocalRepoSync
+import io.github.veronikapj.wiki.knowledge.PrIndexAgent
+import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
+import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.routing.routing
+import io.ktor.server.routing.post
+import io.ktor.server.request.receiveText
+import io.ktor.server.response.respond
+import io.ktor.server.application.call
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 
 private val log = LoggerFactory.getLogger("wiki.Main")
@@ -139,17 +159,145 @@ fun main() {
         log.info("GitHub Wiki enabled: repos={}", config.github.repos)
     }
 
+    // Code Search + PR History (codeRepos 설정 시)
+    var prIndexAgent: PrIndexAgent? = null
+    var codeIndexAgent: CodeIndexAgent? = null
+    var prHistoryTool: PrHistoryTool? = null
+    var codeSearchTool: CodeSearchTool? = null
+
+    if (config.github.codeRepos.isNotEmpty() && config.rag.enabled) {
+        val codeChromaClient = ChromaClient(config.rag.chromaUrl)
+        val codeLlmFn: suspend (String) -> String = { userPrompt ->
+            executor.execute(prompt("code") { user(userPrompt) }, model).joinToString("") { it.content }
+        }
+        val codeLlmExpandClient = LlmExpandClient(codeLlmFn)
+        val githubCodeClient = GitHubCodeClient(githubToken)
+
+        prIndexAgent = PrIndexAgent(
+            codeClient = githubCodeClient,
+            knowledgeStore = knowledgeStore,
+            llmFn = codeLlmFn,
+            chromaClient = codeChromaClient,
+        )
+        val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
+        val codeEmbeddingFn: (suspend (String) -> List<Float>)? =
+            if (config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING && googleApiKey != null)
+                GoogleEmbeddingClient(googleApiKey).let { client -> { text: String -> client.embed(text) } }
+            else null
+        if (codeEmbeddingFn == null) log.warn("Code indexing: no embedding function configured — using ChromaDB default embedding")
+
+        // Step 3: BM25 인덱스 — localRepoPath 설정 시 활성화
+        val bm25Index = if (config.github.codeSearch.localRepoPath != null) {
+            BM25Index().also { log.info("BM25 hybrid search enabled") }
+        } else null
+
+        codeIndexAgent = CodeIndexAgent(
+            codeClient = githubCodeClient,
+            llmFn = codeLlmFn,
+            chromaClient = codeChromaClient,
+            repos = config.github.codeRepos,
+            branch = config.github.codeSearch.branch,
+            embeddingFn = codeEmbeddingFn,
+            localRepoPath = config.github.codeSearch.localRepoPath,
+            localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
+            bm25Index = bm25Index,
+        )
+        prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker)
+        codeSearchTool = CodeSearchTool(
+            chromaClient = codeChromaClient,
+            llmExpandClient = codeLlmExpandClient,
+            codeClient = githubCodeClient,
+            codeRepos = config.github.codeRepos,
+            branch = config.github.codeSearch.branch,
+            tracker = sourceTracker,
+            bm25Index = bm25Index,
+        )
+        log.info("Code search enabled: repos={}, branch={}", config.github.codeRepos, config.github.codeSearch.branch)
+    } else if (config.github.codeRepos.isNotEmpty()) {
+        log.warn("codeRepos is set but rag.enabled=false — code search disabled. Enable RAG to use code search.")
+    }
+
     val orchestrator = OrchestratorAgent(
         knowledgeTool = knowledgeTool,
         confluenceTool = confluenceTool,
         githubWikiTool = githubWikiTool,
         vectorSearchTool = vectorSearchTool,
+        prHistoryTool = prHistoryTool,
+        codeSearchTool = codeSearchTool,
         executor = executor,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE ||
                 config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
         projectMemory = projectMemory,
     )
+
+    // 공유 백그라운드 스코프 (polling + webhook 공용)
+    val backgroundScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    Runtime.getRuntime().addShutdownHook(Thread { backgroundScope.cancel() })
+
+    // Polling 코루틴 시작
+    val finalPrIndexAgent = prIndexAgent
+    if (finalPrIndexAgent != null && config.github.codeSearch.pollIntervalMinutes > 0) {
+        backgroundScope.launch {
+            val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
+            log.info("PR polling started: interval={}min, repos={}", config.github.codeSearch.pollIntervalMinutes, config.github.codeRepos)
+            while (true) {
+                delay(intervalMs)
+                runCatching {
+                    val count = finalPrIndexAgent.indexRecentPrs(config.github.codeRepos)
+                    if (count > 0) log.info("Polling: indexed {} new PRs", count)
+                }.onFailure { log.warn("Polling failed: {}", it.message) }
+            }
+        }
+    }
+
+    // Code incremental sync (localRepoPath 설정 시)
+    val finalCodeIndexAgent = codeIndexAgent
+    if (finalCodeIndexAgent != null && config.github.codeSearch.localRepoPath != null) {
+        backgroundScope.launch {
+            val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
+            log.info("Code incremental sync started: interval={}min", config.github.codeSearch.pollIntervalMinutes)
+            while (true) {
+                delay(intervalMs)
+                runCatching {
+                    val count = finalCodeIndexAgent.syncAndIndexChanged(config.github.codeRepos.first(), config.github.codeSearch.branch)
+                    if (count > 0) log.info("Incremental code index: {} class entries updated", count)
+                }.onFailure { log.warn("Incremental code sync failed: {}", it.message) }
+            }
+        }
+    }
+
+    // GitHub Webhook 서버
+    val finalPrIndexAgentForWebhook = prIndexAgent
+    if (finalPrIndexAgentForWebhook != null && config.github.codeSearch.webhookPort > 0) {
+        backgroundScope.launch {
+            embeddedServer(CIO, port = config.github.codeSearch.webhookPort) {
+                routing {
+                    post("/webhook/github") {
+                        val body = call.receiveText()
+                        val event = call.request.headers["X-GitHub-Event"]
+                        if (event == "pull_request") {
+                            val action = Regex("\"action\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)
+                            val merged = Regex("\"merged\"\\s*:\\s*(true|false)").find(body)?.groupValues?.get(1) == "true"
+                            val repo = Regex("\"full_name\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1) ?: ""
+                            val prNumber = Regex("\"number\"\\s*:\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toIntOrNull()
+
+                            if (action == "closed" && merged && prNumber != null && repo.isNotBlank()) {
+                                backgroundScope.launch {
+                                    runCatching {
+                                        finalPrIndexAgentForWebhook.indexPr(repo, prNumber)
+                                        log.info("Webhook: indexed PR #{} from {}", prNumber, repo)
+                                    }.onFailure { log.warn("Webhook indexing failed: {}", it.message) }
+                                }
+                            }
+                        }
+                        call.respond(io.ktor.http.HttpStatusCode.OK, "ok")
+                    }
+                }
+            }.start(wait = false)
+            log.info("GitHub webhook server started on port {}", config.github.codeSearch.webhookPort)
+        }
+    }
 
     val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
             slackAppToken.isNotBlank() && !slackAppToken.startsWith("xapp-...")
@@ -163,6 +311,7 @@ fun main() {
             onIngestWiki = { ingestAgent.ingestLocalWikiDocs() },
             onLint = { lintAgent.lint() },
             projectMemory = projectMemory,
+            onReindexCode = codeIndexAgent?.let { agent -> { agent.indexAll() } },
         )
         val gateway = SlackBotGateway(
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
@@ -171,6 +320,7 @@ fun main() {
             projectMemory = projectMemory,
             confluenceClient = confluenceClient,
             ingestAgent = ingestAgent,
+            prIndexAgent = prIndexAgent,
         )
         gateway.start()
     } else {
