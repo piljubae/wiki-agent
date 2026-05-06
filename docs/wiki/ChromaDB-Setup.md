@@ -2,19 +2,26 @@
 
 ChromaDB는 wiki-agent의 RAG(벡터 검색) 기능에 사용하는 오픈소스 벡터 데이터베이스입니다.
 
-## Docker로 실행
+## 실행 방법
+
+### uvx (권장)
 
 ```bash
-docker run -p 8000:8000 chromadb/chroma
+# IPv4/IPv6 모두 바인딩 — Ktor CIO가 127.0.0.1(IPv4)로 연결하므로 필수
+uvx --from chromadb chroma run --host 0.0.0.0 --port 8001
 ```
 
-- 기본 포트: **8000**
-- 데이터는 컨테이너 재시작 시 초기화됩니다 (개발용)
+> **주의:** `uvx chroma run`만 쓰면 `::1`(IPv6 only)에 바인딩돼서 Ktor CIO가 연결 거부됩니다.
+> 반드시 `--host 0.0.0.0`을 붙여야 합니다.
 
-데이터 영속화가 필요하면:
+### Docker
 
 ```bash
-docker run -p 8000:8000 -v ./chroma-data:/chroma/chroma chromadb/chroma
+# 기본 (데이터 휘발)
+docker run -p 8001:8000 chromadb/chroma
+
+# 데이터 영속화
+docker run -p 8001:8000 -v ./chroma-data:/chroma/chroma chromadb/chroma
 ```
 
 ## config.yml 설정
@@ -22,36 +29,40 @@ docker run -p 8000:8000 -v ./chroma-data:/chroma/chroma chromadb/chroma
 ```yaml
 rag:
   enabled: true
-  chromaUrl: http://localhost:8000
-  embeddingMode: LLM_EXPAND
+  chromaUrl: http://localhost:8001
+  embeddingMode: LLM_EXPAND       # Confluence/GitHub 문서용
+
+github:
+  codeSearch:
+    embeddingMode: GOOGLE_EMBEDDING  # 코드 인덱싱 전용
 ```
 
-## ChromaDB REST API 엔드포인트 (wiki-agent 사용분)
+## ChromaDB v2 REST API (현재 사용)
+
+v2부터 URL에 tenant/database가 포함됩니다. 기본값: `default_tenant` / `default_database`.
 
 | 메서드 | 경로 | 용도 |
 |--------|------|------|
-| `POST` | `/api/v1/collections` | 컬렉션 생성 또는 조회 (`get_or_create: true`) |
-| `POST` | `/api/v1/collections/{id}/add` | 문서 + 임베딩 추가 |
-| `POST` | `/api/v1/collections/{id}/query` | 유사 문서 검색 |
+| `POST` | `/api/v2/tenants/{t}/databases/{d}/collections` | 컬렉션 생성 |
+| `POST` | `/api/v2/.../collections/{id}/upsert` | 문서 + 임베딩 저장 |
+| `POST` | `/api/v2/.../collections/{id}/query` | 유사 문서 검색 |
+| `POST` | `/api/v2/.../collections/{id}/get` | ID로 문서 조회 |
 
-## 기본 컬렉션 이름
+> v2는 서버 사이드 임베딩이 없습니다. `embeddings` 필드를 클라이언트가 직접 전달해야 합니다.
+> 자세한 내용은 [ChromaDB-v2-Migration](ChromaDB-v2-Migration) 참고.
 
-```kotlin
-// VectorIndexAgent.kt / VectorSearchAgent.kt
-private val collectionName = "wiki_pages"
-```
-
-## 확인 방법
+## 컬렉션 확인
 
 ```bash
-# 컬렉션 목록 조회
-curl http://localhost:8000/api/v1/collections
+# 컬렉션 목록
+curl http://localhost:8001/api/v2/tenants/default_tenant/databases/default_database/collections
 
-# 특정 컬렉션 조회
-curl http://localhost:8000/api/v1/collections/wiki_pages
+# code_index 문서 수
+COLLECTION_ID=$(curl -s .../collections | python3 -c "import sys,json; [print(c['id']) for c in json.load(sys.stdin) if c['name']=='code_index']")
+curl http://localhost:8001/api/v2/.../collections/$COLLECTION_ID/count
 ```
 
 ---
 
-> **Reference:** [ChromaDB 공식 문서](https://docs.trychroma.com) · [Docker Hub chromadb/chroma](https://hub.docker.com/r/chromadb/chroma)  
+> **Reference:** [ChromaDB 공식 문서](https://docs.trychroma.com) · [ChromaDB-v2-Migration](ChromaDB-v2-Migration)  
 > **Source:** [ChromaClient.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/rag/ChromaClient.kt)
