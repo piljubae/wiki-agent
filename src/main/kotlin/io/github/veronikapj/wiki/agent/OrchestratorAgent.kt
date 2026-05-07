@@ -40,6 +40,7 @@ class OrchestratorAgent(
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
     private val projectMemory: ProjectMemory? = null,
+    private val persona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
 ) {
     init {
         require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null || prHistoryTool != null || codeSearchTool != null) {
@@ -65,6 +66,8 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
     ): String {
+        val effectivePersona = persona.description
+
         val contextHistory: List<Turn> = if (sessionId != null && conversationStore != null) {
             conversationStore.load(sessionId)
         } else {
@@ -196,8 +199,10 @@ class OrchestratorAgent(
         if (toolName == "none") {
             val chatPrompt = buildString {
                 appendLine("당신은 Kurly Android 팀의 위키 검색 봇입니다.")
-                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다. 친근하고 자연스럽게 응답하세요.")
+                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다.")
                 appendLine("단, 내부 코드·문서·시스템 정보는 모르는 척하세요 (검색 없이는 알 수 없습니다).")
+                appendLine()
+                if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
                 appendLine()
                 if (contextHistory.isNotEmpty()) {
                     appendLine("이전 대화:")
@@ -260,6 +265,8 @@ class OrchestratorAgent(
         val summaryPrompt = buildString {
             appendLine("회사 내부 위키 검색 봇입니다. 아래 검색 결과만을 바탕으로 질문에 답변하세요.")
             appendLine("검색 결과와 무관한 내용은 '관련 문서를 찾지 못했습니다'로 안내하세요.")
+            appendLine()
+            if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
             appendLine()
             memory?.let {
                 appendLine("프로젝트 정보:")
@@ -404,8 +411,9 @@ class OrchestratorAgent(
         val memory = projectMemory?.load()
 
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
+        val effectivePersona = persona.description
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory).run(question) }
+            val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory, effectivePersona).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) {
                 val answer = result.getOrThrow()
@@ -434,6 +442,7 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         summary: String? = null,
         memory: String? = null,
+        effectivePersona: String = "",
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
@@ -463,6 +472,8 @@ class OrchestratorAgent(
                 appendLine("클래스/함수 위치나 구현 방법 질문은 codeSearch를 사용하세요.")
             }
             appendLine("검색 결과를 바탕으로 답변하세요.")
+            appendLine()
+            if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
             appendLine()
             appendLine(buildAnswerGuidelines(verbose = false))
             memory?.let {

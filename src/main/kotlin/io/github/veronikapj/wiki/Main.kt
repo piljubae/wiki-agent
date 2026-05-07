@@ -231,6 +231,7 @@ fun main() {
                 config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
         projectMemory = projectMemory,
+        persona = config.persona,
     )
 
     // 공유 백그라운드 스코프 (polling + webhook 공용)
