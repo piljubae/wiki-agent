@@ -55,6 +55,8 @@ data class WikiConfig(
     val github: GithubConfig = GithubConfig(),
     /** 봇 응답 페르소나. DEFAULT = 기본 말투. */
     val persona: PersonaType = PersonaType.DEFAULT,
+    /** 라우팅 전용 모델 설정. null이면 model 섹션 executor 재사용. */
+    val routerConfig: ModelConfig? = null,
 )
 
 data class ModelConfig(

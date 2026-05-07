@@ -122,4 +122,34 @@ class ConfigLoaderTest {
             tmpFile.delete()
         }
     }
+
+    @Test
+    fun `router section absent means routerConfig is null`() {
+        val yaml = """
+            model:
+              provider: CLAUDE_CODE
+            confluence:
+              baseUrl: https://example.atlassian.net
+              token: tok
+        """.trimIndent()
+        val config = ConfigLoader.fromString(yaml)
+        assertEquals(null, config.routerConfig)
+    }
+
+    @Test
+    fun `router section with GOOGLE provider is parsed`() {
+        val yaml = """
+            model:
+              provider: CLAUDE_CODE
+            router:
+              provider: GOOGLE
+              apiKey: gkey
+            confluence:
+              baseUrl: https://example.atlassian.net
+              token: tok
+        """.trimIndent()
+        val config = ConfigLoader.fromString(yaml)
+        assertEquals(ModelProvider.GOOGLE, config.routerConfig?.provider)
+        assertEquals("gkey", config.routerConfig?.apiKey)
+    }
 }
