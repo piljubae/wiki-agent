@@ -52,9 +52,10 @@ class OrchestratorAgent(
         question: String,
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
+        forceAllTools: Boolean = false,
     ): String {
         log.info("OrchestratorAgent answering: '{}'", question)
-        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId)
+        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools)
         else answerWithKoogAgent(question, listener, sessionId)
     }
 
@@ -65,6 +66,7 @@ class OrchestratorAgent(
         question: String,
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
+        forceAllTools: Boolean = false,
     ): String {
         val effectivePersona = persona.description
 
@@ -74,15 +76,26 @@ class OrchestratorAgent(
             history.map { (q, a) -> Turn(q, a) }
         }
 
-        val availableTools = listOfNotNull(
-            knowledgeTool?.let { "knowledgeSearch" },
-            confluenceTool?.let { "confluenceSearch" },
-            githubWikiTool?.let { "githubWikiSearch" },
-            vectorSearchTool?.let { "vectorSearch" },
-            prHistoryTool?.let { "prHistory" },
-            codeSearchTool?.let { "codeSearch" },
-            codeSearchTool?.let { "codeStats" },
-        )
+        val availableTools = if (forceAllTools) {
+            listOfNotNull(
+                knowledgeTool?.let { "knowledgeSearch" },
+                confluenceTool?.let { "confluenceSearch" },
+                githubWikiTool?.let { "githubWikiSearch" },
+                vectorSearchTool?.let { "vectorSearch" },
+                prHistoryTool?.let { "prHistory" },
+                codeSearchTool?.let { "codeSearch" },
+            )
+        } else {
+            listOfNotNull(
+                knowledgeTool?.let { "knowledgeSearch" },
+                confluenceTool?.let { "confluenceSearch" },
+                githubWikiTool?.let { "githubWikiSearch" },
+                vectorSearchTool?.let { "vectorSearch" },
+                prHistoryTool?.let { "prHistory" },
+                codeSearchTool?.let { "codeSearch" },
+                codeSearchTool?.let { "codeStats" },
+            )
+        }
         val model = AnthropicModels.Haiku_4_5
 
         val memory = projectMemory?.load()
