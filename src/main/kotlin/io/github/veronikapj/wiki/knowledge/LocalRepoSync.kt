@@ -38,7 +38,7 @@ class LocalRepoSync(private val repoPath: String) {
             ?: return emptyList()
         return output.lines()
             .filter { it.endsWith(".kt") }
-            .filter { !it.contains("/build/") && !it.contains("/generated/") && !it.contains("Test") }
+            .filter { !it.contains("/build/") && !it.contains("/generated/") && !it.contains("Test") && !it.contains("kpds-compose") }
     }
 
     private fun runGit(vararg args: String): String? {

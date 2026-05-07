@@ -75,6 +75,7 @@ class CodeIndexAgent(
                             && !it.path.contains("/build/")
                             && !it.path.contains("/generated/")
                             && !it.path.contains("/.gradle/")
+                            && !it.path.contains("/kpds-compose/")
                             && !it.name.contains("Test")
                     }
                     .map { it.relativeTo(localRoot).path }
