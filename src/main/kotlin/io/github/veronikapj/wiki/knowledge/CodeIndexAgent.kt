@@ -39,6 +39,7 @@ class CodeIndexAgent(
         val signature: String,      // "fun onBannerClick(bannerId: String): Unit"
         val body: String,           // 함수 바디, 최대 500자
         val packageName: String,
+        val chunkType: String = "function",  // "function" or "property"
     )
 
     private data class ChunkEntry(
@@ -119,6 +120,7 @@ class CodeIndexAgent(
                                     "function_name" to chunk.functionName,
                                     "sig_hash" to sigHash,
                                     "branch" to branch,
+                                    "chunk_type" to chunk.chunkType,
                                 ),
                             )
                             bm25Index?.upsert(id, doc, chunk.filePath)
@@ -235,6 +237,12 @@ class CodeIndexAgent(
         // 함수 선언 시작 감지 (파라미터 열린 괄호까지)
         val funStartPattern = Regex(
             """^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:override|suspend|private|protected|internal|public|open|abstract|final|inline|infix|operator|tailrec)\s+)*fun\s+(?:\w+\.)*(\w+)\s*\(""",
+        )
+
+        // const val (이름 무관) 또는 val SCREAMING_SNAKE_CASE 프로퍼티 감지
+        // const val: 딥링크 스킴, API 경로, 상수값 검색용
+        val propertyPattern = Regex(
+            """^[ \t]*(?:(?:private|protected|internal|public|override|actual|expect|open|abstract|final)\s+)*(?:(const)\s+)?val\s+([A-Za-z_]\w*)\b""",
         )
 
         // className 스택: Pair(name, braceDepth) — 진입 시점의 누적 중괄호 깊이를 기록
@@ -358,6 +366,41 @@ class CodeIndexAgent(
                 continue
             }
 
+            // 상수 프로퍼티 추출: const val (이름 무관) 또는 val SCREAMING_SNAKE_CASE
+            val propMatch = propertyPattern.find(line)
+            if (propMatch != null) {
+                val isConst = propMatch.groupValues[1].isNotBlank()
+                val propName = propMatch.groupValues[2]
+                val isScreamingCase = propName.matches(Regex("[A-Z][A-Z0-9_]+"))
+                // const val은 이름 무관 항상 인덱싱, 일반 val은 SCREAMING_CASE만
+                if (isConst || isScreamingCase) {
+                    val valueStartIdx = line.indexOf('=')
+                    val rawValue = if (valueStartIdx >= 0) {
+                        line.substring(valueStartIdx + 1).trim()
+                            .let { if (it.length > 200) it.take(197) + "..." else it }
+                    } else ""
+                    val typeMatch = Regex("""val\s+\w+\s*:\s*([^\s=,<>]+(?:<[^>]+>)?)""").find(line)
+                    val typeAnnotation = typeMatch?.groupValues?.get(1)
+                    val signature = buildString {
+                        if (isConst) append("const ")
+                        append("val $propName")
+                        if (!typeAnnotation.isNullOrBlank()) append(": $typeAnnotation")
+                        if (rawValue.isNotBlank()) append(" = $rawValue")
+                    }
+                    val className = classStack.lastOrNull { it.name != "(companion)" }?.name
+                        ?: classStack.lastOrNull()?.name ?: ""
+                    chunks.add(CodeChunk(
+                        filePath = filePath,
+                        className = className,
+                        functionName = propName,
+                        signature = signature,
+                        body = "",
+                        packageName = packageName,
+                        chunkType = "property",
+                    ))
+                }
+            }
+
             // 일반 라인: 중괄호 깊이만 업데이트
             braceDepth += line.count { it == '{' } - line.count { it == '}' }
             while (classStack.isNotEmpty() && braceDepth < classStack.last().entryDepth) {
@@ -439,6 +482,7 @@ class CodeIndexAgent(
                                 "function_name" to chunk.functionName,
                                 "sig_hash" to sigHash,
                                 "branch" to branch,
+                                "chunk_type" to chunk.chunkType,
                             ),
                         )
                         bm25Index?.upsert(id, doc, chunk.filePath)

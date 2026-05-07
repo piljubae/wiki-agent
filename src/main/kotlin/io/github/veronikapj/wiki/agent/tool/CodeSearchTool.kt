@@ -77,12 +77,19 @@ class CodeSearchTool(
                         val filePath = r?.metadata?.get("file_path") ?: ""
                         val className = r?.metadata?.get("class_name") ?: ""
                         val functionName = r?.metadata?.get("function_name") ?: ""
-                        val label = if (functionName.isNotBlank()) "$className.$functionName()" else className
+                        val chunkType = r?.metadata?.get("chunk_type") ?: "function"
+                        val label = when {
+                            functionName.isBlank() -> className
+                            chunkType == "property" ->
+                                if (className.isNotBlank()) "$className.$functionName" else functionName
+                            else ->
+                                if (className.isNotBlank()) "$className.$functionName()" else "$functionName()"
+                        }
                         appendLine("${i + 1}. `$label` — $filePath")
                         if (repo.isNotBlank() && filePath.isNotBlank()) {
                             appendLine("   <https://github.com/$repo/blob/$branch/$filePath|소스 보기>")
                         }
-                        r?.let { appendLine("   > ${it.document.lines().take(2).joinToString(" ").take(200)}") }
+                        r?.let { appendLine("   > ${it.document.lines().take(8).joinToString(" ").take(500)}") }
                         appendLine()
                     }
                 }.trim()
