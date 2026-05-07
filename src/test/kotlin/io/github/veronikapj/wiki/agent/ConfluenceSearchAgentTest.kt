@@ -177,4 +177,56 @@ class ConfluenceSearchAgentTest {
         assertTrue(results.isNotEmpty())
         assertTrue(results.all { it.stage != SearchStage.RAG })
     }
+
+    @Test
+    fun `re-ranking moves originalQuestion keyword-matching title to top`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        // 1 title match → below threshold=3 → parallel fallback triggered
+        coEvery { mockClient.searchByTitle("위클리", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "물류 위클리 2026-W18", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("위클리", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("2", "클라이언트 위클리 2026-W18", "url2"),
+            ConfluencePageRef("3", "서버 위클리 2026-W18", "url3"),
+        )
+        coEvery { mockClient.searchByTitle("위클리", emptyList(), any(), any()) } returns emptyList()
+
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("위클리", originalQuestion = "클라이언트 위클리 알려줘")
+
+        // Without re-ranking: [물류 위클리(TITLE), 클라이언트 위클리(TEXT), 서버 위클리(TEXT)]
+        // With re-ranking: 클라이언트 위클리 has 2 keyword hits ("클라이언트"+"위클리") → moves to top
+        assertEquals("2", results[0].pageId)
+    }
+
+    @Test
+    fun `re-ranking also applies to early-return path`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        // 3 title matches → early return triggered (no parallel fallback)
+        coEvery { mockClient.searchByTitle("위클리", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "물류 위클리 2026-W18", "url1", titleMatched = true),
+            ConfluencePageRef("2", "클라이언트 위클리 2026-W18", "url2", titleMatched = true),
+            ConfluencePageRef("3", "서버 위클리 2026-W18", "url3", titleMatched = true),
+        )
+
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("위클리", originalQuestion = "클라이언트 위클리 알려줘")
+
+        assertEquals("2", results[0].pageId)
+    }
+
+    @Test
+    fun `no re-ranking when originalQuestion is blank`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        coEvery { mockClient.searchByTitle("위클리", listOf("DEV"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "물류 위클리", "url1", titleMatched = true),
+            ConfluencePageRef("2", "클라이언트 위클리", "url2", titleMatched = true),
+            ConfluencePageRef("3", "서버 위클리", "url3", titleMatched = true),
+        )
+
+        val agent = ConfluenceSearchAgent(mockClient, listOf("DEV"), sufficientThreshold = 3)
+        val results = agent.searchStructured("위클리")  // no originalQuestion → original order preserved
+
+        assertEquals("1", results[0].pageId)  // 물류 위클리 stays first (insertion order)
+    }
 }

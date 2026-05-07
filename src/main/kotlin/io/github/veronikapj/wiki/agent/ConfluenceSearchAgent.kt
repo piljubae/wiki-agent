@@ -17,6 +17,7 @@ class ConfluenceSearchAgent(
     suspend fun searchStructured(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
+        originalQuestion: String = "",
     ): List<SearchResult> {
         val cleaned = cleanQuery(query)
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
@@ -29,7 +30,8 @@ class ConfluenceSearchAgent(
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
         if (titleResults.size >= sufficientThreshold) {
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
-            return titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
+            val earlyResults = titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
+            return reRankByOriginalQuestion(earlyResults, originalQuestion)
         }
 
         // 2단계: 부족 → 병렬로 text + 스페이스 확장 + RAG
@@ -69,7 +71,19 @@ class ConfluenceSearchAgent(
         log.info("Keyword AND fallback: {} results", keywordResults.size)
 
         // 3단계: 합산 + 중복 제거 + 랭킹
-        return combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK)
+        return reRankByOriginalQuestion(
+            combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK),
+            originalQuestion,
+        )
+    }
+
+    private fun reRankByOriginalQuestion(results: List<SearchResult>, originalQuestion: String): List<SearchResult> {
+        if (originalQuestion.isBlank()) return results
+        val keywords = extractSignificantKeywords(cleanQuery(originalQuestion))
+        if (keywords.isEmpty()) return results
+        return results.sortedByDescending { page ->
+            keywords.count { kw -> page.title.lowercase().contains(kw.lowercase()) }
+        }
     }
 
     private fun combineAndRank(
@@ -99,8 +113,9 @@ class ConfluenceSearchAgent(
     suspend fun search(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
+        originalQuestion: String = "",
     ): String {
-        val results = searchStructured(query, synonyms, topK, dateAfter, dateBefore)
+        val results = searchStructured(query, synonyms, topK, dateAfter, dateBefore, originalQuestion)
         if (results.isEmpty()) return "관련 문서를 찾을 수 없습니다. (query: $query)"
         return results.formatForSlack()
     }
