@@ -178,9 +178,16 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
-        val decision = routerExecutor.execute(
-            prompt("decision") { user(decisionPrompt) }, routerModel
-        ).joinToString("") { it.content }.trim()
+        val decision = try {
+            routerExecutor.execute(
+                prompt("decision") { user(decisionPrompt) }, routerModel
+            ).joinToString("") { it.content }.trim()
+        } catch (e: Exception) {
+            log.warn("Router executor failed ({}), falling back to main executor", e.message)
+            executor.execute(
+                prompt("decision") { user(decisionPrompt) }, AnthropicModels.Haiku_4_5
+            ).joinToString("") { it.content }.trim()
+        }
 
         log.info("Search decision: {}", decision.take(150))
 
