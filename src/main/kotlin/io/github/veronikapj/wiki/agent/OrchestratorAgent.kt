@@ -128,6 +128,8 @@ class OrchestratorAgent(
             if (prHistoryTool != null || codeSearchTool != null) {
                 appendLine("- codeSearch: 클래스/함수 위치, 구현 방법, '어디있어?' 질문.")
                 appendLine("- codeStats: 파일 수·파일 목록·코드 통계. '몇 개야?', '목록 알려줘', '카운트' 질문.")
+                appendLine("  ※ codeStats 사용 시 QUERY는 반드시 영문 파일명 패턴으로. 예: Test, ViewModel, Repository, UseCase")
+                appendLine("  예: '유닛테스트 파일 몇 개야?' → QUERY: Test | '뷰모델 목록' → QUERY: ViewModel")
                 appendLine("- prHistory: PR 변경 이력, KMA-XXXX 티켓 작업 내용, 누가 언제 변경했는지.")
                 appendLine("  티켓 번호 + 코드 질문이 동시에 있으면 TOOL: prHistory+codeSearch (병렬 실행).")
             }
