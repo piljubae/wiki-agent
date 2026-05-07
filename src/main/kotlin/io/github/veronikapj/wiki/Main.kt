@@ -76,6 +76,20 @@ fun main() {
     val executor = LLMExecutorBuilder.build(resolvedModelConfig)
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
+    // Router executor: routerConfig 있으면 별도 빌드, 없으면 executor 재사용
+    val routerExecutor = config.routerConfig?.let { routerCfg ->
+        val resolvedRouterApiKey = when (routerCfg.provider) {
+            io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
+                SecretLoader.resolveNullable("GOOGLE_API_KEY", routerCfg.apiKey)
+            io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
+                SecretLoader.resolveNullable("ANTHROPIC_API_KEY", routerCfg.apiKey)
+            else -> routerCfg.apiKey
+        }
+        val resolvedRouterConfig = routerCfg.copy(apiKey = resolvedRouterApiKey)
+        log.info("Router executor: provider={}", resolvedRouterConfig.provider)
+        LLMExecutorBuilder.build(resolvedRouterConfig)
+    } ?: executor
+
     val sourceTracker = SourceTracker()
     val conversationStore = ConversationStore()
     val projectMemory = ProjectMemory()
@@ -230,6 +244,7 @@ fun main() {
         prHistoryTool = prHistoryTool,
         codeSearchTool = codeSearchTool,
         executor = executor,
+        routerExecutor = routerExecutor,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE ||
                 config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
