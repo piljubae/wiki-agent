@@ -40,16 +40,21 @@ object ConfigLoader {
         var codeSearchLocalRepoPath: String? = null
         var codeSearchEmbeddingMode = EmbeddingMode.LLM_EXPAND
         var persona = PersonaType.DEFAULT
+        var inRouter = false
+        var routerProvider: ModelProvider? = null
+        var routerModelName: String? = null
+        var routerApiKey: String? = null
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
             val indent = line.length - line.trimStart().length
             when {
-                line == "model:" -> { inModel = true; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "confluence:" -> { inConfluence = true; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "slack:" -> { inSlack = true; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "rag:" -> { inRag = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false }
-                line == "github:" -> { inGithub = true; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false }
+                line == "model:" -> { inModel = true; inRouter = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "confluence:" -> { inConfluence = true; inRouter = false; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "slack:" -> { inSlack = true; inRouter = false; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "rag:" -> { inRag = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false }
+                line == "github:" -> { inGithub = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false }
+                line == "router:" -> { inRouter = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
@@ -104,6 +109,14 @@ object ConfigLoader {
                     codeSearchEmbeddingMode = runCatching {
                         EmbeddingMode.valueOf(trimmed.substringAfter("embeddingMode:").trim().uppercase())
                     }.getOrDefault(EmbeddingMode.LLM_EXPAND)
+                inRouter && trimmed.startsWith("provider:") ->
+                    routerProvider = runCatching {
+                        ModelProvider.valueOf(trimmed.substringAfter("provider:").trim().uppercase())
+                    }.getOrNull()
+                inRouter && trimmed.startsWith("name:") ->
+                    routerModelName = trimmed.substringAfter("name:").trim().ifEmpty { null }
+                inRouter && trimmed.startsWith("apiKey:") ->
+                    routerApiKey = trimmed.substringAfter("apiKey:").trim().ifEmpty { null }
                 indent == 0 && trimmed.startsWith("persona:") ->
                     persona = runCatching {
                         PersonaType.valueOf(trimmed.substringAfter("persona:").trim().uppercase())
@@ -130,6 +143,7 @@ object ConfigLoader {
                 ),
             ),
             persona = persona,
+            routerConfig = routerProvider?.let { ModelConfig(it, routerModelName, routerApiKey) },
         )
     }
 
@@ -171,6 +185,12 @@ object ConfigLoader {
             if (cs.webhookPort > 0) appendLine("    webhookPort: ${cs.webhookPort}")
             cs.localRepoPath?.let { appendLine("    localRepoPath: $it") }
             appendLine("    embeddingMode: ${cs.embeddingMode}")
+            config.routerConfig?.let { router ->
+                appendLine("router:")
+                appendLine("  provider: ${router.provider}")
+                router.name?.let { appendLine("  name: $it") }
+                // apiKey is a secret — not written to disk (same pattern as model.apiKey)
+            }
         }
         File(path).writeText(yaml)
     }

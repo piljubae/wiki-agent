@@ -2,6 +2,7 @@ package io.github.veronikapj.wiki.config
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ConfigLoaderTest {
 
@@ -133,7 +134,7 @@ class ConfigLoaderTest {
               token: tok
         """.trimIndent()
         val config = ConfigLoader.fromString(yaml)
-        assertEquals(null, config.routerConfig)
+        assertNull(config.routerConfig)
     }
 
     @Test
@@ -151,5 +152,22 @@ class ConfigLoaderTest {
         val config = ConfigLoader.fromString(yaml)
         assertEquals(ModelProvider.GOOGLE, config.routerConfig?.provider)
         assertEquals("gkey", config.routerConfig?.apiKey)
+    }
+
+    @Test
+    fun `save and reload preserves routerConfig provider`() {
+        val config = WikiConfig(
+            model = ModelConfig(provider = ModelProvider.CLAUDE_CODE),
+            confluence = ConfluenceConfig(baseUrl = "https://x.atlassian.net", token = "tok"),
+            routerConfig = ModelConfig(provider = ModelProvider.GOOGLE),
+        )
+        val tmpFile = java.io.File.createTempFile("config-router-test", ".yml")
+        try {
+            ConfigLoader.save(config, tmpFile.absolutePath)
+            val reloaded = ConfigLoader.load(tmpFile.absolutePath)
+            assertEquals(ModelProvider.GOOGLE, reloaded.routerConfig?.provider)
+        } finally {
+            tmpFile.delete()
+        }
     }
 }
