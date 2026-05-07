@@ -38,6 +38,7 @@ class OrchestratorAgent(
     private val codeSearchTool: CodeSearchTool? = null,
     private val executor: MultiLLMPromptExecutor,
     private val routerExecutor: MultiLLMPromptExecutor = executor,
+    private val routerModel: LLModel = AnthropicModels.Haiku_4_5,
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
     private val projectMemory: ProjectMemory? = null,
@@ -90,7 +91,8 @@ class OrchestratorAgent(
             // codeStats는 파일 통계 전용 — 재검색(forceAllTools) 시 제외
             if (!forceAllTools) codeSearchTool?.let { "codeStats" } else null,
         )
-        val model = AnthropicModels.Haiku_4_5
+        val routerModel = this.routerModel      // for routing call
+        val model = AnthropicModels.Haiku_4_5  // for answer generation calls (keep Haiku for cost)
 
         val memory = projectMemory?.load()
 
@@ -177,7 +179,7 @@ class OrchestratorAgent(
         }
 
         val decision = routerExecutor.execute(
-            prompt("decision") { user(decisionPrompt) }, model
+            prompt("decision") { user(decisionPrompt) }, routerModel
         ).joinToString("") { it.content }.trim()
 
         log.info("Search decision: {}", decision.take(150))

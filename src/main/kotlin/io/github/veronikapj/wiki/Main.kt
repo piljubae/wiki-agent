@@ -77,6 +77,7 @@ fun main() {
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
     // Router executor: routerConfig 있으면 별도 빌드, 없으면 executor 재사용
+    var routerModel = AnthropicModels.Haiku_4_5
     val routerExecutor = config.routerConfig?.let { routerCfg ->
         val resolvedRouterApiKey = when (routerCfg.provider) {
             io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
@@ -87,6 +88,7 @@ fun main() {
         }
         val resolvedRouterConfig = routerCfg.copy(apiKey = resolvedRouterApiKey)
         log.info("Router executor: provider={}", resolvedRouterConfig.provider)
+        routerModel = LLMExecutorBuilder.defaultModel(resolvedRouterConfig)
         LLMExecutorBuilder.build(resolvedRouterConfig)
     } ?: executor
 
@@ -245,6 +247,7 @@ fun main() {
         codeSearchTool = codeSearchTool,
         executor = executor,
         routerExecutor = routerExecutor,
+        routerModel = routerModel,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE ||
                 config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
