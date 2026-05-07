@@ -83,7 +83,7 @@ class OrchestratorAgentTest {
         val knowledgeTool = KnowledgeTool(knowledgeStore)
 
         val confluenceTool = mockk<ConfluenceTool>()
-        coEvery { confluenceTool.confluenceSearchSuspend(any()) } returns "Confluence 결과"
+        coEvery { confluenceTool.confluenceSearchSuspend(any(), any(), any(), any(), any()) } returns "Confluence 결과"
 
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,
@@ -103,7 +103,7 @@ class OrchestratorAgentTest {
         val knowledgeTool = KnowledgeTool(knowledgeStore)
 
         val confluenceTool = mockk<ConfluenceTool>()
-        coEvery { confluenceTool.confluenceSearchSuspend(any()) } returns "관련 문서를 찾을 수 없습니다."
+        coEvery { confluenceTool.confluenceSearchSuspend(any(), any(), any(), any(), any()) } returns "관련 문서를 찾을 수 없습니다."
 
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,
@@ -122,7 +122,7 @@ class OrchestratorAgentTest {
         val knowledgeTool = KnowledgeTool(knowledgeStore)
 
         val confluenceTool = mockk<ConfluenceTool>()
-        coEvery { confluenceTool.confluenceSearchSuspend(any()) } returns "관련 문서를 찾을 수 없습니다."
+        coEvery { confluenceTool.confluenceSearchSuspend(any(), any(), any(), any(), any()) } returns "관련 문서를 찾을 수 없습니다."
 
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,

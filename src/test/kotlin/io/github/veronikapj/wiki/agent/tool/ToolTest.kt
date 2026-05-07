@@ -15,7 +15,7 @@ class ToolTest {
     @Test
     fun `ConfluenceTool delegates to ConfluenceSearchAgent`() = runTest {
         val mockAgent = mockk<ConfluenceSearchAgent>()
-        coEvery { mockAgent.search("배포") } returns "배포 가이드 결과"
+        coEvery { mockAgent.search("배포", any(), any(), any(), any()) } returns "배포 가이드 결과"
         val tool = ConfluenceTool(mockAgent)
         val result = tool.confluenceSearch("배포")
         assertTrue(result.contains("배포"))
@@ -24,7 +24,7 @@ class ToolTest {
     @Test
     fun `confluenceSearchSuspend delegates to searchAgent`() = runTest {
         val searchAgent = mockk<ConfluenceSearchAgent>()
-        coEvery { searchAgent.search(any()) } returns "Confluence 결과"
+        coEvery { searchAgent.search(any(), any(), any(), any(), any()) } returns "Confluence 결과"
         val tool = ConfluenceTool(searchAgent)
         val result = tool.confluenceSearchSuspend("배포 프로세스")
         assertEquals("Confluence 결과", result)
