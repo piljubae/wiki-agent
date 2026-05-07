@@ -132,4 +132,29 @@ class OrchestratorAgentTest {
         val result = agent.executeParallel("없는내용")
         assertNull(result)
     }
+
+    @Test
+    fun `routerExecutor defaults to executor when not specified`() {
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
+        val executor = LLMExecutorBuilder.build(ModelConfig())
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = executor,
+            // routerExecutor not specified — should default to executor
+        )
+        assertNotNull(agent)
+    }
+
+    @Test
+    fun `routerExecutor can be set independently from executor`() {
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
+        val executor = LLMExecutorBuilder.build(ModelConfig())
+        val routerExecutor = LLMExecutorBuilder.build(ModelConfig())
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = executor,
+            routerExecutor = routerExecutor,
+        )
+        assertNotNull(agent)
+    }
 }

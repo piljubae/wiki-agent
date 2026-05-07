@@ -37,6 +37,7 @@ class OrchestratorAgent(
     private val prHistoryTool: PrHistoryTool? = null,
     private val codeSearchTool: CodeSearchTool? = null,
     private val executor: MultiLLMPromptExecutor,
+    private val routerExecutor: MultiLLMPromptExecutor = executor,
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
     private val projectMemory: ProjectMemory? = null,
@@ -175,7 +176,7 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
-        val decision = executor.execute(
+        val decision = routerExecutor.execute(
             prompt("decision") { user(decisionPrompt) }, model
         ).joinToString("") { it.content }.trim()
 
