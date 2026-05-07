@@ -273,7 +273,7 @@ class OrchestratorAgent(
                 runCatching { tool.codeStats(query) }.getOrNull()
             }
             else ->
-                runCatching { executeParallel(query, synonyms, dateAfter, dateBefore) }.getOrNull()
+                runCatching { executeParallel(query, synonyms, dateAfter, dateBefore, question) }.getOrNull()
         }
 
         listener?.onSearchCompleted(searchLabel)
@@ -344,6 +344,7 @@ class OrchestratorAgent(
     internal suspend fun executeParallel(
         query: String, synonyms: List<String> = emptyList(),
         dateAfter: String? = null, dateBefore: String? = null,
+        originalQuestion: String = "",
     ): String? {
         val (knowledgeResult, confluenceResult) = coroutineScope {
             val kDeferred = async {
@@ -353,7 +354,7 @@ class OrchestratorAgent(
             }
             val cDeferred = async {
                 if (confluenceTool != null)
-                    runCatching { confluenceTool.confluenceSearchSuspend(query, synonyms, dateAfter, dateBefore) }.getOrNull()
+                    runCatching { confluenceTool.confluenceSearchSuspend(query, synonyms, dateAfter, dateBefore, originalQuestion) }.getOrNull()
                 else null
             }
             kDeferred.await() to cDeferred.await()

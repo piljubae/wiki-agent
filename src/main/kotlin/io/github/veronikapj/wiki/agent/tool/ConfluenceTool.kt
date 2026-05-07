@@ -23,8 +23,9 @@ class ConfluenceTool(
     suspend fun confluenceSearchSuspend(
         query: String, synonyms: List<String> = emptyList(),
         dateAfter: String? = null, dateBefore: String? = null,
+        originalQuestion: String = "",
     ): String {
         tracker?.record("Confluence")
-        return searchAgent.search(query, synonyms, dateAfter = dateAfter, dateBefore = dateBefore)
+        return searchAgent.search(query, synonyms, dateAfter = dateAfter, dateBefore = dateBefore, originalQuestion = originalQuestion)
     }
 }
