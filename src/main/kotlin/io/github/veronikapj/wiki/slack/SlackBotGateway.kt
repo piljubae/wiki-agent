@@ -9,6 +9,7 @@ import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.knowledge.IngestAgent
 import io.github.veronikapj.wiki.knowledge.PrIndexAgent
 import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.agent.QueryRewriter
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
@@ -27,6 +28,8 @@ class SlackBotGateway(
     private val confluenceClient: ConfluenceClient? = null,
     private val ingestAgent: IngestAgent? = null,
     private val prIndexAgent: PrIndexAgent? = null,
+    private val feedbackStore: FeedbackStore = FeedbackStore(),
+    private val queryRewriter: QueryRewriter? = null,
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
@@ -54,9 +57,6 @@ class SlackBotGateway(
         text.length > 500 -> DmInputType.LONG_TEXT
         else -> DmInputType.NORMAL
     }
-
-    // 봇이 보낸 답변 메시지의 ts를 추적 (리액션 피드백 필터링용)
-    private val botMessageTimestamps = ConcurrentHashMap.newKeySet<String>()
 
     // 온보딩 상태: 채널별 진행 단계
     private val onboardingState = ConcurrentHashMap<String, Int>()
@@ -331,7 +331,15 @@ class SlackBotGateway(
                 }
                 if (sendResult.isOk) {
                     log.info("Reply sent to channel={} thread={}", channel, threadTs)
-                    sendResult.ts?.let { botMessageTimestamps.add(it) }
+                    sendResult.ts?.let { ts ->
+                        val entry = FeedbackEntry(
+                            query = query,
+                            answer = result,
+                            usedTools = searchedTools.distinct(),
+                            ts = ts,
+                        )
+                        feedbackStore.save(ts, entry)
+                    }
                 } else {
                     log.error("Slack send failed: error={}, needed={}", sendResult.error, sendResult.needed)
                 }
@@ -356,14 +364,62 @@ class SlackBotGateway(
             val event = payload.event
             val reaction = event.reaction
             val messageTs = event.item.ts
-            if (reaction in FEEDBACK_REACTIONS && messageTs in botMessageTimestamps) {
-                log.info(
-                    "Feedback received: reaction={}, user={}, channel={}, ts={}",
-                    reaction, event.user, event.item.channel, messageTs,
-                )
+
+            when {
+                reaction in FEEDBACK_REACTIONS && feedbackStore.get(messageTs) != null -> {
+                    feedbackStore.saveReaction(messageTs, reaction)
+                    log.info("Feedback saved: reaction={}, ts={}", reaction, messageTs)
+                }
+                reaction in RETRY_REACTIONS && feedbackStore.get(messageTs) != null -> {
+                    val channel = event.item.channel
+                    messageExecutor.submit {
+                        triggerRequery(messageTs, channel, threadTs = messageTs)
+                    }
+                }
             }
             ctx.ack()
         }
+    }
+
+    private fun triggerRequery(messageTs: String, channel: String, threadTs: String) {
+        val entry = feedbackStore.get(messageTs) ?: run {
+            log.warn("triggerRequery: entry not found for ts={}", messageTs)
+            return
+        }
+
+        val stage = entry.stage + 1
+        log.info("Requery stage={} for query='{}'", stage, entry.query)
+
+        val forceAllTools = stage >= 2
+
+        val (bm25Query, vectorQuery) = if (!forceAllTools && queryRewriter != null) {
+            runBlocking {
+                val rewritten = queryRewriter.rewrite(entry.query, entry.usedTools)
+                rewritten.bm25 to rewritten.vector
+            }
+        } else {
+            entry.query to entry.query
+        }
+
+        val combinedQuery = if (vectorQuery.isNotBlank() && vectorQuery != bm25Query)
+            "$bm25Query\n$vectorQuery" else bm25Query
+
+        val result = runBlocking {
+            orchestrator.answer(combinedQuery, sessionId = "requery-$messageTs", forceAllTools = forceAllTools)
+        }
+
+        val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$result"
+        slackClient.chatPostMessage { req ->
+            req.channel(channel).threadTs(threadTs).text(reply)
+        }
+
+        feedbackStore.saveRequery(
+            ts = messageTs,
+            requeryBm25 = bm25Query,
+            requeryVec = vectorQuery,
+            requeryAnswer = result,
+            stage = stage,
+        )
     }
 
     private fun registerSlashCommand() {
@@ -377,8 +433,10 @@ class SlackBotGateway(
     companion object {
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
 
-        const val FEEDBACK_GUIDE = ":thumbsup: 도움이 됐다면 | :thumbsdown: 아쉬웠다면 리액션을 남겨주세요"
+        const val FEEDBACK_GUIDE =
+            ":thumbsup: 도움됐다면 | :thumbsdown: 아쉬웠다면 | :repeat: 다시 검색해드릴게요"
         val FEEDBACK_REACTIONS = listOf("+1", "-1", "thumbsup", "thumbsdown")
+        val RETRY_REACTIONS = listOf("repeat", "arrows_counterclockwise")
         private val HELP_KEYWORDS = setOf("도움말", "사용법", "help", "도움", "사용방법")
         val CONFIG_COMMANDS = setOf("reindex-code", "reindex", "ingest-wiki", "ingest", "lint", "config")
 
