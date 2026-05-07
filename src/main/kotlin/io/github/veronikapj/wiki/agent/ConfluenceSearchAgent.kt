@@ -79,10 +79,12 @@ class ConfluenceSearchAgent(
 
     private fun reRankByOriginalQuestion(results: List<SearchResult>, originalQuestion: String): List<SearchResult> {
         if (originalQuestion.isBlank()) return results
-        val keywords = extractSignificantKeywords(cleanQuery(originalQuestion))
+        val keywords = extractSignificantKeywords(originalQuestion)
         if (keywords.isEmpty()) return results
+        val keywordsLower = keywords.map { it.lowercase() }
         return results.sortedByDescending { page ->
-            keywords.count { kw -> page.title.lowercase().contains(kw.lowercase()) }
+            val titleLower = page.title.lowercase()
+            keywordsLower.count { kw -> titleLower.contains(kw) }
         }
     }
 
