@@ -259,7 +259,7 @@ class ConfluenceClient(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceClient::class.java)
-        private const val MAX_TEXT_CLAUSES = 5
+        private const val MAX_TEXT_CLAUSES = 8
         private val STOPWORDS = setOf(
             "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
             "그", "저", "이것", "저것", "어떻게", "무엇", "하는", "하는가", "합니다",
