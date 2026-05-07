@@ -4,6 +4,7 @@ package io.github.veronikapj.wiki
 
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
+import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
@@ -320,7 +321,7 @@ fun main() {
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->
-            executor.execute(prompt("rewrite") { user(prompt) }, AnthropicModels.Haiku_4_5)
+            executor.execute(prompt("rewrite", LLMParams(maxTokens = 300)) { user(prompt) }, AnthropicModels.Haiku_4_5)
                 .joinToString("") { it.content }
         }
         val gateway = SlackBotGateway(
