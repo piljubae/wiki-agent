@@ -7,6 +7,7 @@ import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import kotlinx.coroutines.runBlocking
+import java.io.File
 
 class CodeSearchTool(
     private val chromaClient: ChromaClient,
@@ -18,6 +19,7 @@ class CodeSearchTool(
     private val collectionName: String = "code_index",
     private val bm25Index: BM25Index? = null,
     private val embeddingFn: (suspend (String) -> List<Float>)? = null,
+    private val localRepoPath: String? = null,
 ) {
 
     @Tool("codeSearch")
@@ -118,17 +120,44 @@ class CodeSearchTool(
     ): String = runBlocking {
         tracker?.record("CodeStats")
         runCatching {
-            val index = bm25Index ?: return@runBlocking "코드 통계 기능이 비활성화 상태입니다. (BM25 인덱스 없음)"
-            val files = index.listFilesByPattern(pattern)
-            if (files.isEmpty()) return@runBlocking "패턴 `$pattern`에 해당하는 파일을 찾지 못했습니다."
-            buildString {
-                val label = if (pattern.isBlank()) "전체" else "\"$pattern\""
-                appendLine("*$label 파일 [${files.size}개]:*\n")
-                files.take(20).forEachIndexed { i, path ->
-                    appendLine("${i + 1}. `$path`")
-                }
-                if (files.size > 20) appendLine("\n_... 외 ${files.size - 20}개_")
-            }.trim()
+            // localRepoPath 있으면 파일시스템 직접 스캔 (정확한 카운트)
+            val localRoot = localRepoPath?.let { File(it) }
+            if (localRoot != null && localRoot.exists()) {
+                val files = localRoot.walk()
+                    .filter { file ->
+                        file.isFile &&
+                        file.extension == "kt" &&
+                        !file.path.contains("/build/") &&
+                        !file.path.contains("/generated/") &&
+                        (pattern.isBlank() || file.name.contains(pattern, ignoreCase = true))
+                    }
+                    .map { it.relativeTo(localRoot).path }
+                    .sorted()
+                    .toList()
+
+                if (files.isEmpty()) return@runBlocking "패턴 `$pattern`에 해당하는 파일을 찾지 못했습니다."
+                buildString {
+                    val label = if (pattern.isBlank()) "전체" else "\"$pattern\""
+                    appendLine("*$label 파일 [${files.size}개]:*\n")
+                    files.take(20).forEachIndexed { i, path ->
+                        appendLine("${i + 1}. `$path`")
+                    }
+                    if (files.size > 20) appendLine("\n_... 외 ${files.size - 20}개_")
+                }.trim()
+            } else {
+                // BM25 fallback (localRepoPath 미설정 시)
+                val index = bm25Index ?: return@runBlocking "코드 통계 기능이 비활성화 상태입니다. (localRepoPath 또는 BM25 인덱스 필요)"
+                val files = index.listFilesByPattern(pattern)
+                if (files.isEmpty()) return@runBlocking "패턴 `$pattern`에 해당하는 파일을 찾지 못했습니다."
+                buildString {
+                    val label = if (pattern.isBlank()) "전체" else "\"$pattern\""
+                    appendLine("*$label 파일 [${files.size}개]:*\n")
+                    files.take(20).forEachIndexed { i, path ->
+                        appendLine("${i + 1}. `$path`")
+                    }
+                    if (files.size > 20) appendLine("\n_... 외 ${files.size - 20}개_")
+                }.trim()
+            }
         }.getOrElse { "코드 통계 조회 중 오류: ${it.message}" }
     }
 }

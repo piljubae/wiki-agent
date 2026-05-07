@@ -212,6 +212,7 @@ fun main() {
             tracker = sourceTracker,
             bm25Index = bm25Index,
             embeddingFn = codeEmbeddingFn,
+            localRepoPath = config.github.codeSearch.localRepoPath,
         )
         log.info("Code search enabled: repos={}, branch={}", config.github.codeRepos, config.github.codeSearch.branch)
     } else if (config.github.codeRepos.isNotEmpty()) {
