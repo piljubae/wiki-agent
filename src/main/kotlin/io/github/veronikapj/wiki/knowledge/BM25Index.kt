@@ -20,16 +20,34 @@ class BM25Index(dbPath: String = ".wiki/bm25.db") {
         Class.forName("org.sqlite.JDBC")
         DriverManager.getConnection("jdbc:sqlite:$dbPath").also { c ->
             c.createStatement().use { stmt ->
-                // FTS5 가상 테이블: id는 인덱스 제외(UNINDEXED), content만 전문 검색
+                // FTS5 가상 테이블: id/file_path는 인덱스 제외(UNINDEXED), content만 전문 검색
                 stmt.execute(
                     """
                     CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks USING fts5(
                         id UNINDEXED,
+                        file_path UNINDEXED,
                         content,
                         tokenize = 'unicode61'
                     )
                     """.trimIndent(),
                 )
+                // 스키마 마이그레이션: 구버전(file_path 없음)이면 DROP → 재생성
+                runCatching {
+                    c.prepareStatement("SELECT file_path FROM code_chunks LIMIT 1").use { it.executeQuery() }
+                }.onFailure {
+                    log.info("BM25 schema migration: file_path 컬럼 추가 (다음 인덱싱 시 재구축)")
+                    stmt.execute("DROP TABLE IF EXISTS code_chunks")
+                    stmt.execute(
+                        """
+                        CREATE VIRTUAL TABLE code_chunks USING fts5(
+                            id UNINDEXED,
+                            file_path UNINDEXED,
+                            content,
+                            tokenize = 'unicode61'
+                        )
+                        """.trimIndent(),
+                    )
+                }
             }
         }
     }
@@ -38,13 +56,31 @@ class BM25Index(dbPath: String = ".wiki/bm25.db") {
      * 문서를 추가하거나 업데이트합니다.
      * FTS5는 UPDATE를 지원하지 않으므로 DELETE → INSERT 방식 사용.
      */
-    fun upsert(id: String, content: String) {
+    fun upsert(id: String, content: String, filePath: String = "") {
         conn.prepareStatement("DELETE FROM code_chunks WHERE id = ?").use { it.setString(1, id); it.execute() }
-        conn.prepareStatement("INSERT INTO code_chunks(id, content) VALUES (?, ?)").use {
+        conn.prepareStatement("INSERT INTO code_chunks(id, file_path, content) VALUES (?, ?, ?)").use {
             it.setString(1, id)
-            it.setString(2, content)
+            it.setString(2, filePath)
+            it.setString(3, content)
             it.execute()
         }
+    }
+
+    /** 패턴에 매칭되는 distinct file_path 목록 반환. pattern이 비어있으면 전체. */
+    fun listFilesByPattern(pattern: String): List<String> {
+        return runCatching {
+            val sql = if (pattern.isBlank()) {
+                "SELECT DISTINCT file_path FROM code_chunks ORDER BY file_path"
+            } else {
+                "SELECT DISTINCT file_path FROM code_chunks WHERE file_path LIKE ? ORDER BY file_path"
+            }
+            conn.prepareStatement(sql).use { stmt ->
+                if (pattern.isNotBlank()) stmt.setString(1, "%$pattern%")
+                val rs = stmt.executeQuery()
+                buildList { while (rs.next()) add(rs.getString("file_path")) }
+            }
+        }.onFailure { log.warn("listFilesByPattern failed for '{}': {}", pattern, it.message) }
+            .getOrDefault(emptyList())
     }
 
     /**

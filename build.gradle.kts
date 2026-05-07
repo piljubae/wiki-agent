@@ -52,7 +52,13 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("eval", "generate")
+        excludeTags("eval", "generate", "smoke")
+    }
+}
+
+tasks.register<Test>("smokeTest") {
+    useJUnitPlatform {
+        includeTags("smoke")
     }
 }
 

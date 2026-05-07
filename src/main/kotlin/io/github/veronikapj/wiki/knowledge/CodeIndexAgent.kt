@@ -121,7 +121,7 @@ class CodeIndexAgent(
                                     "branch" to branch,
                                 ),
                             )
-                            bm25Index?.upsert(id, doc)
+                            bm25Index?.upsert(id, doc, chunk.filePath)
                             total++
                         }
                     }.onFailure { log.warn("Failed to read {}/{}: {}", repo, path, it.message) }
@@ -441,7 +441,7 @@ class CodeIndexAgent(
                                 "branch" to branch,
                             ),
                         )
-                        bm25Index?.upsert(id, doc)
+                        bm25Index?.upsert(id, doc, chunk.filePath)
                         total++
                     }
                 }.onFailure { log.warn("Failed to read {}/{}: {}", repo, path, it.message) }

@@ -106,4 +106,29 @@ class CodeSearchTool(
             }
         }.getOrElse { "코드 검색 중 오류: ${it.message}" }
     }
+
+    @Tool("codeStats")
+    @LLMDescription(
+        "Kurly Android 코드베이스의 파일 통계를 조회합니다. " +
+        "'테스트 파일 몇 개야?', '유닛테스트 코드 카운트', 'ViewModel 목록 알려줘' 같은 질문에 사용하세요."
+    )
+    fun codeStats(
+        @LLMDescription("파일 패턴. 예: Test, ViewModel, Repository, UseCase. 전체 조회는 빈 문자열.")
+        pattern: String,
+    ): String = runBlocking {
+        tracker?.record("CodeStats")
+        runCatching {
+            val index = bm25Index ?: return@runBlocking "코드 통계 기능이 비활성화 상태입니다. (BM25 인덱스 없음)"
+            val files = index.listFilesByPattern(pattern)
+            if (files.isEmpty()) return@runBlocking "패턴 `$pattern`에 해당하는 파일을 찾지 못했습니다."
+            buildString {
+                val label = if (pattern.isBlank()) "전체" else "\"$pattern\""
+                appendLine("*$label 파일 [${files.size}개]:*\n")
+                files.take(20).forEachIndexed { i, path ->
+                    appendLine("${i + 1}. `$path`")
+                }
+                if (files.size > 20) appendLine("\n_... 외 ${files.size - 20}개_")
+            }.trim()
+        }.getOrElse { "코드 통계 조회 중 오류: ${it.message}" }
+    }
 }
