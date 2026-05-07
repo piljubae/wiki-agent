@@ -39,6 +39,7 @@ object ConfigLoader {
         var codeSearchWebhookPort = 0
         var codeSearchLocalRepoPath: String? = null
         var codeSearchEmbeddingMode = EmbeddingMode.LLM_EXPAND
+        var persona = PersonaType.DEFAULT
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
@@ -103,6 +104,10 @@ object ConfigLoader {
                     codeSearchEmbeddingMode = runCatching {
                         EmbeddingMode.valueOf(trimmed.substringAfter("embeddingMode:").trim().uppercase())
                     }.getOrDefault(EmbeddingMode.LLM_EXPAND)
+                indent == 0 && trimmed.startsWith("persona:") ->
+                    persona = runCatching {
+                        PersonaType.valueOf(trimmed.substringAfter("persona:").trim().uppercase())
+                    }.getOrDefault(PersonaType.DEFAULT)
             }
         }
 
@@ -124,6 +129,7 @@ object ConfigLoader {
                     embeddingMode = codeSearchEmbeddingMode,
                 ),
             ),
+            persona = persona,
         )
     }
 
