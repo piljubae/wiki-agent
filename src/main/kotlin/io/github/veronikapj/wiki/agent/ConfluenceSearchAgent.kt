@@ -56,8 +56,20 @@ class ConfluenceSearchAgent(
             Triple(textDeferred.await(), expandedDeferred.await(), ragDeferred.await())
         }
 
+        // 3-1단계: keyword AND fallback (text search 0건 시)
+        val keywordResults = if (textResults.isEmpty()) {
+            val keywords = extractSignificantKeywords(cleaned)
+            if (keywords.size >= 2) {
+                log.info("Text search empty, trying keyword AND fallback: {}", keywords)
+                runCatching {
+                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore)
+                }.getOrElse { emptyList() }
+            } else emptyList()
+        } else emptyList()
+        log.info("Keyword AND fallback: {} results", keywordResults.size)
+
         // 3단계: 합산 + 중복 제거 + 랭킹
-        return combineAndRank(titleResults, textResults, expandedResults, ragResults, topK)
+        return combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK)
     }
 
     private fun combineAndRank(
@@ -65,6 +77,7 @@ class ConfluenceSearchAgent(
         textResults: List<ConfluencePageRef>,
         expandedResults: List<ConfluencePageRef>,
         ragResults: List<SearchResult>,
+        keywordResults: List<ConfluencePageRef>,
         topK: Int,
     ): List<SearchResult> {
         val seen = mutableSetOf<String>()
@@ -74,6 +87,7 @@ class ConfluenceSearchAgent(
         expandedResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.SPACE_EXPANSION)) }
         textResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.TEXT_MATCH)) }
         ragResults.forEach { if (seen.add(it.pageId)) deduplicated.add(it) }
+        keywordResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.KEYWORD_AND)) }
 
         return deduplicated.sortedByDescending { it.stage.score }.take(topK)
     }
@@ -102,6 +116,21 @@ class ConfluenceSearchAgent(
             "어떻게 돼?", "어떻게 돼", "뭐야?", "뭐야",
             "찾아줘", "보여줘", "설명해줘", "정리해줘",
         )
+
+        /** 쿼리에서 유의미한 키워드 추출 (keyword AND fallback용) */
+        internal fun extractSignificantKeywords(query: String): List<String> {
+            val stopwords = setOf(
+                "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
+                "그", "저", "이것", "저것", "어떻게", "무엇", "하는", "하는가", "합니다",
+                "관련", "정보", "내용", "문서", "자료", "현황", "대한", "위한", "통한",
+                "Android", "android", "Kotlin", "kotlin",
+            )
+            return query.split("\\s+".toRegex())
+                .map { it.trim() }
+                .filter { it.length >= 2 && it !in stopwords }
+                .distinct()
+                .take(4) // AND 조건이 너무 많으면 결과 없음
+        }
 
         /** CQL 검색 전 쿼리 정제: 특수문자 제거 + 대화형 접미사 제거 */
         internal fun cleanQuery(query: String): String {

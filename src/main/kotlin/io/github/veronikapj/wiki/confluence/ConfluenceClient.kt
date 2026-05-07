@@ -171,6 +171,33 @@ class ConfluenceClient(
         return parseSearchResults(response, baseUrl)
     }
 
+    fun buildKeywordAndCqlSearchUrl(
+        keywords: List<String>, spaces: List<String>, limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): String {
+        val spaceCql = if (spaces.isNotEmpty())
+            " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
+        else ""
+        val dateCql = buildDateCql(dateAfter, dateBefore)
+        val andClauses = keywords.joinToString(" AND ") { "text ~ \"${escapeCql(it)}\"" }
+        val cql = URLEncoder.encode("($andClauses) AND type = page$spaceCql$dateCql", "UTF-8")
+        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+    }
+
+    suspend fun searchByKeywords(
+        keywords: List<String>, spaces: List<String>, limit: Int = 5,
+        dateAfter: String? = null, dateBefore: String? = null,
+    ): List<ConfluencePageRef> {
+        if (keywords.isEmpty()) return emptyList()
+        val url = buildKeywordAndCqlSearchUrl(keywords, spaces, limit, dateAfter, dateBefore)
+        log.info("Confluence keyword AND search: {}", url)
+        val response = httpClient.get(url) {
+            header("Authorization", "Basic $token")
+            header("Accept", "application/json")
+        }.bodyAsText()
+        return parseSearchResults(response, baseUrl)
+    }
+
     suspend fun searchPages(
         query: String, spaces: List<String>, synonyms: List<String> = emptyList(), limit: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,

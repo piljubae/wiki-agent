@@ -5,6 +5,7 @@ enum class SearchStage(val score: Double) {
     SPACE_EXPANSION(0.8),
     TEXT_MATCH(0.6),
     RAG(0.5),
+    KEYWORD_AND(0.55),
 }
 
 data class SearchResult(
