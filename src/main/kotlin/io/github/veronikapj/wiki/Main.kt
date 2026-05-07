@@ -3,6 +3,7 @@
 package io.github.veronikapj.wiki
 
 import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
@@ -27,6 +28,7 @@ import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import io.github.veronikapj.wiki.rag.VectorIndexAgent
 import io.github.veronikapj.wiki.rag.VectorSearchAgent
+import io.github.veronikapj.wiki.agent.QueryRewriter
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
 import io.github.veronikapj.wiki.github.GitHubCodeClient
@@ -316,6 +318,11 @@ fun main() {
             projectMemory = projectMemory,
             onReindexCode = codeIndexAgent?.let { agent -> { agent.indexAll() } },
         )
+        // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
+        val queryRewriter = QueryRewriter { prompt ->
+            executor.execute(prompt("rewrite") { user(prompt) }, AnthropicModels.Haiku_4_5)
+                .joinToString("") { it.content }
+        }
         val gateway = SlackBotGateway(
             slackConfig = config.slack.copy(botToken = slackBotToken, appToken = slackAppToken),
             orchestrator = orchestrator,
@@ -324,6 +331,7 @@ fun main() {
             confluenceClient = confluenceClient,
             ingestAgent = ingestAgent,
             prIndexAgent = prIndexAgent,
+            queryRewriter = queryRewriter,
         )
         gateway.start()
     } else {
