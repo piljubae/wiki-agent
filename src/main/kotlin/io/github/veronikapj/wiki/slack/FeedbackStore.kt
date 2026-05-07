@@ -21,27 +21,33 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
     private val conn = DriverManager.getConnection("jdbc:sqlite:$dbPath").also { createTable(it) }
 
     private fun createTable(c: java.sql.Connection) {
-        c.createStatement().execute("""
-            CREATE TABLE IF NOT EXISTS feedback (
-                ts TEXT PRIMARY KEY,
-                query TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                used_tools TEXT NOT NULL,
-                reaction TEXT,
-                requery_bm25 TEXT,
-                requery_vec TEXT,
-                requery_answer TEXT,
-                stage INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL
-            )
-        """.trimIndent())
+        c.createStatement().use { stmt ->
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    ts TEXT PRIMARY KEY,
+                    query TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    used_tools TEXT NOT NULL,
+                    reaction TEXT,
+                    requery_bm25 TEXT,
+                    requery_vec TEXT,
+                    requery_answer TEXT,
+                    stage INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+        }
     }
 
     fun save(ts: String, entry: FeedbackEntry) {
-        cache[ts] = entry
-        conn.prepareStatement(
-            "INSERT OR REPLACE INTO feedback(ts,query,answer,used_tools,created_at) VALUES(?,?,?,?,?)"
-        ).use { ps ->
+        conn.prepareStatement("""
+            INSERT INTO feedback(ts,query,answer,used_tools,created_at)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(ts) DO UPDATE SET
+                query=excluded.query,
+                answer=excluded.answer,
+                used_tools=excluded.used_tools
+        """.trimIndent()).use { ps ->
             ps.setString(1, ts)
             ps.setString(2, entry.query)
             ps.setString(3, entry.answer)
@@ -49,27 +55,42 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
             ps.setLong(5, System.currentTimeMillis())
             ps.executeUpdate()
         }
+        // DB 성공 후 메모리 갱신 — 기존 reaction/requery 필드 보존
+        cache.merge(ts, entry) { existing, new ->
+            new.copy(
+                reaction = existing.reaction,
+                requeryBm25 = existing.requeryBm25,
+                requeryVec = existing.requeryVec,
+                requeryAnswer = existing.requeryAnswer,
+                stage = existing.stage,
+            )
+        }
     }
 
     fun get(ts: String): FeedbackEntry? = cache[ts]
 
     fun saveReaction(ts: String, reaction: String) {
-        cache.computeIfPresent(ts) { _, e -> e.copy(reaction = reaction) }
         conn.prepareStatement("UPDATE feedback SET reaction=? WHERE ts=?").use {
-            it.setString(1, reaction); it.setString(2, ts); it.executeUpdate()
+            it.setString(1, reaction)
+            it.setString(2, ts)
+            it.executeUpdate()
         }
+        cache.computeIfPresent(ts) { _, e -> e.copy(reaction = reaction) }
     }
 
     fun saveRequery(ts: String, requeryBm25: String, requeryVec: String, requeryAnswer: String, stage: Int) {
-        cache.computeIfPresent(ts) { _, e ->
-            e.copy(requeryBm25 = requeryBm25, requeryVec = requeryVec, requeryAnswer = requeryAnswer, stage = stage)
-        }
         conn.prepareStatement(
             "UPDATE feedback SET requery_bm25=?,requery_vec=?,requery_answer=?,stage=? WHERE ts=?"
         ).use {
-            it.setString(1, requeryBm25); it.setString(2, requeryVec)
-            it.setString(3, requeryAnswer); it.setInt(4, stage); it.setString(5, ts)
+            it.setString(1, requeryBm25)
+            it.setString(2, requeryVec)
+            it.setString(3, requeryAnswer)
+            it.setInt(4, stage)
+            it.setString(5, ts)
             it.executeUpdate()
+        }
+        cache.computeIfPresent(ts) { _, e ->
+            e.copy(requeryBm25 = requeryBm25, requeryVec = requeryVec, requeryAnswer = requeryAnswer, stage = stage)
         }
     }
 }

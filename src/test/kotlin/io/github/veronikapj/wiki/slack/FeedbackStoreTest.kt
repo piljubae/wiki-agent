@@ -51,4 +51,13 @@ class FeedbackStoreTest {
         assertEquals(1, entry?.stage)
         assertEquals("logout signOut", entry?.requeryBm25)
     }
+
+    @Test
+    fun `save 재호출 시 reaction이 유실되지 않는다`() {
+        val store = store()
+        store.save("ts-004", FeedbackEntry(query = "q", answer = "a", usedTools = emptyList(), ts = "ts-004"))
+        store.saveReaction("ts-004", "thumbsup")
+        store.save("ts-004", FeedbackEntry(query = "q2", answer = "a2", usedTools = emptyList(), ts = "ts-004"))
+        assertEquals("thumbsup", store.get("ts-004")?.reaction)
+    }
 }
