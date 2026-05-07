@@ -5,6 +5,7 @@ import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.rag.ChromaClient
+import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Tag
@@ -120,8 +121,8 @@ class RedTeamEvalTest {
 
         // 실제 로드된 시크릿 값도 forbidden에 포함
         val actualSecrets = buildList {
-            SecretLoader.resolve("ANTHROPIC_API_KEY", null)?.takeIf { it.isNotBlank() }?.let { add(Regex.escape(it.take(10))) }
-            SecretLoader.resolve("GOOGLE_API_KEY", null)?.takeIf { it.isNotBlank() }?.let { add(Regex.escape(it.take(10))) }
+            SecretLoader.resolveNullable("ANTHROPIC_API_KEY", null)?.takeIf { it.isNotBlank() }?.let { add(Regex.escape(it.take(10))) }
+            SecretLoader.resolveNullable("GOOGLE_API_KEY", null)?.takeIf { it.isNotBlank() }?.let { add(Regex.escape(it.take(10))) }
             token.takeIf { it.isNotBlank() }?.let { add(Regex.escape(it.take(10))) }
         }
 
@@ -163,13 +164,16 @@ class RedTeamEvalTest {
         val chroma = ChromaClient(config.rag.chromaUrl)
         val collectionId = runCatching { chroma.getOrCreateCollection("code_index") }.getOrNull()
             ?: run { println("SKIP: code_index 컬렉션 없음"); return@runBlocking }
+        val googleApiKey = SecretLoader.resolve("GOOGLE_API_KEY", config.rag.googleApiKey.orEmpty())
+        val embedder = GoogleEmbeddingClient(googleApiKey)
 
         val ghostCases = cases.filter { it.attackType == RedTeamAttackType.CODE_GHOST }
         val results = ghostCases.map { case ->
             val start = System.currentTimeMillis()
 
             val queryResults = runCatching {
-                chroma.query(collectionId, queryTexts = listOf(case.input), nResults = 3)
+                val embedding = embedder.embed(case.input)
+                chroma.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 3)
             }.getOrElse { emptyList() }
             val latency = System.currentTimeMillis() - start
 
@@ -187,6 +191,7 @@ class RedTeamEvalTest {
         }
 
         printAndSaveReport("C-code-ghost", results)
+        embedder.close()
         assertAllPassed(results)
     }
 
@@ -195,6 +200,8 @@ class RedTeamEvalTest {
         val chroma = ChromaClient(config.rag.chromaUrl)
         val collectionId = runCatching { chroma.getOrCreateCollection("code_index") }.getOrNull()
             ?: run { println("SKIP: code_index 컬렉션 없음"); return@runBlocking }
+        val googleApiKey = SecretLoader.resolve("GOOGLE_API_KEY", config.rag.googleApiKey.orEmpty())
+        val embedder = GoogleEmbeddingClient(googleApiKey)
 
         val accuracyCases = cases.filter { it.attackType == RedTeamAttackType.CODE_ACCURACY }
         val localRepoPath = config.github.codeSearch.localRepoPath
@@ -203,7 +210,8 @@ class RedTeamEvalTest {
             val start = System.currentTimeMillis()
 
             val queryResults = runCatching {
-                chroma.query(collectionId, queryTexts = listOf(case.input), nResults = 5)
+                val embedding = embedder.embed(case.input)
+                chroma.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 5)
             }.getOrElse { emptyList() }
             val latency = System.currentTimeMillis() - start
 
@@ -235,6 +243,7 @@ class RedTeamEvalTest {
             )
         }
 
+        embedder.close()
         printAndSaveReport("C-code-accuracy", results)
         // 정확도는 경고만 (완전 pass 기준 없음)
         val failCount = results.count { !it.passed }
