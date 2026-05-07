@@ -79,11 +79,11 @@ fun main() {
     // Router executor: routerConfig 있으면 별도 빌드, 없으면 executor 재사용
     val routerExecutor = config.routerConfig?.let { routerCfg ->
         val resolvedRouterApiKey = when (routerCfg.provider) {
-            io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
-                SecretLoader.resolveNullable("GOOGLE_API_KEY", routerCfg.apiKey)
             io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
                 SecretLoader.resolveNullable("ANTHROPIC_API_KEY", routerCfg.apiKey)
-            else -> routerCfg.apiKey
+            io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
+                SecretLoader.resolveNullable("GOOGLE_API_KEY", routerCfg.apiKey)
+            else -> routerCfg.apiKey // CLAUDE_CODE / GEMINI_CODE: no API key env var resolution needed
         }
         val resolvedRouterConfig = routerCfg.copy(apiKey = resolvedRouterApiKey)
         log.info("Router executor: provider={}", resolvedRouterConfig.provider)
