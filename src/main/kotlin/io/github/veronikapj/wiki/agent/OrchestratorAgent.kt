@@ -76,26 +76,16 @@ class OrchestratorAgent(
             history.map { (q, a) -> Turn(q, a) }
         }
 
-        val availableTools = if (forceAllTools) {
-            listOfNotNull(
-                knowledgeTool?.let { "knowledgeSearch" },
-                confluenceTool?.let { "confluenceSearch" },
-                githubWikiTool?.let { "githubWikiSearch" },
-                vectorSearchTool?.let { "vectorSearch" },
-                prHistoryTool?.let { "prHistory" },
-                codeSearchTool?.let { "codeSearch" },
-            )
-        } else {
-            listOfNotNull(
-                knowledgeTool?.let { "knowledgeSearch" },
-                confluenceTool?.let { "confluenceSearch" },
-                githubWikiTool?.let { "githubWikiSearch" },
-                vectorSearchTool?.let { "vectorSearch" },
-                prHistoryTool?.let { "prHistory" },
-                codeSearchTool?.let { "codeSearch" },
-                codeSearchTool?.let { "codeStats" },
-            )
-        }
+        val availableTools = listOfNotNull(
+            knowledgeTool?.let { "knowledgeSearch" },
+            confluenceTool?.let { "confluenceSearch" },
+            githubWikiTool?.let { "githubWikiSearch" },
+            vectorSearchTool?.let { "vectorSearch" },
+            prHistoryTool?.let { "prHistory" },
+            codeSearchTool?.let { "codeSearch" },
+            // codeStats는 파일 통계 전용 — 재검색(forceAllTools) 시 제외
+            if (!forceAllTools) codeSearchTool?.let { "codeStats" } else null,
+        )
         val model = AnthropicModels.Haiku_4_5
 
         val memory = projectMemory?.load()
