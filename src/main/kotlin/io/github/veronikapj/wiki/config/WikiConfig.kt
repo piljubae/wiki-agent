@@ -57,6 +57,13 @@ data class WikiConfig(
     val persona: PersonaType = PersonaType.DEFAULT,
     /** 라우팅 전용 모델 설정. null이면 model 섹션 executor 재사용. */
     val routerConfig: ModelConfig? = null,
+    /** 콜 그래프 설정. cloneRepoPath 없으면 비활성화. */
+    val callGraph: CallGraphConfig? = null,
+)
+
+data class CallGraphConfig(
+    val cloneRepoPath: String = "",
+    val dbPath: String = "call_graph.db",
 )
 
 data class ModelConfig(

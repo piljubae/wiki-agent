@@ -37,8 +37,10 @@ import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.knowledge.CodeIndexAgent
 import io.github.veronikapj.wiki.knowledge.LocalRepoSync
 import io.github.veronikapj.wiki.knowledge.PrIndexAgent
+import io.github.veronikapj.wiki.agent.tool.CodeFlowTool
 import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
+import io.github.veronikapj.wiki.knowledge.CallGraphIndexAgent
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.routing.routing
@@ -238,6 +240,20 @@ fun main() {
         log.warn("codeRepos is set but rag.enabled=false — code search disabled. Enable RAG to use code search.")
     }
 
+    // Call Graph (callGraph.cloneRepoPath 설정 시)
+    var callGraphIndexAgent: CallGraphIndexAgent? = null
+    var codeFlowTool: CodeFlowTool? = null
+    config.callGraph?.let { cgCfg ->
+        if (cgCfg.cloneRepoPath.isNotBlank()) {
+            callGraphIndexAgent = CallGraphIndexAgent(
+                cloneRepoPath = cgCfg.cloneRepoPath,
+                dbPath = cgCfg.dbPath,
+            )
+            codeFlowTool = CodeFlowTool(cgCfg.dbPath)
+            log.info("Call graph enabled: clone={}, db={}", cgCfg.cloneRepoPath, cgCfg.dbPath)
+        }
+    }
+
     val orchestrator = OrchestratorAgent(
         knowledgeTool = knowledgeTool,
         confluenceTool = confluenceTool,
@@ -245,6 +261,7 @@ fun main() {
         vectorSearchTool = vectorSearchTool,
         prHistoryTool = prHistoryTool,
         codeSearchTool = codeSearchTool,
+        codeFlowTool = codeFlowTool,
         executor = executor,
         routerExecutor = routerExecutor,
         routerModel = routerModel,
@@ -287,6 +304,22 @@ fun main() {
                     val count = finalCodeIndexAgent.syncAndIndexChanged(config.github.codeRepos.first(), config.github.codeSearch.branch)
                     if (count > 0) log.info("Incremental code index: {} class entries updated", count)
                 }.onFailure { log.warn("Incremental code sync failed: {}", it.message) }
+            }
+        }
+    }
+
+    // Call graph 증분 빌드 (60분 폴링)
+    val finalCallGraphAgent = callGraphIndexAgent
+    if (finalCallGraphAgent != null) {
+        backgroundScope.launch {
+            val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
+            log.info("Call graph polling started: interval={}min", config.github.codeSearch.pollIntervalMinutes)
+            while (true) {
+                delay(intervalMs)
+                runCatching {
+                    val ok = finalCallGraphAgent.runIndex()
+                    if (ok) log.info("Call graph: index updated")
+                }.onFailure { log.warn("Call graph build failed: {}", it.message) }
             }
         }
     }

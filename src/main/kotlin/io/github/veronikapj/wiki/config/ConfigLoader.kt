@@ -44,6 +44,9 @@ object ConfigLoader {
         var routerProvider: ModelProvider? = null
         var routerModelName: String? = null
         var routerApiKey: String? = null
+        var inCallGraph = false
+        var callGraphCloneRepoPath = ""
+        var callGraphDbPath = "call_graph.db"
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
@@ -54,7 +57,8 @@ object ConfigLoader {
                 line == "slack:" -> { inSlack = true; inRouter = false; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
                 line == "rag:" -> { inRag = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false }
                 line == "github:" -> { inGithub = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false }
-                line == "router:" -> { inRouter = true; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "router:" -> { inRouter = true; inCallGraph = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "callGraph:" -> { inCallGraph = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
@@ -117,6 +121,10 @@ object ConfigLoader {
                     routerModelName = trimmed.substringAfter("name:").trim().ifEmpty { null }
                 inRouter && trimmed.startsWith("apiKey:") ->
                     routerApiKey = trimmed.substringAfter("apiKey:").trim().ifEmpty { null }
+                inCallGraph && trimmed.startsWith("cloneRepoPath:") ->
+                    callGraphCloneRepoPath = trimmed.substringAfter("cloneRepoPath:").trim()
+                inCallGraph && trimmed.startsWith("dbPath:") ->
+                    callGraphDbPath = trimmed.substringAfter("dbPath:").trim()
                 indent == 0 && trimmed.startsWith("persona:") ->
                     persona = runCatching {
                         PersonaType.valueOf(trimmed.substringAfter("persona:").trim().uppercase())
@@ -144,6 +152,8 @@ object ConfigLoader {
             ),
             persona = persona,
             routerConfig = routerProvider?.let { ModelConfig(it, routerModelName, routerApiKey) },
+            callGraph = if (callGraphCloneRepoPath.isNotBlank())
+                CallGraphConfig(callGraphCloneRepoPath, callGraphDbPath) else null,
         )
     }
 
