@@ -387,13 +387,12 @@ class SlackBotGateway(
             return
         }
 
-        val stage = entry.stage + 1
-
-        // Stage 상한: 최대 2회 재검색
-        if (stage > 2) {
-            log.info("Max requery stage reached (stage={}), skipping", stage)
+        // Stage 상한: 최대 2회 재검색 — 원자적 증가로 TOCTOU race 방지
+        val stage = feedbackStore.incrementStageIfBelow(messageTs, maxStage = 2) ?: run {
+            log.info("Max requery stage reached for ts={}, skipping", messageTs)
             slackClient.chatPostMessage { req ->
-                req.channel(channel).threadTs(threadTs).text(":pray: 이미 여러 방식으로 찾아봤어요. 질문을 다르게 표현해서 다시 시도해보세요.")
+                req.channel(channel).threadTs(threadTs)
+                    .text(":pray: 이미 여러 방식으로 찾아봤어요. 질문을 다르게 표현해서 다시 시도해보세요.")
             }
             return
         }
@@ -413,6 +412,17 @@ class SlackBotGateway(
 
         val combinedQuery = if (vectorQuery.isNotBlank() && vectorQuery != bm25Query)
             "$bm25Query\n$vectorQuery" else bm25Query
+
+        if (combinedQuery.isBlank()) {
+            log.warn("QueryRewriter returned empty query for ts={}, falling back to original query", messageTs)
+            val fallbackResult = runBlocking {
+                orchestrator.answer(entry.query, sessionId = "requery-$messageTs", forceAllTools = forceAllTools)
+            }
+            val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$fallbackResult"
+            slackClient.chatPostMessage { req -> req.channel(channel).threadTs(threadTs).text(reply) }
+            feedbackStore.saveRequery(ts = messageTs, requeryBm25 = "", requeryVec = "", requeryAnswer = fallbackResult, stage = stage)
+            return
+        }
 
         val result = runBlocking {
             orchestrator.answer(combinedQuery, sessionId = "requery-$messageTs", forceAllTools = forceAllTools)

@@ -56,7 +56,10 @@ class OrchestratorAgent(
     ): String {
         log.info("OrchestratorAgent answering: '{}'", question)
         return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools)
-        else answerWithKoogAgent(question, listener, sessionId)
+        else {
+            if (forceAllTools) log.warn("forceAllTools=true is not supported in Koog agent path, ignored")
+            answerWithKoogAgent(question, listener, sessionId)
+        }
     }
 
     // In-memory history fallback when no conversationStore/sessionId
@@ -111,7 +114,7 @@ class OrchestratorAgent(
                 if (prHistoryTool != null) "prHistory" else null,
                 if (codeSearchTool != null) "codeSearch" else null,
                 if (prHistoryTool != null && codeSearchTool != null) "prHistory+codeSearch" else null,
-                if (codeSearchTool != null) "codeStats" else null,
+                if (codeSearchTool != null && !forceAllTools) "codeStats" else null,
                 "none",
             )
             if (toolOptions.isNotEmpty()) {

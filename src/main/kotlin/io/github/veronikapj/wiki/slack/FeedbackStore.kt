@@ -39,6 +39,7 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
         }
     }
 
+    @Synchronized
     fun save(ts: String, entry: FeedbackEntry) {
         conn.prepareStatement("""
             INSERT INTO feedback(ts,query,answer,used_tools,created_at)
@@ -69,6 +70,7 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
 
     fun get(ts: String): FeedbackEntry? = cache[ts]
 
+    @Synchronized
     fun saveReaction(ts: String, reaction: String) {
         conn.prepareStatement("UPDATE feedback SET reaction=? WHERE ts=?").use {
             it.setString(1, reaction)
@@ -78,6 +80,7 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
         cache.computeIfPresent(ts) { _, e -> e.copy(reaction = reaction) }
     }
 
+    @Synchronized
     fun saveRequery(ts: String, requeryBm25: String, requeryVec: String, requeryAnswer: String, stage: Int) {
         conn.prepareStatement(
             "UPDATE feedback SET requery_bm25=?,requery_vec=?,requery_answer=?,stage=? WHERE ts=?"
@@ -92,5 +95,24 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
         cache.computeIfPresent(ts) { _, e ->
             e.copy(requeryBm25 = requeryBm25, requeryVec = requeryVec, requeryAnswer = requeryAnswer, stage = stage)
         }
+    }
+
+    /**
+     * stage를 원자적으로 증가시킨다.
+     * 현재 stage가 maxStage 이상이면 false를 반환하고 변경하지 않는다.
+     * 성공 시 새 stage 값을 반환한다.
+     */
+    @Synchronized
+    fun incrementStageIfBelow(ts: String, maxStage: Int): Int? {
+        val entry = cache[ts] ?: return null
+        if (entry.stage >= maxStage) return null
+        val newStage = entry.stage + 1
+        cache[ts] = entry.copy(stage = newStage)
+        conn.prepareStatement("UPDATE feedback SET stage=? WHERE ts=?").use {
+            it.setInt(1, newStage)
+            it.setString(2, ts)
+            it.executeUpdate()
+        }
+        return newStage
     }
 }
