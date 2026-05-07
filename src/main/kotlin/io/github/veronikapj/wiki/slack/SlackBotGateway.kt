@@ -388,6 +388,16 @@ class SlackBotGateway(
         }
 
         val stage = entry.stage + 1
+
+        // Stage 상한: 최대 2회 재검색
+        if (stage > 2) {
+            log.info("Max requery stage reached (stage={}), skipping", stage)
+            slackClient.chatPostMessage { req ->
+                req.channel(channel).threadTs(threadTs).text(":pray: 이미 여러 방식으로 찾아봤어요. 질문을 다르게 표현해서 다시 시도해보세요.")
+            }
+            return
+        }
+
         log.info("Requery stage={} for query='{}'", stage, entry.query)
 
         val forceAllTools = stage >= 2
