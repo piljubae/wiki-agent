@@ -17,6 +17,7 @@ class CodeSearchTool(
     private val tracker: SourceTracker? = null,
     private val collectionName: String = "code_index",
     private val bm25Index: BM25Index? = null,
+    private val embeddingFn: (suspend (String) -> List<Float>)? = null,
 ) {
 
     @Tool("codeSearch")
@@ -35,7 +36,12 @@ class CodeSearchTool(
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
 
             // 벡터 검색 — ChromaDB 1회만 호출
-            val vectorResults = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+            val vectorResults = if (embeddingFn != null) {
+                val embedding = embeddingFn(expandedQuery)
+                chromaClient.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 10)
+            } else {
+                chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+            }
 
             fun resultToId(r: io.github.veronikapj.wiki.rag.ChromaQueryResult): String {
                 val repo    = r.metadata["repo"] ?: ""
