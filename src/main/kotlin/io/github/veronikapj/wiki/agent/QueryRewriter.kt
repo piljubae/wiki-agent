@@ -36,7 +36,7 @@ class QueryRewriter(private val llm: LLMCaller) {
         val lines = raw.lines().associate { line ->
             val colon = line.indexOf(':')
             if (colon < 0) return@associate "" to ""
-            line.substring(0, colon).trim() to line.substring(colon + 1).trim()
+            line.substring(0, colon).trim().uppercase() to line.substring(colon + 1).trim()
         }
         val tools = lines["TOOLS"]
             ?.takeIf { it.isNotBlank() && it != "SAME" }

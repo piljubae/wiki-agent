@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class QueryRewriterTest {
@@ -23,9 +24,9 @@ class QueryRewriterTest {
             usedTools = listOf("confluence"),
         )
 
-        assertTrue(result.bm25.contains("SignUpActivity"))
-        assertTrue(result.vector.contains("화면"))
-        assertTrue(result.additionalTools.contains("code_search"))
+        assertEquals("signUp register join SignUpActivity SignUpViewModel", result.bm25)
+        assertEquals("사용자가 앱에서 처음 계정을 만드는 화면의 구조", result.vector)
+        assertEquals(listOf("code_search"), result.additionalTools)
     }
 
     @Test
