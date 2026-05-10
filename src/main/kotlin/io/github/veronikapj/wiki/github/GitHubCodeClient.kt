@@ -70,8 +70,19 @@ class GitHubCodeClient(private val token: String = "") {
         var page = 1
         while (result.size < limit) {
             val url = "https://api.github.com/repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=50&page=$page"
-            val json = apiGet(url) ?: break
-            val batch = runCatching { parsePrListJson(repo, json) }.getOrDefault(emptyList())
+            val json = apiGet(url) ?: run {
+                log.warn("fetchPrsPaged: apiGet returned null on page={}", page)
+                break
+            }
+            if (json.contains("\"message\"") && !json.trimStart().startsWith("[")) {
+                log.warn("fetchPrsPaged: API error response on page={}: {}", page, json.take(200))
+                break
+            }
+            val batch = runCatching { parsePrListJson(repo, json) }.getOrElse { e ->
+                log.warn("fetchPrsPaged: parse failed on page={}: {}", page, e.message)
+                emptyList()
+            }
+            log.info("fetchPrsPaged: page={}, batch={}", page, batch.size)
             if (batch.isEmpty()) break
             result.addAll(batch)
             page++
