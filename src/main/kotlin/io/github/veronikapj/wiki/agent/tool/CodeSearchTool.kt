@@ -104,15 +104,16 @@ class CodeSearchTool(
                 }.trim()
             } else null
 
-            // 로컬 grep 보완: 스킴/URL 쿼리에 한해 로컬 파일 직접 검색 후 병합
+            // 로컬 grep 보완: 쿼리에서 동적으로 패턴 추출 → 벡터가 놓치는 식별자/사용위치 보완
+            val grepPatterns = buildGrepPatterns(query)
             val grepSection = localRepoPath
-                ?.takeIf { isSchemeQuery(query) }
+                ?.takeIf { grepPatterns.isNotEmpty() }
                 ?.let { repoPath ->
                     val keywords = extractQueryKeywords(query)
-                    log.info("grep: localRepoPath={}, keywords={}", repoPath, keywords)
+                    log.info("grep: localRepoPath={}, keywords={}, patterns={}", repoPath, keywords, grepPatterns)
                     val hits = grepLocalRepo(
                         repoDir = File(repoPath),
-                        patterns = listOf("@return[^\\n]*://", "kurly://"),
+                        patterns = grepPatterns,
                         priorityKeywords = keywords,
                         maxHits = 5,
                     )
@@ -161,6 +162,37 @@ class CodeSearchTool(
         schemeKeywords.any { query.contains(it, ignoreCase = true) }
 
     /**
+     * 쿼리 타입에 따라 grep 패턴 목록 동적 생성.
+     * - 스킴/딥링크 → URL 패턴
+     * - PascalCase  → 클래스·인터페이스명 직접 매칭
+     * - camelCase   → 함수·변수명 직접 매칭
+     * - @Annotation → 어노테이션 패턴
+     * - SCREAMING_CASE → 상수명
+     */
+    private fun buildGrepPatterns(query: String): List<String> {
+        val patterns = mutableListOf<String>()
+
+        if (isSchemeQuery(query)) {
+            patterns += "@return[^\\n]*://"
+            patterns += "kurly://"
+        }
+
+        // PascalCase 식별자 (대문자 시작, 3자 이상)
+        Regex("[A-Z][a-zA-Z0-9]{2,}").findAll(query).map { it.value }.forEach { patterns += it }
+
+        // camelCase 식별자 (소문자 시작, 중간 대문자 포함)
+        Regex("[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]+").findAll(query).map { it.value }.forEach { patterns += it }
+
+        // 어노테이션 (@Xxx)
+        Regex("@[A-Z][a-zA-Z0-9]+").findAll(query).map { it.value }.forEach { patterns += it }
+
+        // SCREAMING_CASE 상수 (대문자+언더스코어, 3자 이상)
+        Regex("[A-Z][A-Z0-9_]{2,}").findAll(query).map { it.value }.forEach { patterns += it }
+
+        return patterns.distinct().filter { it.length >= 3 }
+    }
+
+    /**
      * 쿼리 키워드 추출 — CamelCase 분리 + 공백 분리, 스킴 관련 공용어 제거
      * 예) "ProductDetailScheme" → ["Product", "Detail"]
      *     "상품상세 스킴"       → ["상품상세"]
@@ -175,6 +207,7 @@ class CodeSearchTool(
 
     /**
      * 로컬 repo에서 정규식 패턴 grep — (relativePath, lineNo, content) 리스트 반환.
+     * 모든 패턴을 | 로 합산해 단일 grep 호출로 처리 (성능).
      * priorityKeywords가 있으면 해당 키워드를 포함한 결과를 먼저 반환.
      */
     private fun grepLocalRepo(
@@ -183,34 +216,34 @@ class CodeSearchTool(
         priorityKeywords: List<String> = emptyList(),
         maxHits: Int = 5,
     ): List<Triple<String, Int, String>> {
+        if (patterns.isEmpty()) return emptyList()
+
+        // 모든 패턴을 하나의 grep 호출로 합산
+        val combinedPattern = patterns.joinToString("|") { "(?:$it)" }
+        val lines = runCatching {
+            ProcessBuilder("grep", "-rn", "--include=*.kt", "-E", combinedPattern, repoDir.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+                .inputStream.bufferedReader().readLines()
+        }.getOrDefault(emptyList())
+
         val allHits = mutableListOf<Triple<String, Int, String>>()
-
-        for (pattern in patterns) {
-            val lines = runCatching {
-                ProcessBuilder("grep", "-rn", "--include=*.kt", "-E", pattern, repoDir.absolutePath)
-                    .redirectErrorStream(true)
-                    .start()
-                    .inputStream.bufferedReader().readLines()
-            }.getOrDefault(emptyList())
-
-            for (raw in lines) {
-                val firstColon = raw.indexOf(':')
-                if (firstColon < 0) continue
-                val afterPath = raw.substring(firstColon + 1)
-                val secondColon = afterPath.indexOf(':')
-                if (secondColon < 0) continue
-                val absPath = raw.substring(0, firstColon)
-                val lineNo = afterPath.substring(0, secondColon).toIntOrNull() ?: continue
-                val content = afterPath.substring(secondColon + 1).trim()
-                if (absPath.contains("/build/") || absPath.contains("/generated/")) continue
-                val relPath = absPath.removePrefix(repoDir.absolutePath + "/")
-                if (allHits.none { it.first == relPath && it.second == lineNo }) {
-                    allHits.add(Triple(relPath, lineNo, content))
-                }
+        for (raw in lines) {
+            val firstColon = raw.indexOf(':')
+            if (firstColon < 0) continue
+            val afterPath = raw.substring(firstColon + 1)
+            val secondColon = afterPath.indexOf(':')
+            if (secondColon < 0) continue
+            val absPath = raw.substring(0, firstColon)
+            val lineNo = afterPath.substring(0, secondColon).toIntOrNull() ?: continue
+            val content = afterPath.substring(secondColon + 1).trim()
+            if (absPath.contains("/build/") || absPath.contains("/generated/")) continue
+            val relPath = absPath.removePrefix(repoDir.absolutePath + "/")
+            if (allHits.none { it.first == relPath && it.second == lineNo }) {
+                allHits.add(Triple(relPath, lineNo, content))
             }
         }
 
-        // priorityKeywords를 포함한 결과 우선 정렬
         return if (priorityKeywords.isNotEmpty()) {
             val (priority, rest) = allHits.partition { (_, _, content) ->
                 priorityKeywords.any { kw -> content.contains(kw, ignoreCase = true) }
