@@ -4,6 +4,9 @@ import com.slack.api.Slack
 import com.slack.api.bolt.App
 import com.slack.api.bolt.socket_mode.SocketModeApp
 import com.slack.api.methods.MethodsClient
+import com.slack.api.model.event.AssistantThreadStartedEvent
+import com.slack.api.model.event.AssistantThreadContextChangedEvent
+import com.slack.api.model.assistant.SuggestedPrompt
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.knowledge.IngestAgent
@@ -193,6 +196,7 @@ class SlackBotGateway(
 
     fun start() {
         registerMentionHandler()
+        registerAssistantHandler()
         registerDmHandler()
         registerReactionHandler()
         registerSlashCommand()
@@ -443,15 +447,44 @@ class SlackBotGateway(
     }
 
     private fun registerSlashCommand() {
-        app.command("/wiki") { req, ctx ->
+        app.command("/askpj") { req, ctx ->
             val fullCommand = "/wiki ${req.payload.text}"
             val result = configHandler.handle(fullCommand)
             ctx.ack(result)
         }
     }
 
+    private fun registerAssistantHandler() {
+        // 1) 패널 열릴 때 — 추천 프롬프트 세팅
+        app.event(AssistantThreadStartedEvent::class.java) { payload, ctx ->
+            val thread = payload.event.assistantThread
+            val channelId = thread.channelId
+            val threadTs = thread.threadTs
+            runCatching {
+                slackClient.assistantThreadsSetSuggestedPrompts { req ->
+                    req.channelId(channelId)
+                        .threadTs(threadTs)
+                        .prompts(SUGGESTED_PROMPTS)
+                }
+            }.onFailure { log.warn("Failed to set suggested prompts: {}", it.message) }
+            ctx.ack()
+        }
+
+        // 2) 채널 컨텍스트 변경 — 무시
+        app.event(AssistantThreadContextChangedEvent::class.java) { _, ctx ->
+            ctx.ack()
+        }
+    }
+
     companion object {
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
+
+        private val SUGGESTED_PROMPTS = listOf(
+            SuggestedPrompt.builder().title("Confluence에서 검색").message("무엇을 Confluence에서 찾을까요?").build(),
+            SuggestedPrompt.builder().title("코드에서 찾기").message("어떤 코드를 찾고 있나요?").build(),
+            SuggestedPrompt.builder().title("PR 히스토리 보기").message("어떤 PR 히스토리가 궁금하세요?").build(),
+            SuggestedPrompt.builder().title("문서 인제스트").message("인제스트할 URL을 입력해주세요.").build(),
+        )
 
         const val FEEDBACK_GUIDE =
             ":thumbsup: 도움됐다면 | :thumbsdown: 아쉬웠다면 | :repeat: 다시 검색해드릴게요"
