@@ -1,4 +1,4 @@
-# 미결: reaction_added 이벤트 수신 안 됨
+# ✅ 완료: reaction_added 이벤트 수신 안 됨 → 해결
 
 ## 원인
 Slack App OAuth 스코프에 `reactions:read` 누락.
@@ -8,7 +8,7 @@ Slack App OAuth 스코프에 `reactions:read` 누락.
 2. Reinstall App (워크스페이스에 재설치)
 3. wiki-agent 재시작
 
-## 현재 상태
+## 현재 상태 (2026-05-10 완료)
 - `reaction_added` 이벤트 구독 추가 완료 (Event Subscriptions)
-- 스코프 추가 + 재설치 미완료
-- FeedbackStore/triggerRequery 구현은 완료 — 스코프만 추가하면 동작함
+- ✅ `reactions:read` 스코프 추가 + 앱 재설치 완료
+- ✅ 재검색(triggerRequery) 동작 확인
