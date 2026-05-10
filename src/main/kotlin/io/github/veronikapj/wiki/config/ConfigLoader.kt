@@ -39,6 +39,8 @@ object ConfigLoader {
         var codeSearchWebhookPort = 0
         var codeSearchLocalRepoPath: String? = null
         var codeSearchEmbeddingMode = EmbeddingMode.LLM_EXPAND
+        var codeSearchIndexApiKey: String? = null
+        var codeSearchSearchApiKey: String? = null
         var persona = PersonaType.DEFAULT
         var inRouter = false
         var routerProvider: ModelProvider? = null
@@ -113,6 +115,10 @@ object ConfigLoader {
                     codeSearchEmbeddingMode = runCatching {
                         EmbeddingMode.valueOf(trimmed.substringAfter("embeddingMode:").trim().uppercase())
                     }.getOrDefault(EmbeddingMode.LLM_EXPAND)
+                inCodeSearch && trimmed.startsWith("indexApiKey:") ->
+                    codeSearchIndexApiKey = trimmed.substringAfter("indexApiKey:").trim().ifEmpty { null }
+                inCodeSearch && trimmed.startsWith("searchApiKey:") ->
+                    codeSearchSearchApiKey = trimmed.substringAfter("searchApiKey:").trim().ifEmpty { null }
                 inRouter && trimmed.startsWith("provider:") ->
                     routerProvider = runCatching {
                         ModelProvider.valueOf(trimmed.substringAfter("provider:").trim().uppercase())
@@ -148,6 +154,8 @@ object ConfigLoader {
                     webhookPort = codeSearchWebhookPort,
                     localRepoPath = codeSearchLocalRepoPath,
                     embeddingMode = codeSearchEmbeddingMode,
+                    indexApiKey = codeSearchIndexApiKey,
+                    searchApiKey = codeSearchSearchApiKey,
                 ),
             ),
             persona = persona,

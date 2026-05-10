@@ -7,6 +7,7 @@ import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import java.io.File
 
 class CodeSearchTool(
@@ -37,10 +38,17 @@ class CodeSearchTool(
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
 
-            // 벡터 검색 — ChromaDB 1회만 호출
+            // 벡터 검색 — 임베딩 실패 시 텍스트 쿼리로 fallback (grep은 항상 실행)
             val vectorResults = if (embeddingFn != null) {
-                val embedding = embeddingFn(expandedQuery)
-                chromaClient.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 10)
+                runCatching {
+                    val embedding = embeddingFn(expandedQuery)
+                    chromaClient.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 10)
+                }.getOrElse { e ->
+                    log.warn("Embedding failed, falling back to text query: {}", e.message)
+                    runCatching {
+                        chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+                    }.getOrDefault(emptyList())
+                }
             } else {
                 chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
             }
@@ -57,10 +65,11 @@ class CodeSearchTool(
             val vectorIds = vectorResults.map { resultToId(it) }
             val metaById  = vectorResults.associateBy { resultToId(it) }
 
-            // Step 3: BM25 키워드 검색 + RRF 병합 (BM25 없으면 벡터 순서 그대로)
+            // BM25 키워드 검색 + RRF 병합 (벡터 결과 없으면 BM25 단독 사용)
             val orderedIds = if (bm25Index != null) {
                 val bm25Ids = bm25Index.search(query, limit = 10)
-                BM25Index.mergeRRF(vectorIds, bm25Ids)
+                if (vectorIds.isEmpty()) bm25Ids  // embedding 실패 시 BM25 단독
+                else BM25Index.mergeRRF(vectorIds, bm25Ids)
             } else {
                 vectorIds
             }
@@ -95,25 +104,121 @@ class CodeSearchTool(
                 }.trim()
             } else null
 
-            // ChromaDB + BM25 모두 결과 없으면 GitHub Code Search API fallback
-            if (chromaResult != null) chromaResult
-            else {
-                val apiResults = codeRepos.flatMap { repo ->
-                    runCatching { codeClient.searchCode(repo, query, branch) }.getOrDefault(emptyList())
-                }.take(5)
+            // 로컬 grep 보완: 스킴/URL 쿼리에 한해 로컬 파일 직접 검색 후 병합
+            val grepSection = localRepoPath
+                ?.takeIf { isSchemeQuery(query) }
+                ?.let { repoPath ->
+                    val keywords = extractQueryKeywords(query)
+                    log.info("grep: localRepoPath={}, keywords={}", repoPath, keywords)
+                    val hits = grepLocalRepo(
+                        repoDir = File(repoPath),
+                        patterns = listOf("@return[^\\n]*://", "kurly://"),
+                        priorityKeywords = keywords,
+                        maxHits = 5,
+                    )
+                    log.info("grep hits: {}", hits.size)
+                    if (hits.isNotEmpty()) buildString {
+                        appendLine("*직접 grep 결과 [${hits.size}건]:*\n")
+                        hits.forEachIndexed { i, (path, lineNo, content) ->
+                            val isTest = path.contains("/test/")
+                            val label = if (isTest) "$path:$lineNo _(테스트)_" else "$path:$lineNo"
+                            appendLine("${i + 1}. `$label`")
+                            appendLine("   > `${content.take(200)}`")
+                            appendLine()
+                        }
+                    }.trim() else null
+                }
 
-                if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+            // ChromaDB + grep 결과 병합 (둘 다 있으면 함께, 하나만 있으면 그것만)
+            val combined = listOfNotNull(chromaResult, grepSection).joinToString("\n\n")
+            if (combined.isNotBlank()) return@runBlocking combined
 
-                buildString {
-                    appendLine("*\"$query\"* 관련 코드 (GitHub Search):\n")
-                    apiResults.forEachIndexed { i, r ->
-                        appendLine("${i + 1}. `${r.filePath}`")
-                        appendLine("   <${r.htmlUrl}|소스 보기>")
-                        appendLine()
-                    }
-                }.trim()
-            }
+            // 모두 없으면 GitHub Code Search API fallback
+            val apiResults = codeRepos.flatMap { repo ->
+                runCatching { codeClient.searchCode(repo, query, branch) }.getOrDefault(emptyList())
+            }.take(5)
+
+            if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+
+            buildString {
+                appendLine("*\"$query\"* 관련 코드 (GitHub Search):\n")
+                apiResults.forEachIndexed { i, r ->
+                    appendLine("${i + 1}. `${r.filePath}`")
+                    appendLine("   <${r.htmlUrl}|소스 보기>")
+                    appendLine()
+                }
+            }.trim()
         }.getOrElse { "코드 검색 중 오류: ${it.message}" }
+    }
+
+    companion object {
+        private val log = LoggerFactory.getLogger(CodeSearchTool::class.java)
+    }
+
+    private val schemeKeywords = setOf("스킴", "scheme", "딥링크", "deeplink", "deep link", "딥 링크")
+
+    private fun isSchemeQuery(query: String) =
+        schemeKeywords.any { query.contains(it, ignoreCase = true) }
+
+    /**
+     * 쿼리 키워드 추출 — CamelCase 분리 + 공백 분리, 스킴 관련 공용어 제거
+     * 예) "ProductDetailScheme" → ["Product", "Detail"]
+     *     "상품상세 스킴"       → ["상품상세"]
+     */
+    private fun extractQueryKeywords(query: String): List<String> {
+        val camelSplit = query.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+        return camelSplit.split(" ", "_", "-")
+            .map { it.trim() }
+            .filter { it.length > 2 }
+            .filterNot { schemeKeywords.contains(it.lowercase()) }
+    }
+
+    /**
+     * 로컬 repo에서 정규식 패턴 grep — (relativePath, lineNo, content) 리스트 반환.
+     * priorityKeywords가 있으면 해당 키워드를 포함한 결과를 먼저 반환.
+     */
+    private fun grepLocalRepo(
+        repoDir: File,
+        patterns: List<String>,
+        priorityKeywords: List<String> = emptyList(),
+        maxHits: Int = 5,
+    ): List<Triple<String, Int, String>> {
+        val allHits = mutableListOf<Triple<String, Int, String>>()
+
+        for (pattern in patterns) {
+            val lines = runCatching {
+                ProcessBuilder("grep", "-rn", "--include=*.kt", "-E", pattern, repoDir.absolutePath)
+                    .redirectErrorStream(true)
+                    .start()
+                    .inputStream.bufferedReader().readLines()
+            }.getOrDefault(emptyList())
+
+            for (raw in lines) {
+                val firstColon = raw.indexOf(':')
+                if (firstColon < 0) continue
+                val afterPath = raw.substring(firstColon + 1)
+                val secondColon = afterPath.indexOf(':')
+                if (secondColon < 0) continue
+                val absPath = raw.substring(0, firstColon)
+                val lineNo = afterPath.substring(0, secondColon).toIntOrNull() ?: continue
+                val content = afterPath.substring(secondColon + 1).trim()
+                if (absPath.contains("/build/") || absPath.contains("/generated/")) continue
+                val relPath = absPath.removePrefix(repoDir.absolutePath + "/")
+                if (allHits.none { it.first == relPath && it.second == lineNo }) {
+                    allHits.add(Triple(relPath, lineNo, content))
+                }
+            }
+        }
+
+        // priorityKeywords를 포함한 결과 우선 정렬
+        return if (priorityKeywords.isNotEmpty()) {
+            val (priority, rest) = allHits.partition { (_, _, content) ->
+                priorityKeywords.any { kw -> content.contains(kw, ignoreCase = true) }
+            }
+            (priority + rest).take(maxHits)
+        } else {
+            allHits.take(maxHits)
+        }
     }
 
     @Tool("codeStats")

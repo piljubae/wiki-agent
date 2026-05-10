@@ -30,6 +30,7 @@ class ConfluenceSearchAgent(
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
         if (titleResults.size >= sufficientThreshold) {
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
+            log.info("Title results: {}", titleResults.take(5).joinToString { "\"${it.title}\"" })
             val earlyResults = titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
             return reRankByOriginalQuestion(earlyResults, originalQuestion)
         }
@@ -82,10 +83,16 @@ class ConfluenceSearchAgent(
         val keywords = extractSignificantKeywords(originalQuestion)
         if (keywords.isEmpty()) return results
         val keywordsLower = keywords.map { it.lowercase() }
-        return results.sortedByDescending { page ->
+        val reRanked = results.sortedByDescending { page ->
             val titleLower = page.title.lowercase()
             keywordsLower.count { kw -> titleLower.contains(kw) }
         }
+        log.info(
+            "Re-rank (kw={}): {}",
+            keywords,
+            reRanked.take(3).joinToString { "\"${it.title}\"[${keywordsLower.count { kw -> it.title.lowercase().contains(kw) }}]" },
+        )
+        return reRanked
     }
 
     private fun combineAndRank(

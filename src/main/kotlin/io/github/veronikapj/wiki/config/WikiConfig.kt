@@ -105,4 +105,8 @@ data class CodeSearchConfig(
     val localRepoPath: String? = null,  // 설정 시 GitHub API 대신 로컬 체크아웃에서 파일 읽기
     /** 코드 임베딩 모드 — rag.embeddingMode(지식 임베딩)와 독립적으로 설정 가능 */
     val embeddingMode: EmbeddingMode = EmbeddingMode.LLM_EXPAND,
+    /** 인덱싱 전용 API 키 (대량 호출) — 미설정 시 rag.googleApiKey 공유 */
+    val indexApiKey: String? = null,
+    /** 검색 전용 API 키 (실시간 소량 호출) — 미설정 시 rag.googleApiKey 공유 */
+    val searchApiKey: String? = null,
 )

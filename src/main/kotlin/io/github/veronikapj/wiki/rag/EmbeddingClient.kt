@@ -48,7 +48,11 @@ class GoogleEmbeddingClient(private val apiKey: String) {
             contentType(ContentType.Application.Json)
             setBody(buildEmbedRequest(text, model))
         }.bodyAsText()
-        return parseEmbedResponse(response) ?: error("Failed to parse embedding response")
+        val result = parseEmbedResponse(response)
+        if (result == null) {
+            log.warn("Embedding API response parse failed. response={}", response.take(500))
+        }
+        return result ?: error("Failed to parse embedding response")
     }
 
     internal fun buildEmbedRequest(text: String, modelName: String): String =
