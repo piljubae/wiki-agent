@@ -9,9 +9,6 @@ import com.slack.api.model.event.AssistantThreadContextChangedEvent
 import com.slack.api.model.assistant.SuggestedPrompt
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
-import io.github.veronikapj.wiki.knowledge.IngestAgent
-import io.github.veronikapj.wiki.knowledge.PrIndexAgent
-import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.agent.QueryRewriter
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
@@ -29,8 +26,6 @@ class SlackBotGateway(
     private val configHandler: SlackConfigHandler,
     private val projectMemory: ProjectMemory? = null,
     private val confluenceClient: ConfluenceClient? = null,
-    private val ingestAgent: IngestAgent? = null,
-    private val prIndexAgent: PrIndexAgent? = null,
     private val feedbackStore: FeedbackStore = FeedbackStore(),
     private val queryRewriter: QueryRewriter? = null,
 ) {
@@ -49,17 +44,6 @@ class SlackBotGateway(
         "prHistory" to "PR 이력",
         "codeSearch" to "코드 검색",
     )
-
-    private enum class DmInputType { PR_URL, URL, LONG_TEXT, NORMAL }
-
-    private val prUrlPattern = Regex("github\\.com/[^/]+/[^/]+/pull/\\d+")
-
-    private fun classifyDmInput(text: String): DmInputType = when {
-        prUrlPattern.containsMatchIn(text) -> DmInputType.PR_URL
-        text.startsWith("http://") || text.startsWith("https://") -> DmInputType.URL
-        text.length > 500 -> DmInputType.LONG_TEXT
-        else -> DmInputType.NORMAL
-    }
 
     // 온보딩 상태: 채널별 진행 단계
     private val onboardingState = ConcurrentHashMap<String, Int>()
@@ -197,7 +181,6 @@ class SlackBotGateway(
     fun start() {
         registerMentionHandler()
         registerAssistantHandler()
-        registerDmHandler()
         registerReactionHandler()
         registerSlashCommand()
         log.info("Starting Slack bot (Socket Mode)...")
@@ -218,63 +201,6 @@ class SlackBotGateway(
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
             } else if (!handleQueryAsync(channel = channel, threadTs = threadTs, sessionId = threadTs, query = query)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
-            }
-            ctx.ack()
-        }
-    }
-
-    private fun registerDmHandler() {
-        app.event(com.slack.api.model.event.MessageEvent::class.java) { payload, ctx ->
-            val event = payload.event
-            if (event.channelType != "im" || event.botId != null || event.subtype != null) {
-                return@event ctx.ack()
-            }
-            val rawText = event.text?.trim() ?: return@event ctx.ack()
-            val query = extractQuery(rawText)
-            if (query.isBlank()) return@event ctx.ack()
-            val channel = event.channel
-            log.info("DM received: '{}'", query.take(80))
-            if (isOnboarding(channel)) {
-                runCatching { handleOnboarding(channel, null, query) }
-                    .onFailure { log.error("Onboarding error: {}", it.message, it) }
-            } else if (CONFIG_COMMANDS.any { query.startsWith(it) }) {
-                // reindex-code, reindex, ingest, lint 등 관리 커맨드 — configHandler로 직접 라우팅
-                val result = configHandler.handle("/wiki $query")
-                slackClient.chatPostMessage { it.channel(channel).text(result) }
-            } else when (classifyDmInput(query)) {
-                DmInputType.PR_URL -> if (prIndexAgent != null) {
-                    val agent = prIndexAgent
-                    messageExecutor.submit {
-                        slackClient.chatPostMessage { it.channel(channel).text(":hourglass_flowing_sand: PR 인덱싱 중...") }
-                        val parsed = GitHubCodeClient("").parsePrUrl(query)
-                        if (parsed != null) {
-                            runCatching { runBlocking { agent.indexPr(parsed.first, parsed.second) } }
-                                .onSuccess { result -> slackClient.chatPostMessage { it.channel(channel).text(":white_check_mark: $result") } }
-                                .onFailure { e -> slackClient.chatPostMessage { it.channel(channel).text(":x: 인덱싱 중 오류: ${e.message}") } }
-                        } else {
-                            slackClient.chatPostMessage { it.channel(channel).text(":x: PR URL 형식을 인식하지 못했습니다.") }
-                        }
-                    }
-                } else if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
-                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
-                }
-                DmInputType.URL -> if (ingestAgent != null) {
-                    messageExecutor.submit {
-                        val result = runBlocking { ingestAgent.ingestUrl(query) }
-                        slackClient.chatPostMessage { it.channel(channel).text(result) }
-                    }
-                } else if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
-                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
-                }
-                DmInputType.LONG_TEXT -> slackClient.chatPostMessage {
-                    it.channel(channel).text(
-                        "긴 텍스트를 지식베이스에 저장하려면 `/wiki ingest <URL>` 형식으로 URL을 입력해주세요.\n" +
-                        "질문이 있으시면 채널에서 `@wiki <질문>`으로 검색하실 수 있습니다."
-                    )
-                }
-                DmInputType.NORMAL -> if (!handleQueryAsync(channel = channel, threadTs = null, sessionId = "dm-$channel", query = query)) {
-                    slackClient.chatPostMessage { it.channel(channel).text("요청이 많아 잠시 후 다시 시도해주세요.") }
-                }
             }
             ctx.ack()
         }
@@ -474,6 +400,93 @@ class SlackBotGateway(
         app.event(AssistantThreadContextChangedEvent::class.java) { _, ctx ->
             ctx.ack()
         }
+
+        // 3) 사용자 메시지 — orchestrator로 라우팅
+        app.event(com.slack.api.model.event.MessageEvent::class.java) { payload, ctx ->
+            val event = payload.event
+            if (event.channelType != "im" || event.botId != null || event.subtype != null) {
+                return@event ctx.ack()
+            }
+            val query = extractQuery(event.text?.trim() ?: return@event ctx.ack())
+            if (query.isBlank()) return@event ctx.ack()
+
+            val channel = event.channel
+            val threadTs = event.threadTs ?: event.ts
+
+            log.info("Assistant message received: '{}'", query.take(80))
+
+            if (isHelpQuery(query)) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(configHandler.helpMessage()) }
+                return@event ctx.ack()
+            }
+
+            if (!handleAssistantQueryAsync(channel, threadTs, query)) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
+            }
+            ctx.ack()
+        }
+    }
+
+    private fun handleAssistantQueryAsync(channel: String, threadTs: String, query: String): Boolean {
+        return try {
+            messageExecutor.submit {
+                val searchedTools = mutableListOf<String>()
+
+                val listener = object : SearchProgressListener {
+                    override suspend fun onSearchStarted(toolName: String) {
+                        searchedTools.add(toolName)
+                        val displayName = toolDisplayNames[toolName] ?: toolName
+                        runCatching {
+                            slackClient.assistantThreadsSetStatus { req ->
+                                req.channelId(channel).threadTs(threadTs).status("🔍 $displayName 검색 중...")
+                            }
+                        }.onFailure { log.warn("Failed to set assistant status: {}", it.message) }
+                    }
+                    override suspend fun onSearchCompleted(toolName: String) {}
+                }
+
+                try {
+                    val result = runBlocking {
+                        orchestrator.answer(query, listener, sessionId = "assistant-$threadTs")
+                    }
+
+                    runCatching {
+                        slackClient.assistantThreadsSetStatus { req ->
+                            req.channelId(channel).threadTs(threadTs).status("")
+                        }
+                    }
+
+                    val footer = buildString {
+                        if (searchedTools.isNotEmpty()) {
+                            append("\uD83D\uDCCB ")
+                            append(searchedTools.distinct().joinToString(" · ") { toolDisplayNames[it] ?: it })
+                        }
+                        append("\n$FEEDBACK_GUIDE")
+                    }
+
+                    val sendResult = slackClient.chatPostMessage { req ->
+                        req.channel(channel).threadTs(threadTs).text("$result\n\n$footer")
+                    }
+
+                    if (sendResult.isOk) {
+                        sendResult.ts?.let { ts ->
+                            feedbackStore.save(ts, FeedbackEntry(query, result, searchedTools.distinct(), ts))
+                        }
+                    } else {
+                        log.error("Slack send failed: {}", sendResult.error)
+                    }
+                } catch (e: Exception) {
+                    log.error("Failed to process assistant query: {}", e.message, e)
+                    slackClient.chatPostMessage { req ->
+                        req.channel(channel).threadTs(threadTs).text("오류가 발생했습니다: ${e.message}")
+                    }
+                }
+            }
+            true
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            log.warn("Request queue full — rejected: channel={} thread={}", channel, threadTs)
+            false
+        }
     }
 
     companion object {
@@ -491,7 +504,6 @@ class SlackBotGateway(
         val FEEDBACK_REACTIONS = listOf("+1", "-1", "thumbsup", "thumbsdown")
         val RETRY_REACTIONS = listOf("repeat", "arrows_counterclockwise")
         private val HELP_KEYWORDS = setOf("도움말", "사용법", "help", "도움", "사용방법")
-        val CONFIG_COMMANDS = setOf("reindex-code", "reindex", "ingest-wiki", "ingest", "lint", "config")
 
         fun isHelpQuery(text: String): Boolean =
             text.trim().lowercase() in HELP_KEYWORDS

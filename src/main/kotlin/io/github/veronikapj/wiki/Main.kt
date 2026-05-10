@@ -200,12 +200,25 @@ fun main() {
             llmFn = codeLlmFn,
             chromaClient = codeChromaClient,
         )
-        val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
-        val codeEmbeddingFn: (suspend (String) -> List<Float>)? =
-            if (config.github.codeSearch.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING && googleApiKey != null)
-                GoogleEmbeddingClient(googleApiKey).let { client -> { text: String -> client.embed(text) } }
+        val sharedGoogleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
+        // 인덱싱/검색 API 키 분리 — 미설정 시 공용 키 fallback
+        val indexApiKey = SecretLoader.resolveNullable("GOOGLE_INDEX_API_KEY", config.github.codeSearch.indexApiKey)
+            ?: sharedGoogleApiKey
+        val searchApiKey = SecretLoader.resolveNullable("GOOGLE_SEARCH_API_KEY", config.github.codeSearch.searchApiKey)
+            ?: sharedGoogleApiKey
+
+        val isGoogleEmbedding = config.github.codeSearch.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING
+        val indexEmbeddingFn: (suspend (String) -> List<Float>)? =
+            if (isGoogleEmbedding && indexApiKey != null)
+                GoogleEmbeddingClient(indexApiKey).let { client -> { text: String -> client.embed(text) } }
             else null
-        if (codeEmbeddingFn == null) log.warn("Code indexing: no embedding function configured — using ChromaDB default embedding")
+        val searchEmbeddingFn: (suspend (String) -> List<Float>)? =
+            if (isGoogleEmbedding && searchApiKey != null)
+                GoogleEmbeddingClient(searchApiKey).let { client -> { text: String -> client.embed(text) } }
+            else null
+
+        if (indexEmbeddingFn == null) log.warn("Code indexing: no embedding function — using ChromaDB default embedding")
+        if (searchEmbeddingFn == null) log.warn("Code search: no embedding function — using BM25 + grep only")
 
         // Step 3: BM25 인덱스 — localRepoPath 설정 시 활성화
         val bm25Index = if (config.github.codeSearch.localRepoPath != null) {
@@ -218,7 +231,7 @@ fun main() {
             chromaClient = codeChromaClient,
             repos = config.github.codeRepos,
             branch = config.github.codeSearch.branch,
-            embeddingFn = codeEmbeddingFn,
+            embeddingFn = indexEmbeddingFn,
             localRepoPath = config.github.codeSearch.localRepoPath,
             localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
             bm25Index = bm25Index,
@@ -232,7 +245,7 @@ fun main() {
             branch = config.github.codeSearch.branch,
             tracker = sourceTracker,
             bm25Index = bm25Index,
-            embeddingFn = codeEmbeddingFn,
+            embeddingFn = searchEmbeddingFn,
             localRepoPath = config.github.codeSearch.localRepoPath,
         )
         log.info("Code search enabled: repos={}, branch={}", config.github.codeRepos, config.github.codeSearch.branch)
@@ -381,8 +394,6 @@ fun main() {
             configHandler = configHandler,
             projectMemory = projectMemory,
             confluenceClient = confluenceClient,
-            ingestAgent = ingestAgent,
-            prIndexAgent = prIndexAgent,
             queryRewriter = queryRewriter,
         )
         gateway.start()
