@@ -122,6 +122,7 @@ class OrchestratorAgent(
                 if (prHistoryTool != null) "prHistory" else null,
                 if (codeSearchTool != null) "codeSearch" else null,
                 if (prHistoryTool != null && codeSearchTool != null) "prHistory+codeSearch" else null,
+                if (confluenceTool != null && codeSearchTool != null) "confluenceSearch+codeSearch" else null,
                 if (codeSearchTool != null && !forceAllTools) "codeStats" else null,
                 if (codeFlowTool != null) "findCallers" else null,
                 if (codeFlowTool != null) "traceChain" else null,
@@ -154,6 +155,10 @@ class OrchestratorAgent(
                 appendLine("  예: '유닛테스트 파일 몇 개야?' → QUERY: Test | '뷰모델 목록' → QUERY: ViewModel")
                 appendLine("- prHistory: PR 변경 이력, KMA-XXXX 티켓 작업 내용, 누가 언제 변경했는지.")
                 appendLine("  티켓 번호 + 코드 질문이 동시에 있으면 TOOL: prHistory+codeSearch (병렬 실행).")
+                appendLine("- confluenceSearch+codeSearch: 문서·코드 양쪽에 답이 있을 질문 (병렬 실행).")
+                appendLine("  예: 'XXX 사용법', 'XXX 흐름 알려줘', 'XXX 설계 문서', 'XXX 설명해줘', 기능명+개념 조합.")
+                appendLine("  예: '컬리페이 결제 흐름', '딥링크 스킴 목록', 'BaseFragment 어떻게 써?', '코드 리뷰 기준'.")
+                appendLine("  판단 기준: 코드 위치도 알고 싶고 관련 Confluence 문서도 보고 싶을 때.")
             }
             if (codeFlowTool != null) {
                 appendLine("- findCallers: 함수를 호출하는 곳 추적. '어디서 불려?', '누가 호출해?', '역방향 참조' 질문.")
@@ -216,7 +221,7 @@ class OrchestratorAgent(
 
         // 2단계: tool 실행
         val knownTools = listOf(
-            "prHistory+codeSearch", "githubWikiSearch", "confluenceSearch",
+            "prHistory+codeSearch", "confluenceSearch+codeSearch", "githubWikiSearch", "confluenceSearch",
             "prHistory", "codeSearch", "codeStats",
             "findCallers", "traceChain", "findImpact",
             "none",
@@ -281,6 +286,8 @@ class OrchestratorAgent(
                     ?.takeIf { !it.contains("찾을 수 없습니다") }
             toolName == "prHistory+codeSearch" ->
                 runCatching { executeCodeParallel(query) }.getOrNull()
+            toolName == "confluenceSearch+codeSearch" ->
+                runCatching { executeConfluenceCodeParallel(query, synonyms, dateAfter, dateBefore, question) }.getOrNull()
             toolName == "prHistory" && prHistoryTool != null -> {
                 val tool = prHistoryTool
                 runCatching { tool.prHistory(query) }.getOrNull()
@@ -431,6 +438,40 @@ class OrchestratorAgent(
         return when {
             prValid != null && codeValid != null -> "[PR 이력]\n$prValid\n\n---\n\n[코드]\n$codeValid"
             prValid != null -> prValid
+            codeValid != null -> codeValid
+            else -> null
+        }
+    }
+
+    internal suspend fun executeConfluenceCodeParallel(
+        query: String,
+        synonyms: List<String>,
+        dateAfter: String?,
+        dateBefore: String?,
+        question: String,
+    ): String? {
+        val (confluenceResult, codeResult) = coroutineScope {
+            val cDeferred = async {
+                if (confluenceTool != null)
+                    runCatching {
+                        confluenceTool.confluenceSearchSuspend(query, synonyms, dateAfter, dateBefore, question)
+                    }.getOrNull()
+                else null
+            }
+            val codeDeferred = async {
+                if (codeSearchTool != null)
+                    runCatching { codeSearchTool.codeSearch(query) }.getOrNull()
+                else null
+            }
+            cDeferred.await() to codeDeferred.await()
+        }
+
+        val cValid = confluenceResult?.takeIf { !it.contains("찾을 수 없습니다") }
+        val codeValid = codeResult?.takeIf { !it.contains("찾을 수 없습니다") && !it.contains("관련 코드를 찾을 수 없습니다") }
+
+        return when {
+            cValid != null && codeValid != null -> "[Confluence]\n$cValid\n\n---\n\n[코드]\n$codeValid"
+            cValid != null -> cValid
             codeValid != null -> codeValid
             else -> null
         }
