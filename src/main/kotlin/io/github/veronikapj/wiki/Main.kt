@@ -305,6 +305,7 @@ fun main() {
                 runCatching {
                     val count = finalPrIndexAgent.indexRecentPrs(config.github.codeRepos)
                     if (count > 0) log.info("Polling: indexed {} new PRs", count)
+                    gatewayRef.get()?.lastPrIndexedAt = Instant.now()
                 }.onFailure { log.warn("Polling failed: {}", it.message) }
             }
         }

@@ -13,7 +13,7 @@ class VectorIndexAgent(
     private val config: RagConfig,
     private val spaces: List<String>,
     private val collectionName: String = "wiki-pages",
-    private val topK: Int = 100,
+    private val topK: Int = 2000,
 ) {
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
