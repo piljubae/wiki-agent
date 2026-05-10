@@ -7,6 +7,7 @@ import com.slack.api.methods.MethodsClient
 import com.slack.api.model.event.AppHomeOpenedEvent
 import com.slack.api.model.event.AssistantThreadStartedEvent
 import com.slack.api.model.event.AssistantThreadContextChangedEvent
+import com.slack.api.model.event.MessageChangedEvent
 import com.slack.api.model.assistant.SuggestedPrompt
 import com.slack.api.model.block.Blocks.*
 import com.slack.api.model.block.composition.BlockCompositions.*
@@ -516,6 +517,11 @@ class SlackBotGateway(
 
         // 2) 채널 컨텍스트 변경 — 무시
         app.event(AssistantThreadContextChangedEvent::class.java) { _, ctx ->
+            ctx.ack()
+        }
+
+        // 메시지 편집 이벤트 — 무시 (핸들러 없으면 404 경고 발생)
+        app.event(MessageChangedEvent::class.java) { _, ctx ->
             ctx.ack()
         }
 
