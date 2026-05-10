@@ -60,7 +60,7 @@ class SlackConfigHandler(
                 log.error("Reindex failed", e)
             }
         }.start()
-        return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/wiki reindex status`로 진행 상황을 확인하세요."
+        return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/askpj reindex status`로 진행 상황을 확인하세요."
     }
 
     private fun triggerReindexCode(): String {
@@ -100,7 +100,7 @@ class SlackConfigHandler(
     private fun handleIngest(url: String): String {
         val fn = onIngest ?: return "Knowledge Base가 비활성화 상태입니다."
         if (url.isBlank() || (!url.startsWith("http://") && !url.startsWith("https://"))) {
-            return "사용법: /wiki ingest <URL>\n예: /wiki ingest https://example.com/doc"
+            return "사용법: /askpj ingest <URL>\n예: /askpj ingest https://example.com/doc"
         }
         return runBlocking { fn(url) }
     }
@@ -115,7 +115,7 @@ class SlackConfigHandler(
         return when (args.firstOrNull()) {
             "add" -> {
                 val content = args.drop(1).joinToString(" ").trim()
-                if (content.isBlank()) return "사용법: /wiki memory add <내용>"
+                if (content.isBlank()) return "사용법: /askpj memory add <내용>"
                 mem.add(content)
                 "메모리 저장 완료: $content"
             }
@@ -124,36 +124,36 @@ class SlackConfigHandler(
                 mem.clear()
                 "프로젝트 메모리 초기화 완료"
             }
-            else -> "사용법: /wiki memory add|show|clear"
+            else -> "사용법: /askpj memory add|show|clear"
         }
     }
 
     fun helpMessage() = """
-        *위키 검색 봇 사용법*
+        *배필주2 사용법*
 
         :mag: *검색*
-        • `@wiki <질문>` — 채널에서 멘션으로 검색
-        • `/wiki <질문>` — 슬래시 커맨드로 검색
+        • `@배필주2 <질문>` — 채널에서 멘션으로 검색
+        • `/askpj <질문>` — 슬래시 커맨드로 검색
 
         :gear: *설정*
-        • `/wiki config space DEV,PM` — 검색 스페이스 설정
-        • `/wiki config space show` — 현재 설정 확인
-        • `/wiki reindex` — RAG 재인덱싱
-        • `/wiki reindex status` — 마지막 인덱싱 정보
-        • `/wiki reindex-code` — Kurly Android 소스코드 재인덱싱
+        • `/askpj config space DEV,PM` — 검색 스페이스 설정
+        • `/askpj config space show` — 현재 설정 확인
+        • `/askpj reindex` — RAG 재인덱싱
+        • `/askpj reindex status` — 마지막 인덱싱 정보
+        • `/askpj reindex-code` — Android 소스코드 재인덱싱
 
         :books: *지식베이스*
-        • `/wiki ingest <URL>` — URL 내용을 지식베이스에 저장
-        • `/wiki ingest-wiki` — docs/wiki/ 문서 전체를 지식베이스에 로드
-        • `/wiki lint` — 지식베이스 품질 검사 (모순·고아 감지)
+        • `/askpj ingest <URL>` — URL 내용을 지식베이스에 저장
+        • `/askpj ingest-wiki` — docs/wiki/ 문서 전체를 지식베이스에 로드
+        • `/askpj lint` — 지식베이스 품질 검사 (모순·고아 감지)
 
         :brain: *프로젝트 메모리*
-        • `/wiki memory add <내용>` — 프로젝트 정보 저장 (도메인 용어, 팀 정보 등)
-        • `/wiki memory show` — 저장된 프로젝트 정보 확인
-        • `/wiki memory clear` — 프로젝트 정보 초기화
+        • `/askpj memory add <내용>` — 프로젝트 정보 저장 (도메인 용어, 팀 정보 등)
+        • `/askpj memory show` — 저장된 프로젝트 정보 확인
+        • `/askpj memory clear` — 프로젝트 정보 초기화
 
         :bulb: *도움말*
-        • `@wiki 도움말` 또는 `/wiki help`
+        • `@배필주2 도움말` 또는 `/askpj help`
     """.trimIndent()
 
     companion object {
