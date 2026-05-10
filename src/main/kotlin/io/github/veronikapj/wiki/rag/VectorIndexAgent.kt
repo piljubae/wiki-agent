@@ -17,7 +17,7 @@ class VectorIndexAgent(
 ) {
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
-        val pages = confluenceClient.searchPages("", spaces, limit = topK)
+        val pages = confluenceClient.listAllPages(spaces, maxPages = topK)
         log.info("Indexing {} pages into ChromaDB (mode={})", pages.size, config.embeddingMode)
 
         var indexed = 0

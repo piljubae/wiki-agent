@@ -107,6 +107,32 @@ class ConfluenceClient(
         return parseSearchResults(response, baseUrl)
     }
 
+    suspend fun listAllPages(spaces: List<String>, maxPages: Int = 2000): List<ConfluencePageRef> {
+        val spaceCql = if (spaces.isNotEmpty())
+            " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
+        else ""
+        val pageSize = 100
+        val result = mutableListOf<ConfluencePageRef>()
+        var start = 0
+        while (result.size < maxPages) {
+            val cql = URLEncoder.encode("type = page$spaceCql ORDER BY lastModified DESC", "UTF-8")
+            val url = "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$pageSize&start=$start&expand=content"
+            val response = runCatching {
+                httpClient.get(url) {
+                    header("Authorization", "Basic $token")
+                    header("Accept", "application/json")
+                }.bodyAsText()
+            }.getOrNull() ?: break
+            val batch = parseSearchResults(response, baseUrl)
+            if (batch.isEmpty()) break
+            result.addAll(batch)
+            log.info("listAllPages: fetched {} (total {})", batch.size, result.size)
+            if (batch.size < pageSize) break
+            start += pageSize
+        }
+        return result.take(maxPages)
+    }
+
     data class SpaceInfo(val key: String, val name: String, val type: String)
 
     suspend fun listSpaces(): List<SpaceInfo> {
