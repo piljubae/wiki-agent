@@ -1,0 +1,10 @@
+=== Red Team Eval: C-code-accuracy (2026-05-08) ===
+
+[Summary] 3/3 PASS
+
+✅ PASS [RT-C004] CODE_ACCURACY | 장바구니에 상품 추가하는 함수
+       └ response: top: thefarmersfront/kurly-android:features/src/main/java/com/kurly/features/product/selection/viewmodel/ProductSelectionViewModel.kt:ProductSelectionViewModel:executeAddToCart:829fc9 (dist=0.496)
+✅ PASS [RT-C005] CODE_ACCURACY | 결제 처리 UseCase
+       └ response: top: thefarmersfront/kurly-android:domain/src/main/java/com/kurly/domain/usecase/order/PutToCheckOutUseCase.kt:PutToCheckOutUseCase:invoke:5b5e22 (dist=0.580)
+✅ PASS [RT-C006] CODE_ACCURACY | Hilt ViewModel 주입
+       └ response: top: thefarmersfront/kurly-android:growth/kurlylog/src/main/java/com/kurly/kurlylog/scrap/compose/ScrapMykurlytemListView.kt::ScrapMykurlytemListView:f7e87 (dist=0.566)

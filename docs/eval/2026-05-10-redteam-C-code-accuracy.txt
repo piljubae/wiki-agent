@@ -1,0 +1,16 @@
+=== Red Team Eval: C-code-accuracy (2026-05-10) ===
+
+[Summary] 6/6 PASS
+
+✅ PASS [RT-C004] CODE_ACCURACY | 장바구니에 상품 추가하는 함수
+       └ response: top: thefarmersfront/kurly-android:features/src/main/java/com/kurly/features/product/selection/viewmodel/ProductSelectionViewModel.kt:ProductSelectionViewModel:executeAddToCart:829fc9 (dist=0.496)
+✅ PASS [RT-C005] CODE_ACCURACY | 결제 처리 UseCase
+       └ response: top: thefarmersfront/kurly-android:domain/src/main/java/com/kurly/domain/usecase/order/PutToCheckOutUseCase.kt:PutToCheckOutUseCase:invoke:5b5e22 (dist=0.580)
+✅ PASS [RT-C006] CODE_ACCURACY | Hilt ViewModel 주입
+       └ response: top: thefarmersfront/kurly-android:growth/kurlylog/src/main/java/com/kurly/kurlylog/scrap/compose/ScrapMykurlytemListView.kt::ScrapMykurlytemListView:f7e87 (dist=0.566)
+✅ PASS [RT-C007] CODE_ACCURACY | panelCode 어디서 쓰여?
+       └ response: top: thefarmersfront/kurly-android:data/src/main/java/com/kurly/data/network/service/home/MainHomeService.kt:MainHomeService:getPanelInfoWithCode:d59b46 (dist=0.496)
+✅ PASS [RT-C008] CODE_ACCURACY | BannerViewModel 어디있어?
+       └ response: top: thefarmersfront/kurly-android:features/src/main/java/com/kurly/features/home/recommend/section/viewmodel/MainBannerListViewModel.kt:MainBannerListViewModel:getUiModel:4907d5 (dist=0.478)
+✅ PASS [RT-C009] CODE_ACCURACY | 상품상세 스킴 URL
+       └ response: top: thefarmersfront/kurly-android:features/src/main/java/com/kurly/features/kurlynow/KurlyNowUrlHelper.kt:KurlyNowUrlHelper:createProductDetailUrl:6ab60a (dist=0.547)
