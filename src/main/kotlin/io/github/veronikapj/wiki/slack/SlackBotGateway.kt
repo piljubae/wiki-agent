@@ -545,6 +545,12 @@ class SlackBotGateway(
                 return@event ctx.ack()
             }
 
+            val canned = CANNED_RESPONSES[query]
+            if (canned != null) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(canned) }
+                return@event ctx.ack()
+            }
+
             if (!handleAssistantQueryAsync(channel, threadTs, query)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }
@@ -622,11 +628,89 @@ class SlackBotGateway(
     companion object {
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
 
+        // SuggestedPrompt.message = 버튼 클릭 시 유저 메시지로 전송되는 텍스트
+        // CANNED_RESPONSES 키와 일치시켜 LLM 없이 즉시 응답
         private val SUGGESTED_PROMPTS = listOf(
-            SuggestedPrompt.builder().title("Confluence에서 검색").message("온보딩 가이드 Confluence에서 찾아줘").build(),
-            SuggestedPrompt.builder().title("코드에서 찾기").message("ProductViewModel 어디 있어?").build(),
-            SuggestedPrompt.builder().title("PR 히스토리 보기").message("최근 배너 관련 PR 히스토리 보여줘").build(),
-            SuggestedPrompt.builder().title("문서 인제스트").message("문서 인제스트 사용법 알려줘").build(),
+            SuggestedPrompt.builder().title("Confluence에서 검색").message("__hint_confluence__").build(),
+            SuggestedPrompt.builder().title("코드에서 찾기").message("__hint_code__").build(),
+            SuggestedPrompt.builder().title("PR 히스토리 보기").message("__hint_pr__").build(),
+            SuggestedPrompt.builder().title("문서 인제스트").message("__hint_ingest__").build(),
+        )
+
+        val CANNED_RESPONSES = mapOf(
+            "__hint_confluence__" to """
+                :confluence: *Confluence 문서 검색 예시*
+
+                자연어로 질문하면 됩니다:
+
+                *실제 검색 결과 예시:*
+                • `온보딩 가이드 알려줘`
+                  → _신규 입사자 온보딩_ (ProductApp 스페이스) — 권한 요청, 개발 환경 세팅, Wifi 설정 등 포함
+
+                • `배포 프로세스 알려줘`
+                  → _웹 정기 배포 프로세스_ — Code Freeze 목요일 17:00, Pre-Prod 배포 목요일 17:30, 운영 배포 월요일 11:00
+
+                • `Android 코드 컨벤션 문서 찾아줘`
+                • `KMA-1234 관련 기획 문서 있어?`
+                • `최근 회의록 공유해줘`
+
+                검색 스페이스: ProductApp · project · ClientDivision · PSD
+            """.trimIndent(),
+
+            "__hint_code__" to """
+                :kotlin: *Android 코드 검색 예시*
+
+                클래스명, 함수명, 또는 기능으로 검색합니다:
+
+                *실제 검색 결과 예시:*
+                • `ProductViewModel 어디 있어?`
+                  → `ProductListViewModel` — `features/.../product/list/viewmodel/`
+                  → `ProductDetailViewModel` — `features/.../product/detail/`
+
+                • `상품상세 스킴 URL?`
+                  → `AppLinkGenerator.buildProductDetailUri()` — `link/src/main/kotlin/...`
+                  → `ProductDeepLinkConverter.isProductDetailUri()` — `app/src/...`
+
+                • `panelCode 어디서 쓰여?`
+                • `배너 클릭 이벤트 구현 어떻게 돼?`
+                • `HomeFragment 찾아줘`
+
+                벡터 + BM25 하이브리드 검색 · 로컬 grep 병행
+            """.trimIndent(),
+
+            "__hint_pr__" to """
+                :github: *PR 히스토리 검색 예시*
+
+                GitHub PR 변경 내역을 검색합니다:
+
+                • `배너 관련 최근 PR 보여줘`
+                • `KMA-7282 PR 내용 알려줘`
+                • `ProductDetailActivity 최근 변경 내역`
+                • `결제 관련 PR 목록`
+                • `지난주 머지된 PR 뭐 있어?`
+
+                _PR 제목, 본문, 변경 파일 기준으로 검색합니다._
+            """.trimIndent(),
+
+            "__hint_ingest__" to """
+                :books: *문서 인제스트 사용법*
+
+                URL 내용을 지식베이스(RAG)에 저장하면 이후 검색에서 활용됩니다.
+
+                *슬래시 커맨드로 사용:*
+                • `/askpj ingest <URL>` — 단일 URL 인제스트
+                • `/askpj ingest-wiki` — `docs/wiki/` 전체 로드
+
+                *예시:*
+                ```
+                /askpj ingest https://confluence.kurly.com/spaces/ProductApp/pages/...
+                ```
+
+                *관리 명령:*
+                • `/askpj reindex` — Confluence RAG 재인덱싱
+                • `/askpj reindex-code` — Android 소스코드 재인덱싱
+                • `/askpj lint` — 지식베이스 품질 검사
+            """.trimIndent(),
         )
 
         const val FEEDBACK_GUIDE =
