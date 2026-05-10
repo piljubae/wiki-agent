@@ -513,6 +513,7 @@ class SlackBotGateway(
                 val resp = slackClient.assistantThreadsSetSuggestedPrompts { req ->
                     req.channelId(channelId)
                         .threadTs(threadTs)
+                        .title("무엇을 찾아드릴까요? (전체 도움말: \"도움말\" 입력)")
                         .prompts(SUGGESTED_PROMPTS)
                 }
                 if (!resp.isOk) log.warn("setSuggestedPrompts failed: {}", resp.error)
