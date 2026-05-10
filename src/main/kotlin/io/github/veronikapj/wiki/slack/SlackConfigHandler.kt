@@ -108,7 +108,7 @@ class SlackConfigHandler(
                 log.error("PR full reindex failed", e)
             }
         }.start()
-        return ":hourglass_flowing_sand: PR 전체 인덱싱(최근 500건)을 시작했습니다. 20~30분 소요 예상."
+        return ":hourglass_flowing_sand: PR 전체 인덱싱(최근 1000건)을 시작했습니다. 40~60분 소요 예상."
     }
 
     private fun reindexStatus(): String {
@@ -176,7 +176,7 @@ class SlackConfigHandler(
         • `/askpj reindex status` — 마지막 인덱싱 정보
         • `/askpj reindex-code` — Android 소스코드 재인덱싱
         • `/askpj reindex-pr` — PR 히스토리 재인덱싱 (최신 50건)
-        • `/askpj reindex-pr full` — PR 전체 인덱싱 (최근 500건, 20~30분)
+        • `/askpj reindex-pr full` — PR 전체 인덱싱 (최근 1000건, 40~60분)
 
         :books: *지식베이스*
         • `/askpj ingest <URL>` — URL 내용을 지식베이스에 저장

@@ -383,7 +383,7 @@ fun main() {
             projectMemory = projectMemory,
             onReindexCode = codeIndexAgent?.let { agent -> { agent.indexAll() } },
             onReindexPr = prIndexAgent?.let { agent -> { agent.indexRecentPrs(config.github.codeRepos) } },
-            onReindexPrFull = prIndexAgent?.let { agent -> { agent.indexPrsBulk(config.github.codeRepos, limit = 500) } },
+            onReindexPrFull = prIndexAgent?.let { agent -> { agent.indexPrsBulk(config.github.codeRepos, limit = 1000) } },
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->
