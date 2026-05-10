@@ -703,15 +703,25 @@ class SlackBotGateway(
             "PR 검색 예시 보여줘" to """
                 :github: *PR 히스토리 검색 예시*
 
-                GitHub PR 변경 내역을 검색합니다:
+                GitHub PR 변경 내역을 검색합니다.
+                이 버튼을 누른 후 입력하는 질문은 PR 히스토리에서만 검색합니다.
 
+                *실제 검색 결과 예시:*
                 • `배너 관련 최근 PR 보여줘`
-                • `KMA-7282 PR 내용 알려줘`
+                  → PR #7139 (KMA-7033) — feat: SpecialDeal Compose 전환
+                     작성자: pilju.bae | 2026-04-28
+                  → PR #7165 — feat: ProductList Compose 전환
+                     작성자: pilju.bae | 2026-04-15
+
+                • `KMA-7282 어떤 작업이야?`
+                  → PR #7147 (KMA-7282) — feat: 첫 후기 작성 유도 Amplitude 이벤트 추가
+                     작성자: pilju.bae | 2026-04-10
+
+                *이런 질문에 적합해요:*
                 • `ProductDetailActivity 최근 변경 내역`
                 • `결제 관련 PR 목록`
                 • `지난주 머지된 PR 뭐 있어?`
-
-                _PR 제목, 본문, 변경 파일 기준으로 검색합니다._
+                • `pilju.bae 최근 작업 내역`
             """.trimIndent(),
 
             "인제스트 방법 알려줘" to """
