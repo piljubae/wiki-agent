@@ -183,6 +183,8 @@ class CodeIndexAgent(
 
     /**
      * 증분 인덱싱: 마지막 인덱싱 커밋 이후 변경된 .kt 파일만 재처리합니다.
+     * 삭제된 파일의 청크는 ChromaDB와 BM25에서 제거하고,
+     * 수정된 파일은 stale 청크 삭제 후 재인덱싱합니다.
      */
     suspend fun syncAndIndexChanged(repo: String, branch: String = this.branch): Int {
         if (localRepoSync == null) {
@@ -200,14 +202,33 @@ class CodeIndexAgent(
             return count
         }
 
-        val changedFiles = localRepoSync.changedKtFiles(lastCommit)
-        if (changedFiles.isEmpty()) {
+        val diff = localRepoSync.diffKtFiles(lastCommit)
+        if (diff.modified.isEmpty() && diff.deleted.isEmpty()) {
             log.info("No changed .kt files since {} — skipping", lastCommit.take(8))
             return 0
         }
 
-        log.info("Incremental index: {} changed files since {}", changedFiles.size, lastCommit.take(8))
-        val count = indexFiles(changedFiles, repo)
+        val collectionId = chromaClient.getOrCreateCollection(collectionName)
+
+        // 1. 삭제된 파일 — ChromaDB + BM25에서 청크 제거
+        if (diff.deleted.isNotEmpty()) {
+            log.info("Removing chunks for {} deleted files", diff.deleted.size)
+            diff.deleted.forEach { filePath ->
+                val ids = chromaClient.getIdsByFilePath(collectionId, repo, filePath)
+                if (ids.isNotEmpty()) {
+                    chromaClient.deleteByIds(collectionId, ids)
+                    log.info("Deleted {} chunks for removed file: {}", ids.size, filePath)
+                }
+                bm25Index?.deleteByFilePath(filePath)
+            }
+        }
+
+        // 2. 수정/추가된 파일 — stale 청크 제거 후 재인덱싱
+        val count = if (diff.modified.isNotEmpty()) {
+            log.info("Incremental index: {} modified files since {}", diff.modified.size, lastCommit.take(8))
+            indexFilesWithStaleDeletion(diff.modified, repo, collectionId)
+        } else 0
+
         saveIndexState(localRepoSync.currentCommit() ?: lastCommit)
         return count
     }
@@ -250,13 +271,30 @@ class CodeIndexAgent(
         data class ClassFrame(val name: String, val entryDepth: Int)
         val classStack = ArrayDeque<ClassFrame>()
         var braceDepth = 0
+        var pendingDoc = "" // 직전 KDoc 주석 (/** ... */), 다음 fun에 첨부
 
         var i = 0
         while (i < lines.size) {
             val line = lines[i]
             val trimmed = line.trimStart()
 
-            // 주석 라인 스킵
+            // KDoc 주석 수집 (/** ... */) — @return, @param 등 스킴/파라미터 정보 캡처
+            if (trimmed.startsWith("/**")) {
+                val docLines = mutableListOf<String>()
+                docLines.add(trimmed)
+                i++
+                while (i < lines.size) {
+                    val docLine = lines[i].trimStart()
+                    docLines.add(docLine)
+                    if (docLine.contains("*/")) { i++; break }
+                    i++
+                }
+                pendingDoc = docLines.joinToString("\n")
+                    .let { if (it.length > 400) it.take(397) + "..." else it }
+                continue
+            }
+
+            // 일반 주석 라인 스킵 (// 또는 KDoc 내부 *)
             if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
                 braceDepth += line.count { it == '{' } - line.count { it == '}' }
                 i++; continue
@@ -264,6 +302,7 @@ class CodeIndexAgent(
 
             // companion object 우선 체크 (class 패턴보다 먼저)
             if (companionPattern.containsMatchIn(line)) {
+                pendingDoc = ""
                 val openCount = line.count { it == '{' }
                 braceDepth += openCount
                 classStack.addLast(ClassFrame("(companion)", braceDepth))
@@ -278,6 +317,7 @@ class CodeIndexAgent(
             // class/object/interface 선언
             val classMatch = classLinePattern.find(line)
             if (classMatch != null) {
+                pendingDoc = ""
                 val openCount = line.count { it == '{' }
                 braceDepth += openCount
                 classStack.addLast(ClassFrame(classMatch.groupValues[1], braceDepth))
@@ -339,11 +379,14 @@ class CodeIndexAgent(
                 // 바디 추출 — j 이후 줄에서 시작
                 val afterSigOffset = lines.take(j + 1).sumOf { it.length + 1 }.coerceAtMost(content.length)
                 val afterSig = content.substring(afterSigOffset).trimStart(' ', '\t', '\n', '\r')
-                val body = when {
+                val rawBody = when {
                     afterSig.startsWith("{") -> extractBraceBlock(afterSig, maxChars = 500)
                     afterSig.startsWith("=") -> "= " + afterSig.removePrefix("=").trim().lines().first().take(498)
                     else -> ""
                 }
+                // KDoc 주석이 있으면 body 앞에 첨부 (스킴, 파라미터 설명 등 포함)
+                val body = if (pendingDoc.isNotBlank()) "$pendingDoc\n$rawBody" else rawBody
+                pendingDoc = ""
 
                 chunks.add(
                     CodeChunk(
@@ -451,6 +494,101 @@ class CodeIndexAgent(
     }
 
     // ── 내부 유틸: 파일 목록 인덱싱 ───────────────────────────────────────────
+
+    /**
+     * 수정된 파일 인덱싱 — 파일 내 삭제된 함수의 stale 청크를 먼저 제거 후 upsert.
+     * 변경 없는 함수는 getExistingIds cache hit으로 재임베딩 없음.
+     */
+    private suspend fun indexFilesWithStaleDeletion(
+        filePaths: List<String>,
+        repo: String,
+        collectionId: String,
+    ): Int {
+        val localRoot = localRepoPath?.let { File(it) }
+            ?: run { log.warn("indexFilesWithStaleDeletion called but localRepoPath is null"); return 0 }
+        var total = 0
+
+        filePaths.chunked(50).forEach { batch ->
+            // Phase 1: 청크 수집 + stale ID 계산
+            val entries = mutableListOf<ChunkEntry>()
+            batch.forEach { path ->
+                runCatching {
+                    val content = File(localRoot, path).takeIf { it.exists() }?.readText()
+                        ?: run {
+                            bm25Index?.deleteByFilePath(path)
+                            return@forEach
+                        }
+
+                    val chunks = extractFunctionChunks(content, path)
+                    if (chunks.isEmpty()) return@forEach
+
+                    // stale 청크 제거: 현재 ChromaDB IDs - 새 파싱 IDs
+                    val newIds = chunks.map { chunkId(repo, it) }.toSet()
+                    val existingIds = chromaClient.getIdsByFilePath(collectionId, repo, path)
+                    val staleIds = existingIds.filter { it !in newIds }
+                    if (staleIds.isNotEmpty()) {
+                        chromaClient.deleteByIds(collectionId, staleIds)
+                        staleIds.forEach { bm25Index?.delete(it) }
+                        log.info("Removed {} stale chunks from {}", staleIds.size, path)
+                    }
+
+                    chunks.forEach { chunk ->
+                        val doc = buildChunkDocument(chunk)
+                        val id = chunkId(repo, chunk)
+                        val sigHash = chunk.signature.hashCode().and(0xFFFFFF).toString(16)
+                        entries += ChunkEntry(
+                            id = id,
+                            doc = doc,
+                            meta = mapOf(
+                                "repo" to repo,
+                                "file_path" to chunk.filePath,
+                                "class_name" to chunk.className,
+                                "function_name" to chunk.functionName,
+                                "sig_hash" to sigHash,
+                                "branch" to branch,
+                                "chunk_type" to chunk.chunkType,
+                            ),
+                        )
+                        bm25Index?.upsert(id, doc, chunk.filePath)
+                        total++
+                    }
+                }.onFailure { log.warn("Failed to read {}/{}: {}", repo, path, it.message) }
+            }
+
+            if (entries.isEmpty()) return@forEach
+
+            // Phase 2: 이미 인덱싱된 ID 확인 → 새 것만 임베딩 (재임베딩 없음)
+            val existingIds = chromaClient.getExistingIds(collectionId, entries.map { it.id })
+            val newEntries = entries.filter { it.id !in existingIds }
+
+            val embeddings: List<List<Float>> = if (embeddingFn != null && newEntries.isNotEmpty()) {
+                coroutineScope {
+                    newEntries.map { entry ->
+                        async {
+                            embeddingSemaphore.withPermit {
+                                runCatching { embeddingFn(entry.doc) }.getOrElse { emptyList() }
+                            }
+                        }
+                    }.awaitAll()
+                }
+            } else emptyList()
+
+            val validPairs = if (embeddings.size == newEntries.size) {
+                newEntries.zip(embeddings).filter { (_, emb) -> emb.isNotEmpty() }
+            } else emptyList()
+
+            if (validPairs.isEmpty()) return@forEach
+            chromaClient.upsertDocuments(
+                collectionId,
+                validPairs.map { it.first.id },
+                validPairs.map { it.first.doc },
+                embeddings = validPairs.map { it.second },
+                metadatas = validPairs.map { it.first.meta },
+            )
+        }
+
+        return total
+    }
 
     private suspend fun indexFiles(filePaths: List<String>, repo: String): Int {
         val localRoot = localRepoPath?.let { File(it) }

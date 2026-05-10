@@ -1,6 +1,11 @@
 package io.github.veronikapj.wiki.knowledge
 
+import io.github.veronikapj.wiki.rag.ChromaClient
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -158,5 +163,46 @@ class CodeIndexAgentTest {
         val resultsFileB = index.search("qux", limit = 10)
         assertTrue(resultsFileB.any { it.contains("repo:FileB") }, "FileB chunk must still be searchable")
         index.close()
+    }
+
+    @Test
+    fun `syncAndIndexChanged deletes chunks for deleted files`() = runBlocking {
+        val bm25 = BM25Index(":memory:")
+        bm25.upsert("repo:deleted/Old.kt:OldClass:oldFun:aaa", "fun oldFun()", "deleted/Old.kt")
+
+        val chroma = mockk<ChromaClient>(relaxed = true)
+        coEvery { chroma.getOrCreateCollection(any()) } returns "col-id"
+        coEvery { chroma.getIdsByFilePath("col-id", any(), "deleted/Old.kt") } returns listOf("repo:deleted/Old.kt:OldClass:oldFun:aaa")
+
+        val localRepoSync = mockk<LocalRepoSync>()
+        every { localRepoSync.diffKtFiles(any()) } returns DiffResult(
+            modified = emptyList(),
+            deleted = listOf("deleted/Old.kt"),
+        )
+        every { localRepoSync.currentCommit() } returns "newsha"
+
+        // Write a temp state file so syncAndIndexChanged sees lastCommit = "oldsha"
+        val stateFile = java.io.File.createTempFile("code-index-state", ".json").also {
+            it.writeText("""{"lastCommit":"oldsha"}""")
+            it.deleteOnExit()
+        }
+
+        val agent = CodeIndexAgent(
+            codeClient = mockk(relaxed = true),
+            llmFn = { "" },
+            chromaClient = chroma,
+            repos = listOf("repo"),
+            branch = "develop",
+            bm25Index = bm25,
+            localRepoSync = localRepoSync,
+            indexStateFile = stateFile.absolutePath,
+        )
+
+        agent.syncAndIndexChanged("repo")
+
+        coVerify { chroma.deleteByIds("col-id", listOf("repo:deleted/Old.kt:OldClass:oldFun:aaa")) }
+        assertTrue(bm25.search("oldFun", limit = 5).isEmpty())
+        bm25.close()
+        Unit
     }
 }
