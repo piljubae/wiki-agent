@@ -341,6 +341,10 @@ class SlackBotGateway(
 
         log.info("Requery stage={} for query='{}'", stage, entry.query)
 
+        slackClient.chatPostMessage { req ->
+            req.channel(channel).threadTs(threadTs).text(":arrows_counterclockwise: 다시 찾아볼게요...")
+        }
+
         val forceAllTools = stage >= 2
 
         val (bm25Query, vectorQuery) = if (!forceAllTools && queryRewriter != null) {
@@ -613,20 +617,23 @@ class SlackBotGateway(
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
 
         private val SUGGESTED_PROMPTS = listOf(
-            SuggestedPrompt.builder().title("Confluence에서 검색").message("무엇을 Confluence에서 찾을까요?").build(),
-            SuggestedPrompt.builder().title("코드에서 찾기").message("어떤 코드를 찾고 있나요?").build(),
-            SuggestedPrompt.builder().title("PR 히스토리 보기").message("어떤 PR 히스토리가 궁금하세요?").build(),
-            SuggestedPrompt.builder().title("문서 인제스트").message("인제스트할 URL을 입력해주세요.").build(),
+            SuggestedPrompt.builder().title("Confluence에서 검색").message("온보딩 가이드 Confluence에서 찾아줘").build(),
+            SuggestedPrompt.builder().title("코드에서 찾기").message("ProductViewModel 어디 있어?").build(),
+            SuggestedPrompt.builder().title("PR 히스토리 보기").message("최근 배너 관련 PR 히스토리 보여줘").build(),
+            SuggestedPrompt.builder().title("문서 인제스트").message("문서 인제스트 사용법 알려줘").build(),
         )
 
         const val FEEDBACK_GUIDE =
             ":thumbsup: 도움됐다면 | :thumbsdown: 아쉬웠다면 | :repeat: 다시 검색해드릴게요"
         val FEEDBACK_REACTIONS = listOf("+1", "-1", "thumbsup", "thumbsdown")
         val RETRY_REACTIONS = listOf("repeat", "arrows_counterclockwise")
-        private val HELP_KEYWORDS = setOf("도움말", "사용법", "help", "도움", "사용방법")
+        private val HELP_EXACT = setOf("도움말", "사용법", "help", "도움", "사용방법")
+        private val HELP_CONTAINS = listOf("사용법 알려줘", "어떻게 써", "어떻게 사용", "how to use", "how do i")
 
-        fun isHelpQuery(text: String): Boolean =
-            text.trim().lowercase() in HELP_KEYWORDS
+        fun isHelpQuery(text: String): Boolean {
+            val lower = text.trim().lowercase()
+            return lower in HELP_EXACT || HELP_CONTAINS.any { lower.contains(it) }
+        }
 
         fun extractQuery(text: String): String =
             text.replace(Regex("<@[A-Z0-9]+[^>]*>"), "")
