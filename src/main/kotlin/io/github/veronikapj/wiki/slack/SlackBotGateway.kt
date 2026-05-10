@@ -508,12 +508,15 @@ class SlackBotGateway(
             val thread = payload.event.assistantThread
             val channelId = thread.channelId
             val threadTs = thread.threadTs
+            log.info("AssistantThreadStarted: channel={} thread={}", channelId, threadTs)
             runCatching {
-                slackClient.assistantThreadsSetSuggestedPrompts { req ->
+                val resp = slackClient.assistantThreadsSetSuggestedPrompts { req ->
                     req.channelId(channelId)
                         .threadTs(threadTs)
                         .prompts(SUGGESTED_PROMPTS)
                 }
+                if (!resp.isOk) log.warn("setSuggestedPrompts failed: {}", resp.error)
+                else log.info("setSuggestedPrompts ok ({}개)", SUGGESTED_PROMPTS.size)
             }.onFailure { log.warn("Failed to set suggested prompts: {}", it.message) }
             ctx.ack()
         }
@@ -640,8 +643,7 @@ class SlackBotGateway(
             SuggestedPrompt.builder().title("Confluence에서 검색").message("Confluence 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("코드에서 찾기").message("코드 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("PR 히스토리 보기").message("PR 검색 예시 보여줘").build(),
-            SuggestedPrompt.builder().title("문서 인제스트").message("인제스트 방법 알려줘").build(),
-            SuggestedPrompt.builder().title("종합 검색").message("종합 검색 예시 보여줘").build(),
+            SuggestedPrompt.builder().title("종합 검색 (문서+코드)").message("종합 검색 예시 보여줘").build(),
         )
 
         val HINT_FORCED_TOOL = mapOf(
