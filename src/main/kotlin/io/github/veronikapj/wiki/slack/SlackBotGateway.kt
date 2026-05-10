@@ -745,20 +745,20 @@ class SlackBotGateway(
 
                 *실제 검색 결과 예시:*
                 • `배너 관련 최근 PR 보여줘`
-                  → PR #7139 (KMA-7033) — feat: SpecialDeal Compose 전환
-                     작성자: pilju.bae | 2026-04-28
-                  → PR #7165 — feat: ProductList Compose 전환
-                     작성자: pilju.bae | 2026-04-15
+                  → PR #7557 (KMA-7275) — 빌드/Domain/Data Layer — panel_code DSP 광고 배너 지원
+                     작성자: piljubae | 2026-05-07
+                  → PR #7543 (KMA-7798) — 카테고리 상품 목록 배너 영역 이슈 수정
+                     작성자: hyunkyoung-jung | 2026-05-06
 
-                • `KMA-7282 어떤 작업이야?`
-                  → PR #7147 (KMA-7282) — feat: 첫 후기 작성 유도 Amplitude 이벤트 추가
-                     작성자: pilju.bae | 2026-04-10
+                • `KMA-7275 어떤 작업이야?`
+                  → PR #7540 (KMA-7275) — 배너 광고 DSP 프로퍼티 추가 및 Amplitude 이벤트 전파
+                     작성자: piljubae
 
                 *이런 질문에 적합해요:*
                 • `ProductDetailActivity 최근 변경 내역`
                 • `결제 관련 PR 목록`
                 • `지난주 머지된 PR 뭐 있어?`
-                • `pilju.bae 최근 작업 내역`
+                • `piljubae 최근 작업 내역`
             """.trimIndent(),
 
             "인제스트 방법 알려줘" to """
