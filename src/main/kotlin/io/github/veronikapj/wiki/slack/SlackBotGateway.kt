@@ -48,6 +48,9 @@ class SlackBotGateway(
     @Volatile var lastCodeIndexedAt: Instant? = null
     @Volatile var lastConfluenceIndexedAt: Instant? = null
 
+    // 버튼 클릭 후 해당 스레드에서 라우터를 스킵하고 지정 툴로 직행
+    private val threadForcedTool = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val toolDisplayNames = mapOf(
         "knowledgeSearch" to "지식베이스",
         "confluenceSearch" to "Confluence",
@@ -547,18 +550,20 @@ class SlackBotGateway(
 
             val canned = CANNED_RESPONSES[query]
             if (canned != null) {
+                HINT_FORCED_TOOL[query]?.let { threadForcedTool[threadTs] = it }
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(canned) }
                 return@event ctx.ack()
             }
 
-            if (!handleAssistantQueryAsync(channel, threadTs, query)) {
+            val forcedTool = threadForcedTool[threadTs]
+            if (!handleAssistantQueryAsync(channel, threadTs, query, forcedTool)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }
             ctx.ack()
         }
     }
 
-    private fun handleAssistantQueryAsync(channel: String, threadTs: String, query: String): Boolean {
+    private fun handleAssistantQueryAsync(channel: String, threadTs: String, query: String, forcedTool: String? = null): Boolean {
         return try {
             messageExecutor.submit {
                 val searchedTools = mutableListOf<String>()
@@ -578,7 +583,7 @@ class SlackBotGateway(
 
                 try {
                     val result = runBlocking {
-                        orchestrator.answer(query, listener, sessionId = "assistant-$threadTs")
+                        orchestrator.answer(query, listener, sessionId = "assistant-$threadTs", forceTool = forcedTool)
                     }
 
                     val footer = buildString {
@@ -630,11 +635,20 @@ class SlackBotGateway(
 
         // SuggestedPrompt.message = 버튼 클릭 시 유저 메시지로 표시되는 텍스트
         // CANNED_RESPONSES 키와 exact match하여 LLM 없이 즉시 응답
+        // HINT_FORCED_TOOL: 힌트 트리거 → 해당 스레드에서 라우터 스킵하고 지정 툴로 직행
         private val SUGGESTED_PROMPTS = listOf(
             SuggestedPrompt.builder().title("Confluence에서 검색").message("Confluence 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("코드에서 찾기").message("코드 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("PR 히스토리 보기").message("PR 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("문서 인제스트").message("인제스트 방법 알려줘").build(),
+            SuggestedPrompt.builder().title("종합 검색").message("종합 검색 예시 보여줘").build(),
+        )
+
+        val HINT_FORCED_TOOL = mapOf(
+            "Confluence 검색 예시 보여줘" to "confluenceSearch",
+            "코드 검색 예시 보여줘" to "codeSearch",
+            "PR 검색 예시 보여줘" to "prHistory",
+            "종합 검색 예시 보여줘" to "confluenceSearch+codeSearch",
         )
 
         val CANNED_RESPONSES = mapOf(
@@ -710,6 +724,20 @@ class SlackBotGateway(
                 • `/askpj reindex` — Confluence RAG 재인덱싱
                 • `/askpj reindex-code` — Android 소스코드 재인덱싱
                 • `/askpj lint` — 지식베이스 품질 검사
+            """.trimIndent(),
+
+            "종합 검색 예시 보여줘" to """
+                :mag: *종합 검색 — Confluence + 코드 동시 검색*
+
+                문서와 코드 양쪽에 답이 있을 때 사용합니다.
+                이 버튼을 누른 후 입력하는 질문은 Confluence와 코드를 동시에 검색합니다.
+
+                *이런 질문에 적합해요:*
+                • `컬리페이 결제 흐름 알려줘` — 기획 문서 + 코드 구현 동시 확인
+                • `BaseFragment 어떻게 써?` — 팀 가이드 문서 + 클래스 위치
+                • `딥링크 스킴 목록` — Confluence 정리 문서 + 코드에 정의된 값
+                • `코드 리뷰 기준` — 팀 컨벤션 문서 + 실제 lint 규칙
+                • `HomeFragment 설명해줘` — 설계 문서 + 구현 코드
             """.trimIndent(),
         )
 

@@ -57,9 +57,10 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
         forceAllTools: Boolean = false,
+        forceTool: String? = null,
     ): String {
         log.info("OrchestratorAgent answering: '{}'", question)
-        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools)
+        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool)
         else {
             if (forceAllTools) log.warn("forceAllTools=true is not supported in Koog agent path, ignored")
             answerWithKoogAgent(question, listener, sessionId)
@@ -74,6 +75,7 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
         forceAllTools: Boolean = false,
+        forceTool: String? = null,
     ): String {
         val effectivePersona = persona.description
 
@@ -206,7 +208,11 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
-        val decision = try {
+        // forceTool이 있으면 라우터 LLM 호출 스킵 — 쿼리는 원본 질문 그대로 사용
+        val decision = if (forceTool != null) {
+            log.info("Forced tool: {} — skipping router", forceTool)
+            "TOOL: $forceTool\nQUERY: $question\nSYNONYMS:"
+        } else try {
             routerExecutor.execute(
                 prompt("decision") { user(decisionPrompt) }, routerModel
             ).joinToString("") { it.content }.trim()
