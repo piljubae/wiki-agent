@@ -55,6 +55,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 
 private val log = LoggerFactory.getLogger("wiki.Main")
 
@@ -289,6 +291,9 @@ fun main() {
     val backgroundScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     Runtime.getRuntime().addShutdownHook(Thread { backgroundScope.cancel() })
 
+    // gateway 생성 전에 폴링이 시작되므로 AtomicReference로 나중에 주입
+    val gatewayRef = AtomicReference<io.github.veronikapj.wiki.slack.SlackBotGateway?>(null)
+
     // Polling 코루틴 시작
     val finalPrIndexAgent = prIndexAgent
     if (finalPrIndexAgent != null && config.github.codeSearch.pollIntervalMinutes > 0) {
@@ -315,7 +320,10 @@ fun main() {
                 delay(intervalMs)
                 runCatching {
                     val count = finalCodeIndexAgent.syncAndIndexChanged(config.github.codeRepos.first(), config.github.codeSearch.branch)
-                    if (count > 0) log.info("Incremental code index: {} class entries updated", count)
+                    if (count > 0) {
+                        log.info("Incremental code index: {} class entries updated", count)
+                        gatewayRef.get()?.lastCodeIndexedAt = Instant.now()
+                    }
                 }.onFailure { log.warn("Incremental code sync failed: {}", it.message) }
             }
         }
@@ -376,12 +384,16 @@ fun main() {
         val configHandler = SlackConfigHandler(
             config = config,
             persistOnChange = true,
-            onReindex = vectorIndexAgent?.let { agent -> { agent.indexAll() } },
+            onReindex = vectorIndexAgent?.let { agent -> {
+                agent.indexAll().also { gatewayRef.get()?.lastConfluenceIndexedAt = Instant.now() }
+            } },
             onIngest = { url -> ingestAgent.ingestUrl(url) },
             onIngestWiki = { ingestAgent.ingestLocalWikiDocs() },
             onLint = { lintAgent.lint() },
             projectMemory = projectMemory,
-            onReindexCode = codeIndexAgent?.let { agent -> { agent.indexAll() } },
+            onReindexCode = codeIndexAgent?.let { agent -> {
+                agent.indexAll().also { gatewayRef.get()?.lastCodeIndexedAt = Instant.now() }
+            } },
             onReindexPr = prIndexAgent?.let { agent -> { agent.indexPrsBulk(config.github.codeRepos, limit = 1000) } },
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
@@ -397,6 +409,7 @@ fun main() {
             confluenceClient = confluenceClient,
             queryRewriter = queryRewriter,
         )
+        gatewayRef.set(gateway)
         gateway.start()
     } else {
         log.info("Slack tokens not set — running in local CLI mode")

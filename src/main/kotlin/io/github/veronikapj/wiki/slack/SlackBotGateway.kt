@@ -21,6 +21,7 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -45,8 +46,29 @@ class SlackBotGateway(
         ArrayBlockingQueue(20),
     )
 
-    @Volatile var lastCodeIndexedAt: Instant? = null
-    @Volatile var lastConfluenceIndexedAt: Instant? = null
+    @Volatile var lastCodeIndexedAt: Instant? = loadStatusFile("lastCodeIndexedAt")
+        set(value) { field = value; saveStatusFile("lastCodeIndexedAt", value) }
+    @Volatile var lastConfluenceIndexedAt: Instant? = loadStatusFile("lastConfluenceIndexedAt")
+        set(value) { field = value; saveStatusFile("lastConfluenceIndexedAt", value) }
+
+    private fun loadStatusFile(key: String): Instant? = runCatching {
+        val file = File(STATUS_FILE)
+        if (!file.exists()) return null
+        file.readLines().firstOrNull { it.startsWith("$key=") }
+            ?.substringAfter("=")?.let { Instant.parse(it) }
+    }.getOrNull()
+
+    private fun saveStatusFile(key: String, value: Instant?) {
+        runCatching {
+            val file = File(STATUS_FILE)
+            file.parentFile?.mkdirs()
+            val lines = if (file.exists()) file.readLines().toMutableList() else mutableListOf()
+            val idx = lines.indexOfFirst { it.startsWith("$key=") }
+            val entry = if (value != null) "$key=$value" else return
+            if (idx >= 0) lines[idx] = entry else lines += entry
+            file.writeText(lines.joinToString("\n"))
+        }
+    }
 
     // 버튼 클릭 후 해당 스레드에서 라우터를 스킵하고 지정 툴로 직행
     private val threadForcedTool = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -655,6 +677,7 @@ class SlackBotGateway(
 
     companion object {
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
+        private const val STATUS_FILE = ".wiki/index-status.properties"
 
         // SuggestedPrompt.message = 버튼 클릭 시 유저 메시지로 표시되는 텍스트
         // CANNED_RESPONSES 키와 exact match하여 LLM 없이 즉시 응답
