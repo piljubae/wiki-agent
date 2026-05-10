@@ -63,6 +63,21 @@ class PrIndexAgent(
         return "PR #${prNumber} 인덱싱 완료: ${pr.title}"
     }
 
+    suspend fun indexPrsBulk(repos: List<String>, limit: Int = 500): Int {
+        var total = 0
+        for (repo in repos) {
+            val prs = codeClient.fetchPrsPaged(repo, limit)
+            log.info("Bulk PR index: fetched {} PRs for {}", prs.size, repo)
+            for (pr in prs) {
+                runCatching { indexPr(repo, pr.number) }
+                    .onSuccess { total++ }
+                    .onFailure { log.warn("Failed to index PR #{}: {}", pr.number, it.message) }
+            }
+            log.info("Bulk PR index done: {} PRs indexed for {}", total, repo)
+        }
+        return total
+    }
+
     suspend fun indexRecentPrs(repos: List<String>): Int {
         var total = 0
         val stateMap = loadPollState()

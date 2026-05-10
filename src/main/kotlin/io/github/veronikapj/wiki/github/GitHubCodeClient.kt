@@ -65,6 +65,20 @@ class GitHubCodeClient(private val token: String = "") {
         return runCatching { parsePrListJson(repo, json) }.getOrDefault(emptyList())
     }
 
+    suspend fun fetchPrsPaged(repo: String, limit: Int): List<GithubPrInfo> {
+        val result = mutableListOf<GithubPrInfo>()
+        var page = 1
+        while (result.size < limit) {
+            val url = "https://api.github.com/repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=50&page=$page"
+            val json = apiGet(url) ?: break
+            val batch = runCatching { parsePrListJson(repo, json) }.getOrDefault(emptyList())
+            if (batch.isEmpty()) break
+            result.addAll(batch)
+            page++
+        }
+        return result.take(limit)
+    }
+
     // Note: GitHub Code Search API indexes only the default branch — branch param is informational only
     suspend fun searchCode(repo: String, query: String, branch: String = "develop"): List<GithubCodeResult> {
         val q = "$query+repo:$repo"
