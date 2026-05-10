@@ -3,6 +3,11 @@ package io.github.veronikapj.wiki.knowledge
 import org.slf4j.LoggerFactory
 import java.io.File
 
+data class DiffResult(
+    val modified: List<String>,   // 추가·수정된 파일 (재인덱싱 대상)
+    val deleted: List<String>,    // 삭제된 파일 (청크 삭제 대상)
+)
+
 /**
  * 로컬 git repo 동기화 및 변경 파일 추적.
  * localRepoPath 기준으로 git 명령을 실행합니다.
@@ -39,6 +44,26 @@ class LocalRepoSync(private val repoPath: String) {
         return output.lines()
             .filter { it.endsWith(".kt") }
             .filter { !it.contains("/build/") && !it.contains("/generated/") && !it.contains("Test") && !it.contains("kpds-compose") }
+    }
+
+    /**
+     * sinceCommit 이후 변경된 .kt 파일을 수정/삭제로 분리해 반환.
+     * git diff --diff-filter:
+     *   A = Added, M = Modified  → modified
+     *   D = Deleted               → deleted
+     */
+    fun diffKtFiles(sinceCommit: String): DiffResult {
+        val modified = runGit("diff", "--name-only", "--diff-filter=AM", "$sinceCommit..HEAD", "--", "*.kt")
+            ?.lines()
+            ?.filter { it.endsWith(".kt") && !it.contains("/build/") && !it.contains("/generated/") && !it.contains("Test") && !it.contains("kpds-compose") }
+            ?: emptyList()
+
+        val deleted = runGit("diff", "--name-only", "--diff-filter=D", "$sinceCommit..HEAD", "--", "*.kt")
+            ?.lines()
+            ?.filter { it.endsWith(".kt") && !it.contains("/build/") && !it.contains("/generated/") && !it.contains("Test") && !it.contains("kpds-compose") }
+            ?: emptyList()
+
+        return DiffResult(modified = modified, deleted = deleted)
     }
 
     private fun runGit(vararg args: String): String? {
