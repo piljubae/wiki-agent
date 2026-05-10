@@ -4,9 +4,14 @@ import com.slack.api.Slack
 import com.slack.api.bolt.App
 import com.slack.api.bolt.socket_mode.SocketModeApp
 import com.slack.api.methods.MethodsClient
+import com.slack.api.model.event.AppHomeOpenedEvent
 import com.slack.api.model.event.AssistantThreadStartedEvent
 import com.slack.api.model.event.AssistantThreadContextChangedEvent
 import com.slack.api.model.assistant.SuggestedPrompt
+import com.slack.api.model.block.Blocks.*
+import com.slack.api.model.block.composition.BlockCompositions.*
+import com.slack.api.model.block.element.BlockElements.*
+import com.slack.api.model.view.Views.*
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.agent.QueryRewriter
@@ -15,6 +20,9 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadPoolExecutor
@@ -35,6 +43,9 @@ class SlackBotGateway(
         4, 4, 0L, TimeUnit.MILLISECONDS,
         ArrayBlockingQueue(20),
     )
+
+    @Volatile var lastCodeIndexedAt: Instant? = null
+    @Volatile var lastConfluenceIndexedAt: Instant? = null
 
     private val toolDisplayNames = mapOf(
         "knowledgeSearch" to "지식베이스",
@@ -183,6 +194,7 @@ class SlackBotGateway(
         registerAssistantHandler()
         registerReactionHandler()
         registerSlashCommand()
+        registerHomeHandler()
         log.info("Starting Slack bot (Socket Mode)...")
         SocketModeApp(slackConfig.appToken, app).start()
     }
@@ -377,6 +389,108 @@ class SlackBotGateway(
             val fullCommand = "/wiki ${req.payload.text}"
             val result = configHandler.handle(fullCommand)
             ctx.ack(result)
+        }
+    }
+
+    private fun registerHomeHandler() {
+        app.event(AppHomeOpenedEvent::class.java) { payload, ctx ->
+            val userId = payload.event.user
+            val fmt = DateTimeFormatter.ofPattern("MM/dd HH:mm").withZone(ZoneId.of("Asia/Seoul"))
+
+            val codeStatus = lastCodeIndexedAt?.let { fmt.format(it) } ?: "미실행"
+            val confluenceStatus = lastConfluenceIndexedAt?.let { fmt.format(it) } ?: "미실행"
+            val spaces = projectMemory?.load()
+                ?.lines()
+                ?.firstOrNull { it.contains("검색 스페이스") }
+                ?.removePrefix("검색 스페이스:")?.trim()
+                ?: "미설정"
+
+            val view = view { v ->
+                v.type("home").blocks(
+                    listOf(
+                        header { h -> h.text(plainText("Wiki 검색 봇", true)) },
+                        section { s ->
+                            s.text(markdownText("Confluence · GitHub Wiki · 코드베이스를 AI 패널에서 검색하세요."))
+                        },
+                        divider(),
+                        section { s ->
+                            s.text(markdownText(
+                                "*상태*\n" +
+                                "코드 인덱싱: `$codeStatus`\n" +
+                                "Confluence 인덱싱: `$confluenceStatus`\n" +
+                                "검색 스페이스: `$spaces`"
+                            ))
+                        },
+                        divider(),
+                        section { s -> s.text(markdownText("*빠른 액션*")) },
+                        actions { a ->
+                            a.elements(
+                                listOf(
+                                    button { b ->
+                                        b.text(plainText("코드 재인덱싱", true))
+                                            .actionId("home_reindex_code")
+                                            .value("reindex-code")
+                                    },
+                                    button { b ->
+                                        b.text(plainText("Confluence 재인덱싱", true))
+                                            .actionId("home_reindex")
+                                            .value("reindex")
+                                    },
+                                    button { b ->
+                                        b.text(plainText("메모리 보기", true))
+                                            .actionId("home_memory_show")
+                                            .value("memory show")
+                                    },
+                                )
+                            )
+                        },
+                        divider(),
+                        section { s ->
+                            s.text(markdownText(
+                                "*사용법*\n" +
+                                "• Slack 좌측 AI 패널에서 질문하세요\n" +
+                                "• URL 인제스트: `/askpj ingest <URL>`\n" +
+                                "• 관리 명령: `/askpj reindex-code` | `/askpj reindex`\n" +
+                                "• 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색"
+                            ))
+                        },
+                    )
+                )
+            }
+
+            runCatching {
+                slackClient.viewsPublish { req -> req.userId(userId).view(view) }
+            }.onFailure { log.error("Failed to publish home view: {}", it.message) }
+
+            ctx.ack()
+        }
+
+        // 홈 탭 버튼 액션 핸들러
+        app.blockAction("home_reindex_code") { req, ctx ->
+            val userId = req.payload.user.id
+            messageExecutor.submit {
+                val result = configHandler.handle("/wiki reindex-code")
+                lastCodeIndexedAt = Instant.now()
+                slackClient.chatPostMessage { it.channel(userId).text(result) }
+            }
+            ctx.ack()
+        }
+
+        app.blockAction("home_reindex") { req, ctx ->
+            val userId = req.payload.user.id
+            messageExecutor.submit {
+                val result = configHandler.handle("/wiki reindex")
+                lastConfluenceIndexedAt = Instant.now()
+                slackClient.chatPostMessage { it.channel(userId).text(result) }
+            }
+            ctx.ack()
+        }
+
+        app.blockAction("home_memory_show") { req, ctx ->
+            val userId = req.payload.user.id
+            val result = configHandler.handle("/wiki memory show")
+            slackClient.chatPostMessage { it.channel(userId).text(result) }
+            ctx.ack()
         }
     }
 
