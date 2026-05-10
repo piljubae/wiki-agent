@@ -180,7 +180,7 @@ class SlackBotGateway(
                     appendLine("이제 질문하시면 Confluence에서 검색해 답변드립니다.")
                     appendLine("이 스레드에서 바로 질문하거나, 채널에서 멘션해주세요.")
                     appendLine()
-                    appendLine("설정은 `/wiki memory show`로 확인, `/wiki memory add <내용>`으로 추가할 수 있습니다.")
+                    appendLine("설정은 `/askpj memory show`로 확인, `/askpj memory add <내용>`으로 추가할 수 있습니다.")
                 }
                 postToThread(channel, threadTs, msg)
                 onboardingState.remove(channel)
@@ -600,6 +600,11 @@ class SlackBotGateway(
             true
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             log.warn("Request queue full — rejected: channel={} thread={}", channel, threadTs)
+            runCatching {
+                slackClient.assistantThreadsSetStatus { req ->
+                    req.channelId(channel).threadTs(threadTs).status("")
+                }
+            }
             false
         }
     }
