@@ -3,6 +3,7 @@ package io.github.veronikapj.wiki.knowledge
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CodeIndexAgentTest {
@@ -141,5 +142,21 @@ class CodeIndexAgentTest {
         val chunks = agent.extractFunctionChunks(content, "DeepLinkHost.kt")
         assertTrue(chunks.isNotEmpty(), "Files with only const vals must produce chunks")
         assertEquals(3, chunks.count { it.chunkType == "property" })
+    }
+
+    @Test
+    fun `BM25Index deleteByFilePath removes all chunks for given file`() {
+        val index = BM25Index(":memory:")
+        index.upsert("repo:FileA.kt:Foo:bar:abc", "fun bar()", "FileA.kt")
+        index.upsert("repo:FileA.kt:Foo:baz:def", "fun baz()", "FileA.kt")
+        index.upsert("repo:FileB.kt:Foo:qux:ghi", "fun qux()", "FileB.kt")
+
+        index.deleteByFilePath("FileA.kt")
+
+        val resultsFileA = index.search("bar", limit = 10)
+        assertFalse(resultsFileA.any { it.contains("FileA") }, "FileA chunks must be gone after deleteByFilePath")
+        val resultsFileB = index.search("qux", limit = 10)
+        assertTrue(resultsFileB.any { it.contains("repo:FileB") }, "FileB chunk must still be searchable")
+        index.close()
     }
 }

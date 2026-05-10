@@ -112,6 +112,14 @@ class BM25Index(dbPath: String = ".wiki/bm25.db") {
         conn.prepareStatement("DELETE FROM code_chunks WHERE id = ?").use { it.setString(1, id); it.execute() }
     }
 
+    /** 특정 파일 경로에 속하는 모든 청크를 삭제합니다. */
+    fun deleteByFilePath(filePath: String) {
+        conn.prepareStatement("DELETE FROM code_chunks WHERE file_path = ?").use {
+            it.setString(1, filePath)
+            it.execute()
+        }
+    }
+
     fun close() = runCatching { conn.close() }
 
     /**
