@@ -48,8 +48,11 @@ class SlackBotGateway(
 
     @Volatile var lastCodeIndexedAt: Instant? = loadStatusFile("lastCodeIndexedAt")
         set(value) { field = value; saveStatusFile("lastCodeIndexedAt", value) }
+    @Volatile var lastPrIndexedAt: Instant? = loadStatusFile("lastPrIndexedAt")
+        set(value) { field = value; saveStatusFile("lastPrIndexedAt", value) }
     @Volatile var lastConfluenceIndexedAt: Instant? = loadStatusFile("lastConfluenceIndexedAt")
         set(value) { field = value; saveStatusFile("lastConfluenceIndexedAt", value) }
+
 
     private fun loadStatusFile(key: String): Instant? = runCatching {
         val file = File(STATUS_FILE)
@@ -428,6 +431,7 @@ class SlackBotGateway(
             val fmt = DateTimeFormatter.ofPattern("MM/dd HH:mm").withZone(ZoneId.of("Asia/Seoul"))
 
             val codeStatus = lastCodeIndexedAt?.let { fmt.format(it) } ?: "미실행"
+            val prStatus = lastPrIndexedAt?.let { fmt.format(it) } ?: "미실행"
             val confluenceStatus = lastConfluenceIndexedAt?.let { fmt.format(it) } ?: "미실행"
             val spaces = projectMemory?.load()
                 ?.lines()
@@ -447,6 +451,7 @@ class SlackBotGateway(
                             s.text(markdownText(
                                 "*상태*\n" +
                                 "코드 인덱싱: `$codeStatus`\n" +
+                                "PR 인덱싱: `$prStatus`\n" +
                                 "Confluence 인덱싱: `$confluenceStatus`\n" +
                                 "검색 스페이스: `$spaces`"
                             ))
@@ -515,6 +520,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex-pr")
+                if (!result.contains("비활성화")) lastPrIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()
