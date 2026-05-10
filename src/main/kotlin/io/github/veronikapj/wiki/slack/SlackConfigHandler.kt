@@ -17,6 +17,7 @@ class SlackConfigHandler(
     private val onIngestWiki: (() -> String)? = null,
     private val onLint: (suspend () -> String)? = null,
     private val onReindexCode: (suspend () -> Int)? = null,
+    private val onReindexPr: (suspend () -> Int)? = null,
     private val projectMemory: ProjectMemory? = null,
 ) {
     private var lastIndexTime: LocalDateTime? = null
@@ -39,6 +40,8 @@ class SlackConfigHandler(
             }
             parts.size >= 2 && parts[1] == "reindex-code" ->
                 triggerReindexCode()
+            parts.size >= 2 && parts[1] == "reindex-pr" ->
+                triggerReindexPr()
             parts.size >= 2 && parts[1] == "reindex" && parts.getOrNull(2) == "status" ->
                 reindexStatus()
             parts.size >= 2 && parts[1] == "reindex" ->
@@ -75,6 +78,20 @@ class SlackConfigHandler(
             }
         }.start()
         return ":hourglass_flowing_sand: 코드 인덱싱을 시작했습니다."
+    }
+
+    private fun triggerReindexPr(): String {
+        val indexer = onReindexPr
+            ?: return "PR 인덱싱이 비활성화 상태입니다. config.yml에서 codeRepos를 설정하세요."
+        Thread {
+            runCatching {
+                val count = runBlocking { indexer() }
+                log.info("PR reindex completed: {} PRs", count)
+            }.onFailure { e ->
+                log.error("PR reindex failed", e)
+            }
+        }.start()
+        return ":hourglass_flowing_sand: PR 인덱싱을 시작했습니다."
     }
 
     private fun reindexStatus(): String {
@@ -141,6 +158,7 @@ class SlackConfigHandler(
         • `/askpj reindex` — RAG 재인덱싱
         • `/askpj reindex status` — 마지막 인덱싱 정보
         • `/askpj reindex-code` — Android 소스코드 재인덱싱
+        • `/askpj reindex-pr` — PR 히스토리 재인덱싱
 
         :books: *지식베이스*
         • `/askpj ingest <URL>` — URL 내용을 지식베이스에 저장
