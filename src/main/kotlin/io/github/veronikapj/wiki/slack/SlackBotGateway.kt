@@ -628,17 +628,17 @@ class SlackBotGateway(
     companion object {
         private val log = LoggerFactory.getLogger(SlackBotGateway::class.java)
 
-        // SuggestedPrompt.message = 버튼 클릭 시 유저 메시지로 전송되는 텍스트
-        // CANNED_RESPONSES 키와 일치시켜 LLM 없이 즉시 응답
+        // SuggestedPrompt.message = 버튼 클릭 시 유저 메시지로 표시되는 텍스트
+        // CANNED_RESPONSES 키와 exact match하여 LLM 없이 즉시 응답
         private val SUGGESTED_PROMPTS = listOf(
-            SuggestedPrompt.builder().title("Confluence에서 검색").message("__hint_confluence__").build(),
-            SuggestedPrompt.builder().title("코드에서 찾기").message("__hint_code__").build(),
-            SuggestedPrompt.builder().title("PR 히스토리 보기").message("__hint_pr__").build(),
-            SuggestedPrompt.builder().title("문서 인제스트").message("__hint_ingest__").build(),
+            SuggestedPrompt.builder().title("Confluence에서 검색").message("Confluence 검색 예시 보여줘").build(),
+            SuggestedPrompt.builder().title("코드에서 찾기").message("코드 검색 예시 보여줘").build(),
+            SuggestedPrompt.builder().title("PR 히스토리 보기").message("PR 검색 예시 보여줘").build(),
+            SuggestedPrompt.builder().title("문서 인제스트").message("인제스트 방법 알려줘").build(),
         )
 
         val CANNED_RESPONSES = mapOf(
-            "__hint_confluence__" to """
+            "Confluence 검색 예시 보여줘" to """
                 :confluence: *Confluence 문서 검색 예시*
 
                 자연어로 질문하면 됩니다:
@@ -657,7 +657,7 @@ class SlackBotGateway(
                 검색 스페이스: ProductApp · project · ClientDivision · PSD
             """.trimIndent(),
 
-            "__hint_code__" to """
+            "코드 검색 예시 보여줘" to """
                 :kotlin: *Android 코드 검색 예시*
 
                 클래스명, 함수명, 또는 기능으로 검색합니다:
@@ -678,7 +678,7 @@ class SlackBotGateway(
                 벡터 + BM25 하이브리드 검색 · 로컬 grep 병행
             """.trimIndent(),
 
-            "__hint_pr__" to """
+            "PR 검색 예시 보여줘" to """
                 :github: *PR 히스토리 검색 예시*
 
                 GitHub PR 변경 내역을 검색합니다:
@@ -692,7 +692,7 @@ class SlackBotGateway(
                 _PR 제목, 본문, 변경 파일 기준으로 검색합니다._
             """.trimIndent(),
 
-            "__hint_ingest__" to """
+            "인제스트 방법 알려줘" to """
                 :books: *문서 인제스트 사용법*
 
                 URL 내용을 지식베이스(RAG)에 저장하면 이후 검색에서 활용됩니다.
