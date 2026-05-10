@@ -25,3 +25,10 @@ Thumbs.db
 
 # Project memory
 .wiki/memory.md
+
+# Runtime data (ChromaDB, logs)
+.wiki/
+chroma/
+chroma_data/
+chroma.log
+logs/*.log
