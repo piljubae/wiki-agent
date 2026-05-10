@@ -680,7 +680,7 @@ class SlackBotGateway(
             """.trimIndent(),
 
             "코드 검색 예시 보여줘" to """
-                :kotlin: *Android 코드 검색 예시*
+                :computer: *Android 코드 검색 예시*
 
                 클래스명, 함수명, 또는 기능으로 검색합니다:
 
@@ -743,7 +743,7 @@ class SlackBotGateway(
                 • `배포 프로세스 어떻게 돼?`
                 • `KMA-1234 관련 기획 문서 있어?`
 
-                :kotlin: *Android 코드 검색*
+                :computer: *Android 코드 검색*
                 클래스명, 함수명, 기능으로 검색합니다.
                 • `ProductViewModel 어디 있어?`
                 • `배너 클릭 이벤트 구현 방법`
