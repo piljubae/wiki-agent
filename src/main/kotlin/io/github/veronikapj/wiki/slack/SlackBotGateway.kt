@@ -547,15 +547,20 @@ class SlackBotGateway(
 
             log.info("Assistant message received: '{}'", query.take(80))
 
-            if (isHelpQuery(query)) {
-                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(configHandler.helpMessage()) }
-                return@event ctx.ack()
-            }
-
-            val canned = CANNED_RESPONSES[query]
+            // canned 먼저 — "도움말" exact match도 CANNED_RESPONSES에서 처리
+            val canned = CANNED_RESPONSES[query.lowercase()]
+                ?: CANNED_RESPONSES[query]
             if (canned != null) {
                 HINT_FORCED_TOOL[query]?.let { threadForcedTool[threadTs] = it }
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(canned) }
+                return@event ctx.ack()
+            }
+
+            // 변형 표현 (사용법 알려줘, 어떻게 써 등) → helpMessage() fallback
+            if (isHelpQuery(query)) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(
+                    CANNED_RESPONSES["도움말"] ?: configHandler.helpMessage()
+                )}
                 return@event ctx.ack()
             }
 
@@ -727,6 +732,39 @@ class SlackBotGateway(
                 • `/askpj reindex` — Confluence RAG 재인덱싱
                 • `/askpj reindex-code` — Android 소스코드 재인덱싱
                 • `/askpj lint` — 지식베이스 품질 검사
+            """.trimIndent(),
+
+            "도움말" to """
+                :wave: *배필주2 사용법*
+
+                :confluence: *Confluence 문서 검색*
+                자연어로 질문하면 됩니다.
+                • `온보딩 가이드 알려줘`
+                • `배포 프로세스 어떻게 돼?`
+                • `KMA-1234 관련 기획 문서 있어?`
+
+                :kotlin: *Android 코드 검색*
+                클래스명, 함수명, 기능으로 검색합니다.
+                • `ProductViewModel 어디 있어?`
+                • `배너 클릭 이벤트 구현 방법`
+                • `딥링크 스킴 값이 뭐야?`
+
+                :github: *PR 히스토리*
+                PR 변경 내역을 검색합니다.
+                • `KMA-7282 어떤 작업이야?`
+                • `결제 관련 최근 PR 보여줘`
+
+                :mag: *종합 검색*
+                문서 + 코드 동시 검색이 필요할 때.
+                • `컬리페이 결제 흐름 알려줘`
+                • `BaseFragment 어떻게 써?`
+
+                :books: *문서 인제스트*
+                • `/askpj ingest <URL>` — URL 지식베이스 저장
+                • `/askpj reindex` — Confluence 재인덱싱
+                • `/askpj reindex-code` — 코드 재인덱싱
+
+                :repeat: 답변에 이모지로 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색
             """.trimIndent(),
 
             "종합 검색 예시 보여줘" to """
