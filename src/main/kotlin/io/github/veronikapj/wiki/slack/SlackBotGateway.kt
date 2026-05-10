@@ -402,7 +402,7 @@ class SlackBotGateway(
             val spaces = projectMemory?.load()
                 ?.lines()
                 ?.firstOrNull { it.contains("검색 스페이스") }
-                ?.removePrefix("검색 스페이스:")?.trim()
+                ?.substringAfter("검색 스페이스:")?.trim()
                 ?: "미설정"
 
             val view = view { v ->
@@ -470,7 +470,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex-code")
-                lastCodeIndexedAt = Instant.now()
+                if (!result.contains("비활성화")) lastCodeIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()
@@ -480,7 +480,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex")
-                lastConfluenceIndexedAt = Instant.now()
+                if (!result.contains("비활성화")) lastConfluenceIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()
