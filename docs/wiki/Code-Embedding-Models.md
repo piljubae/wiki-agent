@@ -29,7 +29,7 @@
 |------|--------|------|------|
 | `voyage-code-3` | Voyage AI | 1024 | 코드 검색 SOTA, Cursor 채택 |
 | `text-embedding-3-large` | OpenAI | 3072 | 코드+텍스트 혼합 강점 |
-| `text-embedding-004` | Google | 768 | 다국어 강점, wiki-agent 사용 |
+| `gemini-embedding-001` | Google | 3,072 | 다국어 강점, wiki-agent 사용 |
 | `all-MiniLM-L6-v2` | Microsoft | 384 | 무료 로컬, 코드 품질 보통 |
 
 차원이 높을수록 일반적으로 더 정확하지만, 벡터 저장 공간과 검색 속도에 영향을 줍니다.
@@ -40,7 +40,7 @@
 
 ```
 Korean + Code 혼합 쿼리가 많음
-  → text-embedding-004 (Google, 다국어 + 코드 균형)
+  → gemini-embedding-001 (Google, 다국어 + 코드 균형, 3072차원)
 
 비용 최소화 / 빠른 시작
   → all-MiniLM-L6-v2 (ChromaDB 기본, 무료)
@@ -49,7 +49,10 @@ Korean + Code 혼합 쿼리가 많음
   → voyage-code-3 (SOTA, 유료 API)
 ```
 
-현재 wiki-agent: `embeddingMode: GOOGLE_EMBEDDING` 설정 시 `text-embedding-004` 사용.
+현재 wiki-agent: `embeddingMode: GOOGLE_EMBEDDING` 설정 시 `gemini-embedding-001` 사용.
+
+> **`text-embedding-004`는 Vertex AI 전용** — `generativelanguage.googleapis.com`(Gemini API)에서 사용 불가.  
+> 자세한 내용: [Google-Embedding-API.md](Google-Embedding-API.md)
 
 ---
 
@@ -58,7 +61,7 @@ Korean + Code 혼합 쿼리가 많음
 | 모델 | 32,000 청크 인덱싱 비용 |
 |------|----------------------|
 | `all-MiniLM-L6-v2` | $0 (로컬) |
-| `text-embedding-004` | ~$0.06 |
+| `gemini-embedding-001` | ~$0.06 (paid tier 필요) |
 | `voyage-code-3` | ~$0.32 |
 | `text-embedding-3-large` | ~$0.64 |
 
@@ -67,9 +70,9 @@ Korean + Code 혼합 쿼리가 많음
 ## 참고 자료
 
 - [voyage-code-3 — Voyage AI](https://docs.voyageai.com/docs/embeddings) — Cursor가 채택한 코드 전용 모델
-- [text-embedding-004 — Google](https://ai.google.dev/gemini-api/docs/models/gemini#text-embedding) — wiki-agent 사용 모델
+- [gemini-embedding-001 — Google](https://ai.google.dev/gemini-api/docs/models/gemini#text-embedding) — wiki-agent 사용 모델 ([API 상세](Google-Embedding-API.md))
 - [Embeddings Leaderboard — MTEB](https://huggingface.co/spaces/mteb/leaderboard) — 임베딩 모델 벤치마크 순위 (추천)
 
 ---
 
-> **관련 문서:** [Embedding.md](Embedding.md) · [Sentence-Transformers.md](Sentence-Transformers.md) · [RAG-Embedding-Modes.md](RAG-Embedding-Modes.md)
+> **관련 문서:** [Embedding.md](Embedding.md) · [Sentence-Transformers.md](Sentence-Transformers.md) · [RAG-Embedding-Modes.md](RAG-Embedding-Modes.md) · [Google-Embedding-API.md](Google-Embedding-API.md)

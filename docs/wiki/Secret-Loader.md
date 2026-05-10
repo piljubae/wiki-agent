@@ -35,7 +35,9 @@ SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 CONFLUENCE_TOKEN=<base64>
 ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=AIza...
+GOOGLE_API_KEY=AIza...           # 공용 fallback + Gemini Flash 라우팅
+GOOGLE_INDEX_API_KEY=AIza...     # 코드 인덱싱 전용 (선택, paid tier 필요)
+GOOGLE_SEARCH_API_KEY=AIza...    # 코드 검색 전용 (선택, paid tier 필요)
 GITHUB_TOKEN=ghp_...
 ```
 
@@ -67,4 +69,5 @@ cp .env.example .env
 
 ---
 
-> **Source:** [SecretLoader.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/config/SecretLoader.kt) · [.env.example](https://github.com/Veronikapj/wiki-agent/blob/main/.env.example)
+> **Source:** [SecretLoader.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/config/SecretLoader.kt) · [.env.example](https://github.com/Veronikapj/wiki-agent/blob/main/.env.example)  
+> **관련:** [Google-Embedding-API.md](Google-Embedding-API.md) · [RAG-Embedding-Modes.md](RAG-Embedding-Modes.md)

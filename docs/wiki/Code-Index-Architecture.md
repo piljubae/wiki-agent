@@ -6,7 +6,7 @@ Kurly Android 소스코드를 ChromaDB에 인덱싱하여 자연어로 검색하
 
 ```
 [로컬 git 체크아웃]          [ChromaDB]              [Slack]
-  origin/develop   →  CodeIndexAgent  →  code_index  →  @wiki BannerViewModel 어디있어?
+  origin/develop   →  CodeIndexAgent  →  code_index  →  @배필주2 BannerViewModel 어디있어?
   .kt 파일 5,000개      클래스 추출           벡터 DB        → features/banner/BannerViewModel.kt
                         Google Embedding
 ```

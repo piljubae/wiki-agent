@@ -1,11 +1,11 @@
 # Slack App 설정
 
-wiki-agent는 Slack **Socket Mode**로 동작합니다. 공개 HTTP 엔드포인트 없이 WebSocket으로 이벤트를 수신합니다.
+wiki-agent는 Slack **Socket Mode** + **App Assistant**로 동작합니다. 공개 HTTP 엔드포인트 없이 WebSocket으로 이벤트를 수신합니다.
 
 ## 1. App 생성
 
 1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. App Name 입력, 워크스페이스 선택 → **Create App**
+2. App Name 입력 (예: `배필주2`), 워크스페이스 선택 → **Create App**
 
 ## 2. Socket Mode 활성화
 
@@ -21,27 +21,48 @@ wiki-agent는 Slack **Socket Mode**로 동작합니다. 공개 HTTP 엔드포인
 
 | Scope | 용도 |
 |-------|------|
-| `app_mentions:read` | `@wiki` 멘션 수신 |
+| `app_mentions:read` | `@배필주2` 멘션 수신 |
 | `chat:write` | 메시지 전송 |
-| `commands` | `/wiki` 슬래시 커맨드 |
+| `commands` | `/askpj` 슬래시 커맨드 |
 | `channels:read` | 채널 정보 조회 |
+| `assistant:write` | AI 패널 상태·추천 프롬프트 설정 |
+| `reactions:read` | 👍👎🔁 리액션 피드백 수신 |
+| `im:history` | DM 이력 조회 |
 
-## 4. 슬래시 커맨드 등록
+## 4. App Assistant 활성화
+
+**Features → App Assistant** → 활성화 토글 ON
+
+Agent or Assistant Overview에 봇 설명을 입력합니다.
+
+## 5. App Home 활성화
+
+**Features → App Home** → **Home Tab** 토글 ON
+
+## 6. 슬래시 커맨드 등록
 
 **Features → Slash Commands → Create New Command**:
 
 | 항목 | 값 |
 |------|-----|
-| Command | `/wiki` |
+| Command | `/askpj` |
 | Request URL | (Socket Mode라 불필요, 빈칸 또는 임의 URL 입력) |
-| Short Description | Search wiki |
+| Short Description | 안드로이드 팀 AI 검색 — 문서·코드·PR을 한 번에 |
 
-## 5. 이벤트 구독
+## 7. 이벤트 구독
 
 **Features → Event Subscriptions** → **Enable Events** ON  
-**Subscribe to bot events** → `app_mention` 추가
+**Subscribe to bot events**에 추가:
 
-## 6. 앱 설치 및 토큰 발급
+| 이벤트 | 용도 |
+|--------|------|
+| `app_mention` | 채널 멘션 수신 |
+| `assistant_thread_started` | AI 패널 열릴 때 추천 프롬프트 표시 |
+| `assistant_thread_context_changed` | 채널 컨텍스트 변경 감지 |
+| `app_home_opened` | Home 탭 렌더링 |
+| `reaction_added` | 리액션 피드백 수집 |
+
+## 8. 앱 설치 및 토큰 발급
 
 1. **Settings → Install App** → **Install to Workspace**
 2. OAuth 동의 → Bot User OAuth Token 복사 (`xoxb-` 로 시작) → `SLACK_BOT_TOKEN`에 저장

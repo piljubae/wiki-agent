@@ -66,7 +66,7 @@ ragResults.forEach  { if (seen.add(it.pageId)) deduplicated.add(it) }
 |------|------|
 | `rag.enabled = true` | config.yml에서 RAG 활성화 |
 | ChromaDB 실행 중 | `docker run -p 8000:8000 chromadb/chroma` |
-| 인덱싱 완료 | `/wiki reindex` 실행 후 사용 가능 |
+| 인덱싱 완료 | `/askpj reindex` 실행 후 사용 가능 |
 
 활성화되지 않으면 RAG는 완전히 스킵되고 title/text 검색만 사용됩니다.
 

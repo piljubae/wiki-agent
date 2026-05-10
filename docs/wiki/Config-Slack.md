@@ -65,10 +65,10 @@ app.command("/wiki") { req, ctx ->
 사용 가능한 슬래시 커맨드:
 
 ```
-/wiki config space DEV,PM,HR    # 검색 스페이스 변경
-/wiki config space show          # 현재 설정 확인
-/wiki reindex                    # RAG 재인덱싱
-/wiki reindex status             # 마지막 인덱싱 정보
+/askpj config space DEV,PM,HR    # 검색 스페이스 변경
+/askpj config space show          # 현재 설정 확인
+/askpj reindex                    # RAG 재인덱싱
+/askpj reindex status             # 마지막 인덱싱 정보
 ```
 
 ---

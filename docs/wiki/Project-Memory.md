@@ -19,11 +19,11 @@
 ## 슬래시 커맨드
 
 ```
-/wiki memory add 모바일 앱(iOS/Android) 개발팀
-/wiki memory add 클라이언트 = 모바일 앱 (고객 아님)
-/wiki memory add 주요 검색: 배포 프로세스, 온보딩, 기술 문서
-/wiki memory show    ← 저장된 내용 확인
-/wiki memory clear   ← 전체 삭제
+/askpj memory add 모바일 앱(iOS/Android) 개발팀
+/askpj memory add 클라이언트 = 모바일 앱 (고객 아님)
+/askpj memory add 주요 검색: 배포 프로세스, 온보딩, 기술 문서
+/askpj memory show    ← 저장된 내용 확인
+/askpj memory clear   ← 전체 삭제
 ```
 
 ## 저장 형식
@@ -48,7 +48,7 @@ memory?.let {
 ## 온보딩과의 관계
 
 DM에서 온보딩 4단계를 완료하면 수집한 팀 정보가 자동으로 `ProjectMemory`에 저장됩니다.  
-온보딩 없이 `/wiki memory add`로 직접 입력해도 동일하게 동작합니다.
+온보딩 없이 `/askpj memory add`로 직접 입력해도 동일하게 동작합니다.
 
 → [온보딩 플로우](Onboarding-Flow) 참고
 

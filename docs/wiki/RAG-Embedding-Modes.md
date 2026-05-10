@@ -66,8 +66,16 @@ github:
 
 `GOOGLE_EMBEDDING` 사용 시 `.env`에 추가:
 ```
-GOOGLE_API_KEY=AIza...
+GOOGLE_API_KEY=AIza...           # 필수 — 공용 fallback
+GOOGLE_INDEX_API_KEY=AIza...     # 선택 — 인덱싱 전용 (대량 배치)
+GOOGLE_SEARCH_API_KEY=AIza...    # 선택 — 검색 전용 (실시간 소량)
 ```
+
+`GOOGLE_INDEX_API_KEY` / `GOOGLE_SEARCH_API_KEY`가 없으면 `GOOGLE_API_KEY`로 fallback.  
+인덱싱(~17,000 청크)과 검색의 쿼터 소비 패턴이 달라 분리하면 영향 범위를 격리할 수 있습니다.
+
+> **주의:** 전체 인덱싱에는 **Paid Tier 필수** — Free Tier는 100 req/day 제한으로 5,000+ 파일 처리 불가.  
+> 자세한 내용: [Google-Embedding-API.md](Google-Embedding-API.md)
 
 ### 왜 두 개를 다르게 설정하나
 
@@ -84,4 +92,4 @@ GOOGLE_API_KEY=AIza...
 ---
 
 > **Source:** [EmbeddingClient.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/rag/EmbeddingClient.kt) · [WikiConfig.kt](https://github.com/Veronikapj/wiki-agent/blob/main/src/main/kotlin/io/github/veronikapj/wiki/config/WikiConfig.kt)  
-> **관련:** [ChromaDB-Setup](ChromaDB-Setup) · [ChromaDB-v2-Migration](ChromaDB-v2-Migration)
+> **관련:** [ChromaDB-Setup](ChromaDB-Setup) · [ChromaDB-v2-Migration](ChromaDB-v2-Migration) · [Google-Embedding-API.md](Google-Embedding-API.md) · [Secret-Loader.md](Secret-Loader.md)

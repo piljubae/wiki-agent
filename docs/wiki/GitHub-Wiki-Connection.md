@@ -35,7 +35,7 @@ GitHub Personal Access Token 발급: [github.com/settings/tokens](https://github
 ## 동작 흐름
 
 ```
-1. 사용자: "@wiki API 설계 가이드"
+1. 사용자: "@배필주2 API 설계 가이드"
 2. OrchestratorAgent: githubWikiSearch Tool 선택
 3. GitHubWikiClient: GitHub Search API 호출
    GET https://api.github.com/search/code
