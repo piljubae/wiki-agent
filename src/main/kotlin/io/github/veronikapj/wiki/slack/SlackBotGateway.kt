@@ -404,6 +404,7 @@ class SlackBotGateway(
         // 3) 사용자 메시지 — orchestrator로 라우팅
         app.event(com.slack.api.model.event.MessageEvent::class.java) { payload, ctx ->
             val event = payload.event
+            // 새 사용자 메시지만 처리. 메시지 편집(message_changed), 삭제, 봇 메시지는 무시.
             if (event.channelType != "im" || event.botId != null || event.subtype != null) {
                 return@event ctx.ack()
             }
@@ -450,12 +451,6 @@ class SlackBotGateway(
                         orchestrator.answer(query, listener, sessionId = "assistant-$threadTs")
                     }
 
-                    runCatching {
-                        slackClient.assistantThreadsSetStatus { req ->
-                            req.channelId(channel).threadTs(threadTs).status("")
-                        }
-                    }
-
                     val footer = buildString {
                         if (searchedTools.isNotEmpty()) {
                             append("\uD83D\uDCCB ")
@@ -480,6 +475,12 @@ class SlackBotGateway(
                     slackClient.chatPostMessage { req ->
                         req.channel(channel).threadTs(threadTs).text("오류가 발생했습니다: ${e.message}")
                     }
+                } finally {
+                    runCatching {
+                        slackClient.assistantThreadsSetStatus { req ->
+                            req.channelId(channel).threadTs(threadTs).status("")
+                        }
+                    }.onFailure { log.warn("Failed to clear assistant status: {}", it.message) }
                 }
             }
             true
