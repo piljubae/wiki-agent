@@ -320,10 +320,8 @@ fun main() {
                 delay(intervalMs)
                 runCatching {
                     val count = finalCodeIndexAgent.syncAndIndexChanged(config.github.codeRepos.first(), config.github.codeSearch.branch)
-                    if (count > 0) {
-                        log.info("Incremental code index: {} class entries updated", count)
-                        gatewayRef.get()?.lastCodeIndexedAt = Instant.now()
-                    }
+                    log.info("Incremental code index: {} class entries updated", count)
+                    gatewayRef.get()?.lastCodeIndexedAt = Instant.now()
                 }.onFailure { log.warn("Incremental code sync failed: {}", it.message) }
             }
         }
@@ -394,7 +392,9 @@ fun main() {
             onReindexCode = codeIndexAgent?.let { agent -> {
                 agent.indexAll().also { gatewayRef.get()?.lastCodeIndexedAt = Instant.now() }
             } },
-            onReindexPr = prIndexAgent?.let { agent -> { agent.indexPrsBulk(config.github.codeRepos, limit = 1000) } },
+            onReindexPr = prIndexAgent?.let { agent -> {
+                agent.indexPrsBulk(config.github.codeRepos, limit = 1000).also { gatewayRef.get()?.lastPrIndexedAt = Instant.now() }
+            } },
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->
