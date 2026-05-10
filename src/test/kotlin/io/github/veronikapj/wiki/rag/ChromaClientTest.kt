@@ -50,4 +50,18 @@ class ChromaClientTest {
         assertEquals("doc1 content", results[0].document)
         assertEquals("Page1", results[0].metadata["title"])
     }
+
+    @Test
+    fun `parseGetIdsResponse extracts id list from get response`() {
+        val json = """{"ids":[["id1","id2","id3"]],"documents":[[]],"metadatas":[[]],"embeddings":null}"""
+        val result = ChromaClient("http://localhost").parseGetIdsResponse(json)
+        assertEquals(listOf("id1", "id2", "id3"), result)
+    }
+
+    @Test
+    fun `parseGetIdsResponse returns empty list when ids array is empty`() {
+        val json = """{"ids":[[]],"documents":[[]],"metadatas":[[]]}"""
+        val result = ChromaClient("http://localhost").parseGetIdsResponse(json)
+        assertEquals(emptyList<String>(), result)
+    }
 }

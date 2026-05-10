@@ -68,6 +68,39 @@ class ChromaClient(
         return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toHashSet()
     }
 
+    /** file_path 메타데이터 기준으로 해당 파일의 모든 청크 ID 반환 */
+    suspend fun getIdsByFilePath(collectionId: String, repo: String, filePath: String): List<String> {
+        val where = """{"${"$"}and":[{"repo":{"${"$"}eq":"$repo"}},{"file_path":{"${"$"}eq":"${filePath.escapeJson()}"}}]}"""
+        val body = """{"where":$where,"include":[]}"""
+        val response = httpClient.post("$apiBase/collections/$collectionId/get") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.bodyAsText()
+        return parseGetIdsResponse(response)
+    }
+
+    /** 지정한 ID 목록을 ChromaDB에서 삭제 */
+    suspend fun deleteByIds(collectionId: String, ids: List<String>) {
+        if (ids.isEmpty()) return
+        val idsJson = ids.joinToString(",") { "\"${it.escapeJson()}\"" }
+        val body = """{"ids":[$idsJson]}"""
+        httpClient.post("$apiBase/collections/$collectionId/delete") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        log.debug("deleteByIds: deleted {} chunks", ids.size)
+    }
+
+    internal fun parseGetIdsResponse(json: String): List<String> {
+        val matched = Regex("\"ids\"\\s*:\\s*\\[\\[([^]]*)]").find(json)?.groupValues?.get(1)
+        if (matched == null) {
+            if (json.isNotBlank()) log.warn("parseGetIdsResponse: unexpected response shape — {}", json.take(200))
+            return emptyList()
+        }
+        if (matched.isBlank()) return emptyList()
+        return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toList()
+    }
+
     suspend fun upsertDocuments(
         collectionId: String,
         ids: List<String>,
