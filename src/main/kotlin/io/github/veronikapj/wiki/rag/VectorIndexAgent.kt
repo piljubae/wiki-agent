@@ -55,6 +55,11 @@ class VectorIndexAgent(
                         EmbeddingMode.GOOGLE_EMBEDDING ->
                             "${page.title}\n${page.content}"
                     }
+                    // 내용이 너무 짧으면 embed 호출 없이 skip (빈 페이지, 첨부파일만 있는 페이지 등)
+                    if (text.length < MIN_CONTENT_LENGTH) {
+                        log.info("Skip thin page {}: '{}' ({} chars)", ref.id, ref.title, text.length)
+                        return@runCatching
+                    }
                     ids += ref.id
                     docs += text
                     if (config.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING) {
@@ -89,5 +94,6 @@ class VectorIndexAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(VectorIndexAgent::class.java)
+        private const val MIN_CONTENT_LENGTH = 50
     }
 }
