@@ -22,6 +22,7 @@ class SlackConfigHandler(
 ) {
     private var lastIndexTime: LocalDateTime? = null
     private var lastIndexCount: Int = 0
+    @Volatile private var isIndexing: Boolean = false
 
     fun currentConfig(): WikiConfig = config
 
@@ -53,6 +54,7 @@ class SlackConfigHandler(
     private fun triggerReindex(): String {
         val indexer = onReindex ?: return "RAG가 비활성화 상태입니다. config.yml에서 rag.enabled=true로 설정하세요."
         // 비동기 실행 — 슬래시 커맨드 3초 타임아웃 방지
+        isIndexing = true
         Thread {
             runCatching {
                 val count = runBlocking { indexer() }
@@ -61,7 +63,7 @@ class SlackConfigHandler(
                 log.info("Reindex completed: {} pages", count)
             }.onFailure { e ->
                 log.error("Reindex failed", e)
-            }
+            }.also { isIndexing = false }
         }.start()
         return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/askpj reindex status`로 진행 상황을 확인하세요."
     }
@@ -95,6 +97,7 @@ class SlackConfigHandler(
     }
 
     private fun reindexStatus(): String {
+        if (isIndexing) return ":hourglass_flowing_sand: 인덱싱 진행 중..."
         val time = lastIndexTime?.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
             ?: "아직 인덱싱하지 않았습니다"
         return "마지막 인덱싱: $time / 문서 수: $lastIndexCount"
