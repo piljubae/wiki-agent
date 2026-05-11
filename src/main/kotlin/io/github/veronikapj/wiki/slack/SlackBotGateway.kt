@@ -13,6 +13,7 @@ import com.slack.api.model.block.Blocks.*
 import com.slack.api.model.block.composition.BlockCompositions.*
 import com.slack.api.model.block.element.BlockElements.*
 import com.slack.api.model.view.Views.*
+import io.github.veronikapj.wiki.config.PersonaType
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.agent.SearchProgressListener
 import io.github.veronikapj.wiki.agent.QueryRewriter
@@ -427,78 +428,106 @@ class SlackBotGateway(
         }
     }
 
+    private fun buildHomeView(userId: String): com.slack.api.model.view.View {
+        val fmt = DateTimeFormatter.ofPattern("MM/dd HH:mm").withZone(ZoneId.of("Asia/Seoul"))
+
+        val codeStatus = lastCodeIndexedAt?.let { fmt.format(it) } ?: "미실행"
+        val prStatus = lastPrIndexedAt?.let { fmt.format(it) } ?: "미실행"
+        val confluenceStatus = lastConfluenceIndexedAt?.let { fmt.format(it) } ?: "미실행"
+        val spaces = projectMemory?.load()
+            ?.lines()
+            ?.firstOrNull { it.contains("검색 스페이스") }
+            ?.substringAfter("검색 스페이스:")?.trim()
+            ?: "미설정"
+
+        return view { v ->
+            v.type("home").blocks(
+                listOf(
+                    header { h -> h.text(plainText("Wiki 검색 봇", true)) },
+                    section { s ->
+                        s.text(markdownText("Confluence · GitHub Wiki · 코드베이스를 AI 패널에서 검색하세요."))
+                    },
+                    divider(),
+                    section { s ->
+                        s.text(markdownText(
+                            "*상태*\n" +
+                            "코드 인덱싱: `$codeStatus`\n" +
+                            "PR 인덱싱: `$prStatus`\n" +
+                            "Confluence 인덱싱: `$confluenceStatus`\n" +
+                            "검색 스페이스: `$spaces`"
+                        ))
+                    },
+                    divider(),
+                    section { s -> s.text(markdownText("*빠른 액션*")) },
+                    actions { a ->
+                        a.elements(
+                            listOf(
+                                button { b ->
+                                    b.text(plainText("코드 재인덱싱", true))
+                                        .actionId("home_reindex_code")
+                                        .value("reindex-code")
+                                },
+                                button { b ->
+                                    b.text(plainText("PR 재인덱싱", true))
+                                        .actionId("home_reindex_pr")
+                                        .value("reindex-pr")
+                                },
+                                button { b ->
+                                    b.text(plainText("Confluence 재인덱싱", true))
+                                        .actionId("home_reindex")
+                                        .value("reindex")
+                                },
+                                button { b ->
+                                    b.text(plainText("메모리 보기", true))
+                                        .actionId("home_memory_show")
+                                        .value("memory show")
+                                },
+                            )
+                        )
+                    },
+                    divider(),
+                    section { s ->
+                        s.text(markdownText(
+                            "*사용법*\n" +
+                            "• Slack 좌측 AI 패널에서 질문하세요\n" +
+                            "• URL 인제스트: `/askpj ingest <URL>`\n" +
+                            "• 관리 명령: `/askpj reindex-code` | `/askpj reindex-pr` | `/askpj reindex`\n" +
+                            "• 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색"
+                        ))
+                    },
+                    divider(),
+                    section { s -> s.text(markdownText("*🎭 페르소나 설정*\n나에게 적용되는 응답 스타일을 선택하세요.")) },
+                    actions { a ->
+                        val currentPersona = userPersonaStore.get(userId) ?: PersonaType.DEFAULT
+                        a.elements(
+                            listOf(
+                                staticSelect { s ->
+                                    s.actionId("home_persona_select")
+                                        .placeholder(plainText("페르소나 선택"))
+                                        .initialOption(
+                                            option { o ->
+                                                o.text(plainText(currentPersona.displayName))
+                                                    .value(currentPersona.name)
+                                            }
+                                        )
+                                        .options(
+                                            PersonaType.entries.map { p ->
+                                                option { o -> o.text(plainText(p.displayName)).value(p.name) }
+                                            }
+                                        )
+                                }
+                            )
+                        )
+                    },
+                )
+            )
+        }
+    }
+
     private fun registerHomeHandler() {
         app.event(AppHomeOpenedEvent::class.java) { payload, ctx ->
             val userId = payload.event.user
-            val fmt = DateTimeFormatter.ofPattern("MM/dd HH:mm").withZone(ZoneId.of("Asia/Seoul"))
-
-            val codeStatus = lastCodeIndexedAt?.let { fmt.format(it) } ?: "미실행"
-            val prStatus = lastPrIndexedAt?.let { fmt.format(it) } ?: "미실행"
-            val confluenceStatus = lastConfluenceIndexedAt?.let { fmt.format(it) } ?: "미실행"
-            val spaces = projectMemory?.load()
-                ?.lines()
-                ?.firstOrNull { it.contains("검색 스페이스") }
-                ?.substringAfter("검색 스페이스:")?.trim()
-                ?: "미설정"
-
-            val view = view { v ->
-                v.type("home").blocks(
-                    listOf(
-                        header { h -> h.text(plainText("Wiki 검색 봇", true)) },
-                        section { s ->
-                            s.text(markdownText("Confluence · GitHub Wiki · 코드베이스를 AI 패널에서 검색하세요."))
-                        },
-                        divider(),
-                        section { s ->
-                            s.text(markdownText(
-                                "*상태*\n" +
-                                "코드 인덱싱: `$codeStatus`\n" +
-                                "PR 인덱싱: `$prStatus`\n" +
-                                "Confluence 인덱싱: `$confluenceStatus`\n" +
-                                "검색 스페이스: `$spaces`"
-                            ))
-                        },
-                        divider(),
-                        section { s -> s.text(markdownText("*빠른 액션*")) },
-                        actions { a ->
-                            a.elements(
-                                listOf(
-                                    button { b ->
-                                        b.text(plainText("코드 재인덱싱", true))
-                                            .actionId("home_reindex_code")
-                                            .value("reindex-code")
-                                    },
-                                    button { b ->
-                                        b.text(plainText("PR 재인덱싱", true))
-                                            .actionId("home_reindex_pr")
-                                            .value("reindex-pr")
-                                    },
-                                    button { b ->
-                                        b.text(plainText("Confluence 재인덱싱", true))
-                                            .actionId("home_reindex")
-                                            .value("reindex")
-                                    },
-                                    button { b ->
-                                        b.text(plainText("메모리 보기", true))
-                                            .actionId("home_memory_show")
-                                            .value("memory show")
-                                    },
-                                )
-                            )
-                        },
-                        divider(),
-                        section { s ->
-                            s.text(markdownText(
-                                "*사용법*\n" +
-                                "• Slack 좌측 AI 패널에서 질문하세요\n" +
-                                "• URL 인제스트: `/askpj ingest <URL>`\n" +
-                                "• 관리 명령: `/askpj reindex-code` | `/askpj reindex-pr` | `/askpj reindex`\n" +
-                                "• 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색"
-                            ))
-                        },
-                    )
-                )
-            }
+            val view = buildHomeView(userId)
 
             runCatching {
                 slackClient.viewsPublish { req -> req.userId(userId).view(view) }
@@ -542,6 +571,25 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             val result = configHandler.handle("/wiki memory show")
             slackClient.chatPostMessage { it.channel(userId).text(result) }
+            ctx.ack()
+        }
+
+        app.blockAction("home_persona_select") { req, ctx ->
+            val userId = req.payload.user.id
+            val selectedValue = req.payload.actions
+                .firstOrNull()
+                ?.selectedOption
+                ?.value
+            val persona = selectedValue?.let { runCatching { PersonaType.valueOf(it) }.getOrNull() }
+                ?: PersonaType.DEFAULT
+
+            userPersonaStore.set(userId, persona)
+
+            runCatching {
+                slackClient.viewsPublish { it.userId(userId).view(buildHomeView(userId)) }
+            }.onFailure { log.warn("Failed to refresh home view after persona change: {}", it.message) }
+
+            slackClient.chatPostMessage { it.channel(userId).text("✅ 페르소나가 *${persona.displayName}*으로 변경되었습니다.") }
             ctx.ack()
         }
     }
