@@ -44,7 +44,8 @@ class OrchestratorAgent(
     private val useManualLoop: Boolean = false,
     private val conversationStore: ConversationStore? = null,
     private val projectMemory: ProjectMemory? = null,
-    private val persona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
+    private val userPersonaStore: io.github.veronikapj.wiki.slack.UserPersonaStore? = null,
+    private val defaultPersona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
 ) {
     init {
         require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null || prHistoryTool != null || codeSearchTool != null || codeFlowTool != null) {
@@ -58,12 +59,13 @@ class OrchestratorAgent(
         sessionId: String? = null,
         forceAllTools: Boolean = false,
         forceTool: String? = null,
+        userId: String? = null,
     ): String {
         log.info("OrchestratorAgent answering: '{}'", question)
-        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool)
+        return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool, userId)
         else {
             if (forceAllTools) log.warn("forceAllTools=true is not supported in Koog agent path, ignored")
-            answerWithKoogAgent(question, listener, sessionId)
+            answerWithKoogAgent(question, listener, sessionId, userId)
         }
     }
 
@@ -76,8 +78,10 @@ class OrchestratorAgent(
         sessionId: String? = null,
         forceAllTools: Boolean = false,
         forceTool: String? = null,
+        userId: String? = null,
     ): String {
-        val effectivePersona = persona.description
+        val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description
+            ?: defaultPersona.description
 
         val contextHistory: List<Turn> = if (sessionId != null && conversationStore != null) {
             conversationStore.load(sessionId)
@@ -509,6 +513,7 @@ class OrchestratorAgent(
         question: String,
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
+        userId: String? = null,
     ): String {
         val contextHistory: List<Turn> = if (sessionId != null && conversationStore != null) {
             conversationStore.load(sessionId)
@@ -521,7 +526,8 @@ class OrchestratorAgent(
         val memory = projectMemory?.load()
 
         val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
-        val effectivePersona = persona.description
+        val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description
+            ?: defaultPersona.description
         for ((index, model) in fallbackModels.withIndex()) {
             val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory, effectivePersona).run(question) }
             val ex = result.exceptionOrNull()
