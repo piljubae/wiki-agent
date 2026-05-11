@@ -145,15 +145,22 @@ fun main() {
             ).joinToString("") { it.content }
         }
         val llmExpandClient = LlmExpandClient(llmFn)
-        val googleEmbeddingClient = if (config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING)
+        val isGoogleEmbedding = config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING
+        // 검색용: GOOGLE_API_KEY (소량, 무료 티어 가능)
+        val googleEmbeddingClient = if (isGoogleEmbedding)
             GoogleEmbeddingClient(requireNotNull(googleApiKey) { "GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
+        else null
+        // 인덱싱용: GOOGLE_INDEX_API_KEY → fallback GOOGLE_API_KEY (대량 호출, 유료 키 권장)
+        val googleIndexApiKey = SecretLoader.resolveNullable("GOOGLE_INDEX_API_KEY", config.rag.indexApiKey) ?: googleApiKey
+        val googleIndexEmbeddingClient = if (isGoogleEmbedding)
+            GoogleEmbeddingClient(requireNotNull(googleIndexApiKey) { "GOOGLE_INDEX_API_KEY or GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
         else null
 
         vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
         vectorSearchTool = VectorSearchTool(vectorSearchAgent, sourceTracker)
         if (confluenceClient != null) {
             vectorIndexAgent = VectorIndexAgent(
-                confluenceClient, chromaClient, llmExpandClient, googleEmbeddingClient, config.rag, config.confluence.spaces
+                confluenceClient, chromaClient, llmExpandClient, googleIndexEmbeddingClient, config.rag, config.confluence.spaces
             )
         } else {
             log.info("RAG indexing disabled (Confluence not configured)")

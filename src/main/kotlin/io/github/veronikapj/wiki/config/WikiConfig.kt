@@ -98,6 +98,8 @@ data class RagConfig(
     val chromaUrl: String = "http://localhost:8000",
     val embeddingMode: EmbeddingMode = EmbeddingMode.LLM_EXPAND,
     val googleApiKey: String? = null,
+    /** 인덱싱 전용 API 키 (대량 호출) — 미설정 시 googleApiKey(GOOGLE_API_KEY) 공유 */
+    val indexApiKey: String? = null,
 )
 
 data class GithubConfig(
