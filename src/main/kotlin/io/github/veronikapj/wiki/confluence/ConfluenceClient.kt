@@ -198,26 +198,29 @@ class ConfluenceClient(
         return parseSearchResults(response, baseUrl)
     }
 
-    fun buildKeywordAndCqlSearchUrl(
+    fun buildKeywordCqlSearchUrl(
         keywords: List<String>, spaces: List<String>, limit: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
+        useOr: Boolean = false,
     ): String {
         val spaceCql = if (spaces.isNotEmpty())
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
         val dateCql = buildDateCql(dateAfter, dateBefore)
-        val andClauses = keywords.joinToString(" AND ") { "text ~ \"${escapeCql(it)}\"" }
-        val cql = URLEncoder.encode("($andClauses) AND type = page$spaceCql$dateCql", "UTF-8")
+        val op = if (useOr) "OR" else "AND"
+        val clauses = keywords.joinToString(" $op ") { "text ~ \"${escapeCql(it)}\"" }
+        val cql = URLEncoder.encode("($clauses) AND type = page$spaceCql$dateCql", "UTF-8")
         return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
     }
 
     suspend fun searchByKeywords(
         keywords: List<String>, spaces: List<String>, limit: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
+        useOr: Boolean = false,
     ): List<ConfluencePageRef> {
         if (keywords.isEmpty()) return emptyList()
-        val url = buildKeywordAndCqlSearchUrl(keywords, spaces, limit, dateAfter, dateBefore)
-        log.info("Confluence keyword AND search: {}", url)
+        val url = buildKeywordCqlSearchUrl(keywords, spaces, limit, dateAfter, dateBefore, useOr)
+        log.info("Confluence keyword {} search: {}", if (useOr) "OR" else "AND", url)
         val response = httpClient.get(url) {
             header("Authorization", "Basic $token")
             header("Accept", "application/json")

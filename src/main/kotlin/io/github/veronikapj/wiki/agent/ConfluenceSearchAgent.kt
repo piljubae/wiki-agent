@@ -59,17 +59,18 @@ class ConfluenceSearchAgent(
             Triple(textDeferred.await(), expandedDeferred.await(), ragDeferred.await())
         }
 
-        // 3-1단계: keyword AND fallback (text search 0건 시)
+        // 3-1단계: keyword fallback (text search 0건 시) — AND/OR는 의도에 따라 결정
         val keywordResults = if (textResults.isEmpty()) {
             val keywords = extractSignificantKeywords(cleaned)
             if (keywords.size >= 2) {
-                log.info("Text search empty, trying keyword AND fallback: {}", keywords)
+                val useOr = isConversationalQuery(keywords, cleaned)
+                log.info("Text search empty, trying keyword {} fallback: {}", if (useOr) "OR" else "AND", keywords)
                 runCatching {
-                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore)
+                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = useOr)
                 }.getOrElse { emptyList() }
             } else emptyList()
         } else emptyList()
-        log.info("Keyword AND fallback: {} results", keywordResults.size)
+        log.info("Keyword fallback: {} results", keywordResults.size)
 
         // 3단계: 합산 + 중복 제거 + 랭킹
         return reRankByOriginalQuestion(
@@ -139,6 +140,7 @@ class ConfluenceSearchAgent(
             "어디서 봐?", "어디서 봐", "어디 있어?", "어디 있어",
             "어떻게 돼?", "어떻게 돼", "뭐야?", "뭐야",
             "찾아줘", "보여줘", "설명해줘", "정리해줘",
+            "궁금해", "궁금한데", "궁금해요", "궁금합니다",
         )
 
         /** 쿼리에서 유의미한 키워드 추출 (keyword AND fallback용) */
@@ -154,6 +156,19 @@ class ConfluenceSearchAgent(
                 .filter { it.length >= 2 && it !in stopwords }
                 .distinct()
                 .take(4) // AND 조건이 너무 많으면 결과 없음
+        }
+
+        /**
+         * 구어체 질문 여부 판단 — true이면 keyword OR, false이면 AND
+         *
+         * 조건: 키워드 중 조사/어미로 끝나는 토큰이 있거나, 유효 키워드 비율이 낮으면 구어체로 판단
+         */
+        internal fun isConversationalQuery(keywords: List<String>, cleanedQuery: String): Boolean {
+            val noisySuffixes = listOf("이", "가", "을", "를", "은", "는", "는지", "하는지", "는가", "해", "해요")
+            val hasNoisyToken = keywords.any { k -> noisySuffixes.any { k.endsWith(it) } }
+            val tokenCount = cleanedQuery.split("\\s+".toRegex()).size
+            val keywordRatio = if (tokenCount > 0) keywords.size.toFloat() / tokenCount else 1f
+            return hasNoisyToken || keywordRatio < 0.6f
         }
 
         /** CQL 검색 전 쿼리 정제: 특수문자 제거 + 대화형 접미사 제거 */
