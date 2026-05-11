@@ -33,7 +33,9 @@ class VectorIndexAgent(
         }
 
         // 신규 또는 변경된 페이지만 인덱싱
-        val toIndex = allPages.filter { ref -> existingMeta[ref.id] != ref.lastModified }
+        val toIndex = allPages.filter { ref ->
+            ref.lastModified.isNotEmpty() && existingMeta[ref.id] != ref.lastModified
+        }
         log.info("Incremental: {}/{} pages to update", toIndex.size, allPages.size)
 
         var indexed = 0

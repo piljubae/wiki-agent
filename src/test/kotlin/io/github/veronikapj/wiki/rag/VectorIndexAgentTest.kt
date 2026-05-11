@@ -23,7 +23,7 @@ class VectorIndexAgentTest {
         val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
         coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
         coEvery { mockConfluence.listAllPages(any(), any()) } returns listOf(
-            ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/1")
+            ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/1", lastModified = "2026-05-01T00:00:00.000Z")
         )
         coEvery { mockConfluence.fetchPageContent("1") } returns ConfluencePage(
             "1", "배포 가이드", "배포 절차 내용", "https://co.atlassian.net/wiki/1"
@@ -64,6 +64,24 @@ class VectorIndexAgentTest {
             mockChroma.upsertDocuments(any(), eq(listOf("page-2")), any(), any(), any())
         }
         coVerify(exactly = 0) { mockChroma.deleteByIds(any(), any()) }
+    }
+
+    @Test
+    fun `indexAll skips pages with empty lastModified`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+
+        // lastModified = "" (Confluence이 필드 미제공) → 스킵
+        coEvery { mockConfluence.listAllPages(any(), any()) } returns listOf(
+            ConfluencePageRef("page-no-ts", "이름없음", "https://ex.com/0", lastModified = "")
+        )
+        coEvery { mockChroma.getAllIdsWithLastModified(any()) } returns emptyMap()
+
+        val agent = VectorIndexAgent(mockConfluence, mockChroma, llmExpand, null, config, listOf("DEV"))
+        val count = agent.indexAll()
+
+        assertEquals(0, count)
+        coVerify(exactly = 0) { mockChroma.upsertDocuments(any(), any(), any(), any(), any()) }
     }
 
     @Test
