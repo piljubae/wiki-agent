@@ -38,6 +38,7 @@ class SlackBotGateway(
     private val confluenceClient: ConfluenceClient? = null,
     private val feedbackStore: FeedbackStore = FeedbackStore(),
     private val queryRewriter: QueryRewriter? = null,
+    private val userPersonaStore: UserPersonaStore = UserPersonaStore(),
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
@@ -233,6 +234,7 @@ class SlackBotGateway(
             val query = extractQuery(payload.event.text)
             val channel = payload.event.channel
             val threadTs = payload.event.ts
+            val userId = payload.event.user
             log.info("Mention received: '{}'", query)
             if (isHelpQuery(query)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(configHandler.helpMessage()) }
@@ -240,14 +242,14 @@ class SlackBotGateway(
                 log.info("Onboarding step for channel={}", channel)
                 runCatching { handleOnboarding(channel, threadTs, query) }
                     .onFailure { log.error("Onboarding error: {}", it.message, it) }
-            } else if (!handleQueryAsync(channel = channel, threadTs = threadTs, sessionId = threadTs, query = query)) {
+            } else if (!handleQueryAsync(channel = channel, threadTs = threadTs, sessionId = threadTs, query = query, userId = userId)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }
             ctx.ack()
         }
     }
 
-    private fun handleQueryAsync(channel: String, threadTs: String?, sessionId: String, query: String): Boolean {
+    private fun handleQueryAsync(channel: String, threadTs: String?, sessionId: String, query: String, userId: String? = null): Boolean {
         return try {
         messageExecutor.submit {
             var progressMessageTs: String? = null
@@ -280,7 +282,7 @@ class SlackBotGateway(
             }
 
             try {
-                val result = runBlocking { orchestrator.answer(query, listener, sessionId = sessionId) }
+                val result = runBlocking { orchestrator.answer(query, listener, sessionId = sessionId, userId = userId) }
 
                 progressMessageTs?.let { ts ->
                     runCatching { slackClient.chatDelete { it.channel(channel).ts(ts) } }
@@ -344,7 +346,7 @@ class SlackBotGateway(
                 reaction in RETRY_REACTIONS && feedbackStore.get(messageTs) != null -> {
                     val channel = event.item.channel
                     messageExecutor.submit {
-                        triggerRequery(messageTs, channel, threadTs = messageTs)
+                        triggerRequery(messageTs, channel, threadTs = messageTs, userId = event.user)
                     }
                 }
             }
@@ -352,7 +354,7 @@ class SlackBotGateway(
         }
     }
 
-    private fun triggerRequery(messageTs: String, channel: String, threadTs: String) {
+    private fun triggerRequery(messageTs: String, channel: String, threadTs: String, userId: String? = null) {
         val entry = feedbackStore.get(messageTs) ?: run {
             log.warn("triggerRequery: entry not found for ts={}", messageTs)
             return
@@ -391,7 +393,7 @@ class SlackBotGateway(
         if (combinedQuery.isBlank()) {
             log.warn("QueryRewriter returned empty query for ts={}, falling back to original query", messageTs)
             val fallbackResult = runBlocking {
-                orchestrator.answer(entry.query, sessionId = "requery-$messageTs", forceAllTools = forceAllTools)
+                orchestrator.answer(entry.query, sessionId = "requery-$messageTs", forceAllTools = forceAllTools, userId = userId)
             }
             val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$fallbackResult"
             slackClient.chatPostMessage { req -> req.channel(channel).threadTs(threadTs).text(reply) }
@@ -400,7 +402,7 @@ class SlackBotGateway(
         }
 
         val result = runBlocking {
-            orchestrator.answer(combinedQuery, sessionId = "requery-$messageTs", forceAllTools = forceAllTools)
+            orchestrator.answer(combinedQuery, sessionId = "requery-$messageTs", forceAllTools = forceAllTools, userId = userId)
         }
 
         val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$result"
@@ -586,6 +588,7 @@ class SlackBotGateway(
 
             val channel = event.channel
             val threadTs = event.threadTs ?: event.ts
+            val userId = event.user
 
             log.info("Assistant message received: '{}'", query.take(80))
 
@@ -607,14 +610,14 @@ class SlackBotGateway(
             }
 
             val forcedTool = threadForcedTool[threadTs]
-            if (!handleAssistantQueryAsync(channel, threadTs, query, forcedTool)) {
+            if (!handleAssistantQueryAsync(channel, threadTs, query, forcedTool, userId = userId)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }
             ctx.ack()
         }
     }
 
-    private fun handleAssistantQueryAsync(channel: String, threadTs: String, query: String, forcedTool: String? = null): Boolean {
+    private fun handleAssistantQueryAsync(channel: String, threadTs: String, query: String, forcedTool: String? = null, userId: String? = null): Boolean {
         return try {
             messageExecutor.submit {
                 val searchedTools = mutableListOf<String>()
@@ -634,7 +637,7 @@ class SlackBotGateway(
 
                 try {
                     val result = runBlocking {
-                        orchestrator.answer(query, listener, sessionId = "assistant-$threadTs", forceTool = forcedTool)
+                        orchestrator.answer(query, listener, sessionId = "assistant-$threadTs", forceTool = forcedTool, userId = userId)
                     }
 
                     val footer = buildString {
