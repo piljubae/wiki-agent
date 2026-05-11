@@ -4,16 +4,16 @@ import io.github.veronikapj.wiki.config.PersonaType
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 class UserPersonaStore(private val filePath: String = ".wiki/user-personas.json") {
 
-    private val personas = ConcurrentHashMap<String, PersonaType>()
+    private val personas = HashMap<String, PersonaType>()
 
     init { load() }
 
     fun get(userId: String): PersonaType? = personas[userId]
 
+    @Synchronized
     fun set(userId: String, persona: PersonaType) {
         personas[userId] = persona
         save()

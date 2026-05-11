@@ -39,7 +39,7 @@ class SlackBotGateway(
     private val confluenceClient: ConfluenceClient? = null,
     private val feedbackStore: FeedbackStore = FeedbackStore(),
     private val queryRewriter: QueryRewriter? = null,
-    private val userPersonaStore: UserPersonaStore = UserPersonaStore(),
+    private val userPersonaStore: UserPersonaStore,
 ) {
     private val app = App()
     private val slackClient: MethodsClient = Slack.getInstance().methods(slackConfig.botToken)
