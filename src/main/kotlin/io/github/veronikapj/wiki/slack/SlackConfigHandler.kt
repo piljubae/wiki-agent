@@ -19,6 +19,7 @@ class SlackConfigHandler(
     private val onReindexCode: (suspend () -> Int)? = null,
     private val onReindexPr: (suspend () -> Int)? = null,
     private val projectMemory: ProjectMemory? = null,
+    private val onGetIndexCount: (suspend () -> Int)? = null,
 ) {
     private var lastIndexTime: LocalDateTime? = null
     private var lastIndexCount: Int = 0
@@ -97,10 +98,11 @@ class SlackConfigHandler(
     }
 
     private fun reindexStatus(): String {
-        if (isIndexing) return ":hourglass_flowing_sand: 인덱싱 진행 중..."
+        val currentCount = runCatching { runBlocking { onGetIndexCount?.invoke() } }.getOrNull()
+        if (isIndexing) return ":hourglass_flowing_sand: 인덱싱 진행 중... (현재 ${currentCount ?: "?"}건)"
         val time = lastIndexTime?.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
             ?: "아직 인덱싱하지 않았습니다"
-        return "마지막 인덱싱: $time / 문서 수: $lastIndexCount"
+        return "마지막 인덱싱: $time / 문서 수: ${currentCount ?: lastIndexCount}"
     }
 
     private fun setSpaces(spacesArg: String): String {

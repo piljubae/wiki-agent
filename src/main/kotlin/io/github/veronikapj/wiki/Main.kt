@@ -135,9 +135,11 @@ fun main() {
     var vectorSearchTool: VectorSearchTool? = null
     var vectorSearchAgent: VectorSearchAgent? = null
     var vectorIndexAgent: VectorIndexAgent? = null
+    var wikiChromaClient: ChromaClient? = null
 
     if (config.rag.enabled) {
         val chromaClient = ChromaClient(config.rag.chromaUrl)
+        wikiChromaClient = chromaClient
         val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
         val llmFn: suspend (String) -> String = { userPrompt ->
             executor.execute(
@@ -405,6 +407,10 @@ fun main() {
             } },
             onReindexPr = prIndexAgent?.let { agent -> {
                 agent.indexPrsBulk(config.github.codeRepos, limit = 1000).also { gatewayRef.get()?.lastPrIndexedAt = Instant.now() }
+            } },
+            onGetIndexCount = wikiChromaClient?.let { chroma -> {
+                val colId = chroma.getOrCreateCollection("wiki-pages")
+                chroma.count(colId)
             } },
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)

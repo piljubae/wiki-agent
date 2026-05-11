@@ -239,6 +239,17 @@ class ChromaClient(
         }
     }
 
+    suspend fun count(collectionId: String): Int {
+        val body = """{"include":[]}"""
+        val response = httpClient.post("$apiBase/collections/$collectionId/get") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.bodyAsText()
+        val matched = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(response)
+            ?.groupValues?.get(1) ?: return 0
+        return Regex("\"([^\"]+)\"").findAll(matched).count()
+    }
+
     fun close() = httpClient.close()
 
     companion object {
