@@ -11,6 +11,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class VectorIndexAgentTest {
 
@@ -22,6 +23,7 @@ class VectorIndexAgentTest {
     fun `index fetches pages and adds to chroma`() = runTest {
         val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
         coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+        coEvery { mockChroma.getAllIdsWithLastModified(any()) } returns emptyMap()
         coEvery { mockConfluence.listAllPages(any(), any()) } returns listOf(
             ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/1", lastModified = "2026-05-01T00:00:00.000Z")
         )
@@ -81,6 +83,20 @@ class VectorIndexAgentTest {
         val count = agent.indexAll()
 
         assertEquals(0, count)
+        coVerify(exactly = 0) { mockChroma.upsertDocuments(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `indexAll aborts when Chroma metadata fetch fails`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+        coEvery { mockConfluence.listAllPages(any(), any()) } returns listOf(
+            ConfluencePageRef("p1", "페이지", "https://ex.com/1", lastModified = "2026-05-01T00:00:00.000Z")
+        )
+        coEvery { mockChroma.getAllIdsWithLastModified(any()) } returns null
+
+        val agent = VectorIndexAgent(mockConfluence, mockChroma, llmExpand, null, config, listOf("DEV"))
+        assertFailsWith<IllegalStateException> { agent.indexAll() }
         coVerify(exactly = 0) { mockChroma.upsertDocuments(any(), any(), any(), any(), any()) }
     }
 

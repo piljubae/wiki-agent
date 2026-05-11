@@ -68,8 +68,11 @@ class ChromaClient(
         return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toHashSet()
     }
 
-    /** 컬렉션 전체 문서의 id → lastModified 맵 반환. 증분 인덱싱 비교에 사용. */
-    suspend fun getAllIdsWithLastModified(collectionId: String): Map<String, String> {
+    /**
+     * 컬렉션 전체 문서의 id → lastModified 맵 반환. 증분 인덱싱 비교에 사용.
+     * HTTP 오류 시 null 반환 (빈 컬렉션은 emptyMap 반환).
+     */
+    suspend fun getAllIdsWithLastModified(collectionId: String): Map<String, String>? {
         val body = """{"include":["metadatas"]}"""
         val response = runCatching {
             httpClient.post("$apiBase/collections/$collectionId/get") {
@@ -78,7 +81,7 @@ class ChromaClient(
             }.bodyAsText()
         }.getOrElse { e ->
             log.warn("getAllIdsWithLastModified failed: {}", e.message)
-            return emptyMap()
+            return null
         }
         return parseIdsWithLastModified(response)
     }

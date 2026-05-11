@@ -20,15 +20,16 @@ class VectorIndexAgent(
         val allPages = confluenceClient.listAllPages(spaces, maxPages = topK)
         log.info("Confluence: {} pages total (mode={})", allPages.size, config.embeddingMode)
 
-        // 기존 ChromaDB 메타데이터 조회
+        // 기존 ChromaDB 메타데이터 조회 (null이면 Chroma 통신 오류 → 안전하게 중단)
         val existingMeta = chromaClient.getAllIdsWithLastModified(collectionId)
+            ?: error("ChromaDB metadata fetch failed — aborting to prevent full re-index")
         log.info("ChromaDB: {} pages already indexed", existingMeta.size)
 
         // 삭제된 페이지 제거
         val allPageIds = allPages.map { it.id }.toSet()
-        val toDelete = existingMeta.keys - allPageIds
+        val toDelete = (existingMeta.keys - allPageIds).sorted()
         if (toDelete.isNotEmpty()) {
-            chromaClient.deleteByIds(collectionId, toDelete.toList())
+            chromaClient.deleteByIds(collectionId, toDelete)
             log.info("Removed {} deleted pages from index", toDelete.size)
         }
 
@@ -69,6 +70,9 @@ class VectorIndexAgent(
             }
 
             if (ids.isNotEmpty()) {
+                check(ids.size == docs.size && ids.size == metas.size) {
+                    "Batch list size mismatch: ids=${ids.size} docs=${docs.size} metas=${metas.size}"
+                }
                 chromaClient.upsertDocuments(
                     collectionId = collectionId,
                     ids = ids,
