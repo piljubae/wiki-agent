@@ -132,7 +132,7 @@ class ConfluenceSearchAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceSearchAgent::class.java)
-        private const val RAG_TIMEOUT_MS = 5_000L
+        private const val RAG_TIMEOUT_MS = 3_000L
 
         // 대화형 접미사 제거
         private val SUFFIXES = listOf(
