@@ -269,6 +269,8 @@ fun main() {
         }
     }
 
+    val userPersonaStore = io.github.veronikapj.wiki.slack.UserPersonaStore()
+
     val orchestrator = OrchestratorAgent(
         knowledgeTool = knowledgeTool,
         confluenceTool = confluenceTool,
@@ -284,7 +286,8 @@ fun main() {
                 config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
         conversationStore = conversationStore,
         projectMemory = projectMemory,
-        persona = config.persona,
+        userPersonaStore = userPersonaStore,
+        defaultPersona = config.persona,
     )
 
     // 공유 백그라운드 스코프 (polling + webhook 공용)
@@ -409,6 +412,7 @@ fun main() {
             projectMemory = projectMemory,
             confluenceClient = confluenceClient,
             queryRewriter = queryRewriter,
+            userPersonaStore = userPersonaStore,
         )
         gatewayRef.set(gateway)
         gateway.start()
