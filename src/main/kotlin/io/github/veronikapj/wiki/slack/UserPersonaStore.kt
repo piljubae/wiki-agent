@@ -7,7 +7,7 @@ import java.io.File
 
 class UserPersonaStore(private val filePath: String = ".wiki/user-personas.json") {
 
-    private val personas = HashMap<String, PersonaType>()
+    private val personas = java.util.concurrent.ConcurrentHashMap<String, PersonaType>()
 
     init { load() }
 
@@ -21,7 +21,7 @@ class UserPersonaStore(private val filePath: String = ".wiki/user-personas.json"
 
     private fun load() {
         val file = File(filePath)
-        if (!file.exists()) return
+        if (!file.exists() || file.length() == 0L) return
         runCatching {
             val obj = Json.parseToJsonElement(file.readText()).jsonObject
             obj.forEach { (userId, value) ->

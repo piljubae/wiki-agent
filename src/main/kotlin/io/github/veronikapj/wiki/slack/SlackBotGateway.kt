@@ -575,6 +575,7 @@ class SlackBotGateway(
         }
 
         app.blockAction("home_persona_select") { req, ctx ->
+            val response = ctx.ack()
             val userId = req.payload.user.id
             val selectedValue = req.payload.actions
                 .firstOrNull()
@@ -589,8 +590,11 @@ class SlackBotGateway(
                 slackClient.viewsPublish { it.userId(userId).view(buildHomeView(userId)) }
             }.onFailure { log.warn("Failed to refresh home view after persona change: {}", it.message) }
 
-            slackClient.chatPostMessage { it.channel(userId).text("✅ 페르소나가 *${persona.displayName}*으로 변경되었습니다.") }
-            ctx.ack()
+            runCatching {
+                slackClient.chatPostMessage { it.channel(userId).text("✅ 페르소나가 *${persona.displayName}*으로 변경되었습니다.") }
+            }.onFailure { log.warn("Failed to send persona change DM to userId={}: {}", userId, it.message) }
+
+            response
         }
     }
 
