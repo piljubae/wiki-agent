@@ -64,4 +64,48 @@ class ChromaClientTest {
         val result = ChromaClient("http://localhost").parseGetIdsResponse(json)
         assertEquals(emptyList<String>(), result)
     }
+
+    @Test
+    fun `parseIdsWithLastModified returns id to lastModified map`() {
+        val json = """
+            {
+              "ids": ["page-123", "page-456"],
+              "metadatas": [
+                {"title": "페이지1", "url": "https://...", "lastModified": "2026-05-01T12:00:00.000Z"},
+                {"title": "페이지2", "url": "https://...", "lastModified": "2026-04-15T09:00:00.000Z"}
+              ]
+            }
+        """.trimIndent()
+
+        val result = client.parseIdsWithLastModified(json)
+
+        assertEquals(2, result.size)
+        assertEquals("2026-05-01T12:00:00.000Z", result["page-123"])
+        assertEquals("2026-04-15T09:00:00.000Z", result["page-456"])
+    }
+
+    @Test
+    fun `parseIdsWithLastModified skips entry without lastModified`() {
+        val json = """
+            {
+              "ids": ["page-123", "page-456"],
+              "metadatas": [
+                {"title": "페이지1", "lastModified": "2026-05-01T12:00:00.000Z"},
+                {"title": "페이지2"}
+              ]
+            }
+        """.trimIndent()
+
+        val result = client.parseIdsWithLastModified(json)
+
+        assertEquals(1, result.size)
+        assertEquals("2026-05-01T12:00:00.000Z", result["page-123"])
+    }
+
+    @Test
+    fun `parseIdsWithLastModified returns empty map for empty collection`() {
+        val json = """{"ids": [], "metadatas": []}"""
+        val result = client.parseIdsWithLastModified(json)
+        assertTrue(result.isEmpty())
+    }
 }

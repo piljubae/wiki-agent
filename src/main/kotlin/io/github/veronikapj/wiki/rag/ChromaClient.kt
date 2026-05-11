@@ -68,6 +68,43 @@ class ChromaClient(
         return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toHashSet()
     }
 
+    /** 컬렉션 전체 문서의 id → lastModified 맵 반환. 증분 인덱싱 비교에 사용. */
+    suspend fun getAllIdsWithLastModified(collectionId: String): Map<String, String> {
+        val body = """{"include":["metadatas"]}"""
+        val response = runCatching {
+            httpClient.post("$apiBase/collections/$collectionId/get") {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }.bodyAsText()
+        }.getOrElse { e ->
+            log.warn("getAllIdsWithLastModified failed: {}", e.message)
+            return emptyMap()
+        }
+        return parseIdsWithLastModified(response)
+    }
+
+    internal fun parseIdsWithLastModified(json: String): Map<String, String> {
+        // ids: ["id1", "id2", ...]  — /get은 단일 배열
+        val idsSection = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(json)
+            ?.groupValues?.get(1) ?: return emptyMap()
+        val idList = Regex("\"([^\"]+)\"").findAll(idsSection)
+            .map { it.groupValues[1] }.toList()
+        if (idList.isEmpty()) return emptyMap()
+
+        // metadatas: [{...}, {...}]
+        val metaSection = Regex("\"metadatas\"\\s*:\\s*\\[(.+?)](?=\\s*[,}])", RegexOption.DOT_MATCHES_ALL)
+            .find(json)?.groupValues?.get(1) ?: return emptyMap()
+        val metaList = Regex("\\{([^}]*)}").findAll(metaSection).map { m ->
+            Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").findAll(m.value)
+                .associate { it.groupValues[1] to it.groupValues[2] }
+        }.toList()
+
+        return idList.mapIndexedNotNull { i, id ->
+            val lastMod = metaList.getOrNull(i)?.get("lastModified") ?: return@mapIndexedNotNull null
+            id to lastMod
+        }.toMap()
+    }
+
     /** file_path 메타데이터 기준으로 해당 파일의 모든 청크 ID 반환 */
     suspend fun getIdsByFilePath(collectionId: String, repo: String, filePath: String): List<String> {
         val where = """{"${"$"}and":[{"repo":{"${"$"}eq":"$repo"}},{"file_path":{"${"$"}eq":"${filePath.escapeJson()}"}}]}"""
