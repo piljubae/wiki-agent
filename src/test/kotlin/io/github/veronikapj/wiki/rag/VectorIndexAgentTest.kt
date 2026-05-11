@@ -22,7 +22,7 @@ class VectorIndexAgentTest {
     fun `index fetches pages and adds to chroma`() = runTest {
         val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
         coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
-        coEvery { mockConfluence.searchPages(any(), any(), any(), any()) } returns listOf(
+        coEvery { mockConfluence.listAllPages(any(), any()) } returns listOf(
             ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/1")
         )
         coEvery { mockConfluence.fetchPageContent("1") } returns ConfluencePage(

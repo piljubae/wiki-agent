@@ -20,9 +20,9 @@ import java.time.LocalDate
  * B. 보안/안전성: PROMPT_INJECTION / SYSTEM_EXTRACTION / JAILBREAK
  * C. 코드 검색: CODE_GHOST / CODE_ACCURACY
  *
- * 실행: ./gradlew test -Dtags=redteam
+ * 실행: ./gradlew test -Dtags=eval
  */
-@Tag("redteam")
+@Tag("eval")
 class RedTeamEvalTest {
 
     private val config by lazy { ConfigLoader.load() }
