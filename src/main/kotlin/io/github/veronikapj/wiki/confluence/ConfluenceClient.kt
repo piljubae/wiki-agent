@@ -19,6 +19,7 @@ data class ConfluencePageRef(
     val webUrl: String,
     val excerpt: String = "",
     val titleMatched: Boolean = false,
+    val lastModified: String = "",
 )
 
 data class ConfluencePage(
@@ -272,7 +273,8 @@ class ConfluenceClient(
                     ?: resultUrl
                     ?: ""
                 val excerpt = result["excerpt"]?.jsonPrimitive?.content?.take(300) ?: ""
-                ConfluencePageRef(id = id, title = title, webUrl = "$baseUrlForLinks/wiki$webUi", excerpt = excerpt)
+                val lastModified = result["lastModified"]?.jsonPrimitive?.content ?: ""
+                ConfluencePageRef(id = id, title = title, webUrl = "$baseUrlForLinks/wiki$webUi", excerpt = excerpt, lastModified = lastModified)
             }
         }.getOrElse { e ->
             log.warn("Failed to parse search results: {}", e.message)

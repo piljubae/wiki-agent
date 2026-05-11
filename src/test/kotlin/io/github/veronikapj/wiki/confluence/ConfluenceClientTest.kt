@@ -135,6 +135,50 @@ class ConfluenceClientTest {
     }
 
     @Test
+    fun `parseSearchResults extracts lastModified`() {
+        val json = """
+            {
+              "results": [
+                {
+                  "title": "테스트 페이지",
+                  "url": "/wiki/pages/123",
+                  "lastModified": "2026-05-01T12:00:00.000Z",
+                  "content": {
+                    "id": "page-123",
+                    "title": "테스트 페이지",
+                    "_links": { "webui": "/spaces/TEST/pages/123" }
+                  },
+                  "excerpt": "요약"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val results = client.parseSearchResults(json, "https://example.atlassian.net")
+        assertEquals(1, results.size)
+        assertEquals("page-123", results[0].id)
+        assertEquals("2026-05-01T12:00:00.000Z", results[0].lastModified)
+    }
+
+    @Test
+    fun `parseSearchResults handles missing lastModified gracefully`() {
+        val json = """
+            {
+              "results": [
+                {
+                  "title": "페이지",
+                  "content": { "id": "page-456", "_links": { "webui": "/pages/456" } }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val results = client.parseSearchResults(json, "https://example.atlassian.net")
+        assertEquals(1, results.size)
+        assertEquals("", results[0].lastModified)
+    }
+
+    @Test
     fun `buildTitleCqlSearchUrl searches title with synonyms`() {
         val url = client.buildTitleCqlSearchUrl(
             query = "신입 온보딩",
