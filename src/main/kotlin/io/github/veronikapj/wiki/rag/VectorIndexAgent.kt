@@ -17,11 +17,27 @@ class VectorIndexAgent(
 ) {
     suspend fun indexAll(): Int {
         val collectionId = chromaClient.getOrCreateCollection(collectionName)
-        val pages = confluenceClient.listAllPages(spaces, maxPages = topK)
-        log.info("Indexing {} pages into ChromaDB (mode={})", pages.size, config.embeddingMode)
+        val allPages = confluenceClient.listAllPages(spaces, maxPages = topK)
+        log.info("Confluence: {} pages total (mode={})", allPages.size, config.embeddingMode)
+
+        // 기존 ChromaDB 메타데이터 조회
+        val existingMeta = chromaClient.getAllIdsWithLastModified(collectionId)
+        log.info("ChromaDB: {} pages already indexed", existingMeta.size)
+
+        // 삭제된 페이지 제거
+        val allPageIds = allPages.map { it.id }.toSet()
+        val toDelete = existingMeta.keys - allPageIds
+        if (toDelete.isNotEmpty()) {
+            chromaClient.deleteByIds(collectionId, toDelete.toList())
+            log.info("Removed {} deleted pages from index", toDelete.size)
+        }
+
+        // 신규 또는 변경된 페이지만 인덱싱
+        val toIndex = allPages.filter { ref -> existingMeta[ref.id] != ref.lastModified }
+        log.info("Incremental: {}/{} pages to update", toIndex.size, allPages.size)
 
         var indexed = 0
-        pages.chunked(10).forEach { batch ->
+        toIndex.chunked(10).forEach { batch ->
             val ids = mutableListOf<String>()
             val docs = mutableListOf<String>()
             val embeddings = mutableListOf<List<Float>>()
@@ -41,13 +57,17 @@ class VectorIndexAgent(
                     if (config.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING) {
                         embeddings += requireNotNull(googleEmbeddingClient).embed(text)
                     }
-                    metas += mapOf("title" to page.title, "url" to page.webUrl)
+                    metas += mapOf(
+                        "title" to page.title,
+                        "url" to page.webUrl,
+                        "lastModified" to ref.lastModified,
+                    )
                     indexed++
                 }.onFailure { log.warn("Failed to index page {}: {}", ref.id, it.message) }
             }
 
             if (ids.isNotEmpty()) {
-                chromaClient.addDocuments(
+                chromaClient.upsertDocuments(
                     collectionId = collectionId,
                     ids = ids,
                     documents = docs,
@@ -56,7 +76,8 @@ class VectorIndexAgent(
                 )
             }
         }
-        log.info("Indexed {} pages", indexed)
+        log.info("Incremental index complete: {} updated, {} skipped, {} deleted",
+            indexed, allPages.size - toIndex.size, toDelete.size)
         return indexed
     }
 

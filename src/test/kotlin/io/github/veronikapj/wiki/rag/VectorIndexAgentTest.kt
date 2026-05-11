@@ -33,6 +33,54 @@ class VectorIndexAgentTest {
         val count = agent.indexAll()
 
         assertEquals(1, count)
-        coVerify { mockChroma.addDocuments(any(), any(), any(), null, any()) }
+        coVerify { mockChroma.upsertDocuments(any(), any(), any(), null, any()) }
+    }
+
+    @Test
+    fun `indexAll skips unchanged pages`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+
+        val pages = listOf(
+            ConfluencePageRef("page-1", "페이지1", "https://ex.com/1", lastModified = "2026-05-01T00:00:00.000Z"),
+            ConfluencePageRef("page-2", "페이지2", "https://ex.com/2", lastModified = "2026-05-10T00:00:00.000Z"),
+        )
+        // page-1은 이미 같은 lastModified로 인덱스됨 → 스킵
+        // page-2는 신규 → 처리
+        coEvery { mockConfluence.listAllPages(any(), any()) } returns pages
+        coEvery { mockChroma.getAllIdsWithLastModified(any()) } returns mapOf(
+            "page-1" to "2026-05-01T00:00:00.000Z",
+        )
+        coEvery { mockConfluence.fetchPageContent("page-2") } returns
+            ConfluencePage("page-2", "페이지2", "내용", "https://ex.com/2")
+        coEvery { mockChroma.upsertDocuments(any(), any(), any(), any(), any()) } returns Unit
+        coEvery { mockChroma.deleteByIds(any(), any()) } returns Unit
+
+        val agent = VectorIndexAgent(mockConfluence, mockChroma, llmExpand, null, config, listOf("DEV"))
+        val count = agent.indexAll()
+
+        assertEquals(1, count)
+        coVerify(exactly = 1) {
+            mockChroma.upsertDocuments(any(), eq(listOf("page-2")), any(), any(), any())
+        }
+        coVerify(exactly = 0) { mockChroma.deleteByIds(any(), any()) }
+    }
+
+    @Test
+    fun `indexAll deletes pages removed from Confluence`() = runTest {
+        val config = RagConfig(enabled = true, embeddingMode = EmbeddingMode.LLM_EXPAND)
+        coEvery { mockChroma.getOrCreateCollection(any()) } returns "col-id"
+
+        coEvery { mockConfluence.listAllPages(any(), any()) } returns emptyList()
+        coEvery { mockChroma.getAllIdsWithLastModified(any()) } returns mapOf(
+            "page-old" to "2026-04-01T00:00:00.000Z",
+        )
+        coEvery { mockChroma.deleteByIds(any(), eq(listOf("page-old"))) } returns Unit
+
+        val agent = VectorIndexAgent(mockConfluence, mockChroma, llmExpand, null, config, listOf("DEV"))
+        val count = agent.indexAll()
+
+        assertEquals(0, count)
+        coVerify(exactly = 1) { mockChroma.deleteByIds(any(), eq(listOf("page-old"))) }
     }
 }
