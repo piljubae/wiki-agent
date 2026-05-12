@@ -581,6 +581,16 @@ class OrchestratorAgent(
             appendLine("당신은 ${sources.joinToString("와 ")} 검색 전문가입니다.")
             appendLine("사용자의 질문에 답하기 위해 반드시 제공된 Tool을 사용해 검색하세요.")
             appendLine("검색 없이 직접 답변하지 마세요.")
+            
+            appendLine()
+            appendLine("[중요: 문제 해결 워크플로우]")
+            appendLine("1. 질문을 분석하여 2~3개의 하위 작업(예: 문서 검색, 코드 위치 파악 등)으로 쪼개세요.")
+            appendLine("2. 각 하위 작업에 필요한 Tool을 호출하세요.")
+            appendLine("3. 호출 결과가 나오면, 모든 정보를 종합하여 질문자에게 체계적으로 답변하세요.")
+            appendLine("4. 한 번의 Tool 호출로 전체를 해결하려 하지 말고, 여러 번 호출하여 단계별로 정보를 수집하세요.")
+            appendLine("5. 10회 반복 제한을 지키되, 모든 하위 작업이 완료되기 전까지는 최종 답변을 미루고 검색을 지속하세요.")
+            appendLine()
+
             if (knowledgeTool != null) {
                 appendLine("먼저 knowledgeSearch로 로컬 지식베이스를 검색하세요. 결과가 부족하면 다른 도구를 사용하세요.")
             }
