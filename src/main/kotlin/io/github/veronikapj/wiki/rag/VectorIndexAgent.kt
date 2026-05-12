@@ -60,18 +60,20 @@ class VectorIndexAgent(
                         log.info("Skip thin page {}: '{}' ({} chars)", ref.id, ref.title, text.length)
                         return@runCatching
                     }
+                    // embed를 먼저 실행 — 실패 시 리스트에 추가하지 않아 size mismatch 방지
+                    val embedding = if (config.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING)
+                        requireNotNull(googleEmbeddingClient).embed(text)
+                    else null
                     ids += ref.id
                     docs += text
-                    if (config.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING) {
-                        embeddings += requireNotNull(googleEmbeddingClient).embed(text)
-                    }
+                    if (embedding != null) embeddings += embedding
                     metas += mapOf(
                         "title" to page.title,
                         "url" to page.webUrl,
                         "lastModified" to ref.lastModified,
                     )
                     indexed++
-                }.onFailure { log.warn("Failed to index page {}: {}", ref.id, it.message) }
+                }.onFailure { log.warn("Failed to index page {}: {} — {}", ref.id, it::class.simpleName, it.message) }
             }
 
             if (ids.isNotEmpty()) {

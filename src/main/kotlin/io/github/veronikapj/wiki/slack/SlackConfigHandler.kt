@@ -3,6 +3,7 @@ package io.github.veronikapj.wiki.slack
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.WikiConfig
 import io.github.veronikapj.wiki.context.ProjectMemory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
@@ -98,7 +99,7 @@ class SlackConfigHandler(
     }
 
     private fun reindexStatus(): String {
-        val currentCount = runCatching { runBlocking { onGetIndexCount?.invoke() } }.getOrNull()
+        val currentCount = runCatching { runBlocking(Dispatchers.IO) { onGetIndexCount?.invoke() } }.getOrNull()
         if (isIndexing) return ":hourglass_flowing_sand: 인덱싱 진행 중... (현재 ${currentCount ?: "?"}건)"
         val time = lastIndexTime?.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
             ?: "아직 인덱싱하지 않았습니다"

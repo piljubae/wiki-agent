@@ -14,8 +14,10 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
+import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.agent.tool.CodeFlowTool
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
@@ -103,7 +105,7 @@ class OrchestratorAgent(
             codeFlowTool?.let { "findImpact" },
         )
         val routerModel = this.routerModel      // for routing call
-        val model = AnthropicModels.Haiku_4_5  // for answer generation calls (keep Haiku for cost)
+        val model = this.routerModel           // for answer generation calls (use routerModel for cost)
 
         val memory = projectMemory?.load()
 
@@ -223,7 +225,7 @@ class OrchestratorAgent(
         } catch (e: Exception) {
             log.warn("Router executor failed ({}), falling back to main executor", e.message)
             executor.execute(
-                prompt("decision") { user(decisionPrompt) }, AnthropicModels.Haiku_4_5
+                prompt("decision") { user(decisionPrompt) }, this.routerModel
             ).joinToString("") { it.content }.trim()
         }
 
@@ -525,7 +527,13 @@ class OrchestratorAgent(
 
         val memory = projectMemory?.load()
 
-        val fallbackModels = listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
+        val isAnthropic = routerModel.provider == AnthropicModels.Haiku_4_5.provider
+        val fallbackModels = if (isAnthropic) {
+            listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
+        } else {
+            listOf(GoogleModels.Gemini2_5Flash)
+        }
+
         val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description
             ?: defaultPersona.description
         for ((index, model) in fallbackModels.withIndex()) {
@@ -608,10 +616,16 @@ class OrchestratorAgent(
             }
         }
 
+        val params = if (model.provider == AnthropicModels.Haiku_4_5.provider) {
+            AnthropicParams(maxTokens = 2048)
+        } else {
+            LLMParams(maxTokens = 2048)
+        }
+
         return AIAgent(
             promptExecutor = executor,
             agentConfig = AIAgentConfig(
-                prompt = prompt("orchestrator", params = AnthropicParams(maxTokens = 2048)) {
+                prompt = prompt("orchestrator", params = params) {
                     system(systemPrompt)
                     for (turn in history) {
                         user(turn.question)

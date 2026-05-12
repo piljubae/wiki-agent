@@ -42,7 +42,7 @@ class RouterSmokeTest {
     fun `router smoke — 10가지 질문 유형 라우팅 확인`() = runBlocking {
         val config = ConfigLoader.load()
         val executor = LLMExecutorBuilder.build(config.model)
-        val model = AnthropicModels.Haiku_4_5
+        val model = LLMExecutorBuilder.defaultModel(config.model)
 
         val toolOptions = listOf(
             "githubWikiSearch", "confluenceSearch", "prHistory",

@@ -3,6 +3,7 @@ package io.github.veronikapj.wiki.rag
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -240,14 +241,10 @@ class ChromaClient(
     }
 
     suspend fun count(collectionId: String): Int {
-        val body = """{"include":[]}"""
-        val response = httpClient.post("$apiBase/collections/$collectionId/get") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }.bodyAsText()
-        val matched = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(response)
-            ?.groupValues?.get(1) ?: return 0
-        return Regex("\"([^\"]+)\"").findAll(matched).count()
+        val response = runCatching {
+            httpClient.get("$apiBase/collections/$collectionId/count").bodyAsText()
+        }.getOrElse { return 0 }
+        return response.trim().toIntOrNull() ?: 0
     }
 
     fun close() = httpClient.close()
@@ -257,4 +254,9 @@ class ChromaClient(
     }
 }
 
-private fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+private fun String.escapeJson() = replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r")
+    .replace("\t", "\\t")
+    .replace(Regex("[\u0000-\u0008\u000B\u000C\u000E-\u001F]"), " ")

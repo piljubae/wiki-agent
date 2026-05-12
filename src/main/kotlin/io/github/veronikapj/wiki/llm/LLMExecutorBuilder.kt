@@ -36,4 +36,12 @@ object LLMExecutorBuilder {
             ModelProvider.ANTHROPIC -> AnthropicModels.Sonnet_4
             ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
         }
+
+    fun lowCostModel(config: ModelConfig): LLModel =
+        when (config.provider) {
+            ModelProvider.CLAUDE_CODE -> AnthropicModels.Haiku_4_5
+            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.ANTHROPIC -> AnthropicModels.Haiku_4_5
+            ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
+        }
 }

@@ -41,7 +41,7 @@ class RouterEvalTest {
         val client = ConfluenceClient(config.confluence.baseUrl, token)
         val agent = ConfluenceSearchAgent(client, config.confluence.spaces)
         val executor = LLMExecutorBuilder.build(config.model)
-        val model = AnthropicModels.Haiku_4_5
+        val model = LLMExecutorBuilder.defaultModel(config.model)
 
         val routerPrompt = buildRouterPrompt()
 

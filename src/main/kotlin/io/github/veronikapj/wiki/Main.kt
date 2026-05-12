@@ -81,7 +81,7 @@ fun main() {
     val model = LLMExecutorBuilder.defaultModel(resolvedModelConfig)
 
     // Router executor: routerConfig 있으면 별도 빌드, 없으면 executor 재사용
-    var routerModel = AnthropicModels.Haiku_4_5
+    var routerModel = LLMExecutorBuilder.lowCostModel(resolvedModelConfig)
     val routerExecutor = config.routerConfig?.let { routerCfg ->
         val resolvedRouterApiKey = when (routerCfg.provider) {
             io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
@@ -415,7 +415,7 @@ fun main() {
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->
-            executor.execute(prompt("rewrite", LLMParams(maxTokens = 300)) { user(prompt) }, AnthropicModels.Haiku_4_5)
+            executor.execute(prompt("rewrite", LLMParams(maxTokens = 300)) { user(prompt) }, routerModel)
                 .joinToString("") { it.content }
         }
         val gateway = SlackBotGateway(

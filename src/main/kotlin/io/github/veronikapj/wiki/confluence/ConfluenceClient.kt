@@ -35,8 +35,9 @@ class ConfluenceClient(
 ) {
     private val httpClient = HttpClient(CIO) {
         install(HttpTimeout) {
-            requestTimeoutMillis = 30_000
+            requestTimeoutMillis = 20_000
             connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 20_000
         }
     }
 
@@ -286,15 +287,25 @@ class ConfluenceClient(
     }
 
     private fun parsePage(json: String, baseUrlForLinks: String): ConfluencePage {
-        val id = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1) ?: "unknown"
-        val title = Regex("\"title\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1) ?: "Untitled"
-        val body = Regex("\"value\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(json)
-            ?.groupValues?.get(1)
-            ?.replace("\\\"", "\"")
-            ?.replace("\\n", "\n")
-            ?: ""
-        val webUi = Regex("\"webui\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1) ?: ""
-        return ConfluencePage(id, title, convertHtmlToSlackMrkdwn(body), "$baseUrlForLinks/wiki$webUi")
+        return runCatching {
+            val sanitized = json.replace(Regex("[\\p{Cntrl}&&[^\\r\\n]]"), " ")
+            val root = jsonParser.parseToJsonElement(sanitized).jsonObject
+            val id = root["id"]?.jsonPrimitive?.content ?: "unknown"
+            val title = root["title"]?.jsonPrimitive?.content ?: "Untitled"
+            val body = root["body"]?.jsonObject
+                ?.get("storage")?.jsonObject
+                ?.get("value")?.jsonPrimitive?.content
+                ?: root["body"]?.jsonObject
+                    ?.get("view")?.jsonObject
+                    ?.get("value")?.jsonPrimitive?.content
+                ?: ""
+            val webUi = root["_links"]?.jsonObject?.get("webui")?.jsonPrimitive?.content ?: ""
+            val truncatedBody = if (body.length > MAX_BODY_LENGTH) body.take(MAX_BODY_LENGTH) else body
+            ConfluencePage(id, title, convertHtmlToSlackMrkdwn(truncatedBody), "$baseUrlForLinks/wiki$webUi")
+        }.getOrElse { e ->
+            log.warn("parsePage failed: {} — {}", e::class.simpleName, e.message)
+            ConfluencePage("unknown", "Untitled", "", "")
+        }
     }
 
     fun convertHtmlToSlackMrkdwn(html: String): String =
@@ -318,6 +329,7 @@ class ConfluenceClient(
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceClient::class.java)
         private const val MAX_TEXT_CLAUSES = 5
+        private const val MAX_BODY_LENGTH = 200_000  // ~200KB: 이 이상은 regex StackOverflow 방지용 trim
         private val STOPWORDS = setOf(
             "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
             "그", "저", "이것", "저것", "어떻게", "무엇", "하는", "하는가", "합니다",
