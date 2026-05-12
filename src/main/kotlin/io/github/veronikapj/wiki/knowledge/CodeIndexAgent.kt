@@ -34,12 +34,13 @@ class CodeIndexAgent(
      */
     data class CodeChunk(
         val filePath: String,
-        val className: String,      // "" = top-level function
+        val className: String,
         val functionName: String,
-        val signature: String,      // "fun onBannerClick(bannerId: String): Unit"
-        val body: String,           // 함수 바디, 최대 500자
+        val signature: String,
+        val body: String,
         val packageName: String,
-        val chunkType: String = "function",  // "function" or "property"
+        val chunkType: String = "function",
+        val qualifiedName: String, // 추가
     )
 
     private data class ChunkEntry(
@@ -47,6 +48,8 @@ class CodeIndexAgent(
         val doc: String,
         val meta: Map<String, String>,
     )
+
+    // ... 내부에 extractFunctionChunks에서 qualifiedName 생성 로직 추가 필요 ...
 
     // ── 하위 호환 — extractClasses는 buildIndexDocument와 함께 유지 ─────────────
     data class KotlinClassInfo(
@@ -375,6 +378,9 @@ class CodeIndexAgent(
                 // className: 스택 최상위 (companion은 내부용 이름)
                 val className = classStack.lastOrNull { it.name != "(companion)" }?.name
                     ?: classStack.lastOrNull()?.name ?: ""
+                
+                val qualifiedName = if (packageName.isNotBlank()) "$packageName.${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$functionName"
+                    else "${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$functionName"
 
                 // 바디 추출 — j 이후 줄에서 시작
                 val afterSigOffset = lines.take(j + 1).sumOf { it.length + 1 }.coerceAtMost(content.length)
@@ -396,6 +402,7 @@ class CodeIndexAgent(
                         signature = signature,
                         body = body,
                         packageName = packageName,
+                        qualifiedName = qualifiedName,
                     ),
                 )
 
@@ -433,6 +440,10 @@ class CodeIndexAgent(
                     }
                     val className = classStack.lastOrNull { it.name != "(companion)" }?.name
                         ?: classStack.lastOrNull()?.name ?: ""
+                    
+                    val qualifiedName = if (packageName.isNotBlank()) "$packageName.${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$propName"
+                        else "${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$propName"
+
                     chunks.add(CodeChunk(
                         filePath = filePath,
                         className = className,
@@ -441,6 +452,7 @@ class CodeIndexAgent(
                         body = "",
                         packageName = packageName,
                         chunkType = "property",
+                        qualifiedName = qualifiedName,
                     ))
                 }
             }

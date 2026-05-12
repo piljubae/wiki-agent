@@ -643,7 +643,7 @@ class OrchestratorAgent(
                     }
                 },
                 model = model,
-                maxAgentIterations = 10,
+                maxAgentIterations = 20,
             ),
             toolRegistry = ToolRegistry {
                 if (knowledgeTool != null) tool(knowledgeTool::knowledgeSearch)
@@ -689,6 +689,10 @@ class OrchestratorAgent(
         fun buildAnswerGuidelines(verbose: Boolean = true): String = buildString {
             appendLine("질문 유형에 맞는 구조로 답변하세요. 질문 유형을 출력하지 마세요. 바로 답변을 시작하세요.")
             appendLine("검색 결과가 제공되었으면 '없습니다', '찾을 수 없습니다'로 시작하지 마세요. 관련 정보를 먼저 안내하세요.")
+            appendLine()
+            appendLine("[중요: 검색 결과 검증]")
+            appendLine("답변 생성 전, 검색된 도구 결과물(파일/클래스 명칭)이 질문자의 의도와 일치하는지 교차 검증하세요.")
+            appendLine("만약 검색된 명칭이 추측에 가깝거나 의심스럽다면, 해당 명칭을 직접 언급하지 말고 검색된 파일 경로를 근거로 설명하세요.")
             appendLine()
             if (verbose) {
                 appendLine("질문 유형별 답변 구조:")
