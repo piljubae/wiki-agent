@@ -155,8 +155,8 @@ class ChromaClient(
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
-        if (response.contains("error", ignoreCase = true)) {
-            log.warn("upsertDocuments error response: {}", response.take(200))
+        if (response.contains("\"error\"") || response.contains("\"message\"")) {
+            log.error("upsertDocuments error: {}", response)
         }
     }
 
@@ -171,7 +171,15 @@ class ChromaClient(
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
-        return parseQueryResults(response)
+        
+        if (response.contains("\"error\"") || response.contains("\"message\"")) {
+            log.error("ChromaDB query error: {}", response)
+            return emptyList()
+        }
+        
+        return runCatching { parseQueryResults(response) }
+            .onFailure { log.error("Failed to parse query results: {}", response) }
+            .getOrDefault(emptyList())
     }
 
     internal fun buildAddBody(

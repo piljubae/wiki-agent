@@ -398,9 +398,9 @@ class SlackBotGateway(
             val fallbackResult = runBlocking {
                 orchestrator.answer(entry.query, sessionId = "requery-$messageTs", forceAllTools = forceAllTools, userId = userId)
             }
-            val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$fallbackResult"
+            val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n${fallbackResult.answer}"
             slackClient.chatPostMessage { req -> req.channel(channel).threadTs(threadTs).text(reply) }
-            feedbackStore.saveRequery(ts = messageTs, requeryBm25 = "", requeryVec = "", requeryAnswer = fallbackResult, stage = stage)
+            feedbackStore.saveRequery(ts = messageTs, requeryBm25 = "", requeryVec = "", requeryAnswer = fallbackResult.answer, stage = stage)
             return
         }
 
@@ -408,7 +408,7 @@ class SlackBotGateway(
             orchestrator.answer(combinedQuery, sessionId = "requery-$messageTs", forceAllTools = forceAllTools, userId = userId)
         }
 
-        val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n$result"
+        val reply = ":repeat: 다른 방식으로 찾아봤어요\n\n${result.answer}"
         slackClient.chatPostMessage { req ->
             req.channel(channel).threadTs(threadTs).text(reply)
         }
@@ -417,7 +417,7 @@ class SlackBotGateway(
             ts = messageTs,
             requeryBm25 = bm25Query,
             requeryVec = vectorQuery,
-            requeryAnswer = result,
+            requeryAnswer = result.answer,
             stage = stage,
         )
     }

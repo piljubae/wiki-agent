@@ -291,7 +291,7 @@ class OrchestratorAgent(
                 history.addLast(question to noneAnswer)
                 if (history.size > 5) history.removeFirst()
             }
-            return noneAnswer
+            return AnswerResult(noneAnswer, "MANUAL", false)
         }
 
         val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
@@ -396,7 +396,7 @@ class OrchestratorAgent(
             if (history.size > 5) history.removeFirst()
         }
 
-        return answer
+        return AnswerResult(answer, "MANUAL", searchResult != null)
     }
 
     internal suspend fun executeParallel(

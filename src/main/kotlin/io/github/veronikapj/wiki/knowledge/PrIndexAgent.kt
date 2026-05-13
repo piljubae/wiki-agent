@@ -41,22 +41,29 @@ class PrIndexAgent(
         if (chromaClient != null) {
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val embeddings = embeddingFn?.let { fn ->
-                runCatching { listOf(fn(document)) }.getOrNull()
+                runCatching { listOf(fn(document)) }
+                    .onFailure { log.error("Failed to generate embedding for PR #{}: {}", prNumber, it.message) }
+                    .getOrNull()
             }
-            chromaClient.upsertDocuments(
-                collectionId = collectionId,
-                ids = listOf("${repo.replace("/", "-")}-pr-${prNumber}"),
-                documents = listOf(document),
-                embeddings = embeddings,
-                metadatas = listOf(mapOf(
-                    "repo" to repo,
-                    "pr_number" to prNumber.toString(),
-                    "state" to pr.state,
-                    "ticket" to (codeClient.extractTicket(pr.title, pr.branch) ?: ""),
-                    "author" to pr.author,
-                    "merged_at" to (pr.mergedAt ?: ""),
-                )),
-            )
+            
+            if (embeddings == null && embeddingFn != null) {
+                log.warn("Skipping ChromaDB indexing for PR #{} due to embedding failure", prNumber)
+            } else {
+                chromaClient.upsertDocuments(
+                    collectionId = collectionId,
+                    ids = listOf("${repo.replace("/", "-")}-pr-${prNumber}"),
+                    documents = listOf(document),
+                    embeddings = embeddings,
+                    metadatas = listOf(mapOf(
+                        "repo" to repo,
+                        "pr_number" to prNumber.toString(),
+                        "state" to pr.state,
+                        "ticket" to (codeClient.extractTicket(pr.title, pr.branch) ?: ""),
+                        "author" to pr.author,
+                        "merged_at" to (pr.mergedAt ?: ""),
+                    )),
+                )
+            }
         }
 
         log.info("Indexed PR #{} from {}", prNumber, repo)
