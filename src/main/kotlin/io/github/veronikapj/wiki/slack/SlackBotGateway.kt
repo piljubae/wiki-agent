@@ -296,7 +296,7 @@ class SlackBotGateway(
                     }
                     append("\n$FEEDBACK_GUIDE")
                 }
-                val finalText = "$result\n\n$footer"
+                val finalText = "${result.answer}\n\n$footer"
 
                 val sendResult = slackClient.chatPostMessage { req ->
                     req.channel(channel).text(finalText).let { b ->
@@ -308,9 +308,11 @@ class SlackBotGateway(
                     sendResult.ts?.let { ts ->
                         val entry = FeedbackEntry(
                             query = query,
-                            answer = result,
+                            answer = result.answer,
                             usedTools = searchedTools.distinct(),
                             ts = ts,
+                            responseType = result.responseType,
+                            isRag = result.isRag,
                         )
                         feedbackStore.save(ts, entry)
                     }
@@ -701,12 +703,19 @@ class SlackBotGateway(
                     }
 
                     val sendResult = slackClient.chatPostMessage { req ->
-                        req.channel(channel).threadTs(threadTs).text("$result\n\n$footer")
+                        req.channel(channel).threadTs(threadTs).text("${result.answer}\n\n$footer")
                     }
 
                     if (sendResult.isOk) {
                         sendResult.ts?.let { ts ->
-                            feedbackStore.save(ts, FeedbackEntry(query, result, searchedTools.distinct(), ts))
+                            feedbackStore.save(ts, FeedbackEntry(
+                                query = query, 
+                                answer = result.answer, 
+                                usedTools = searchedTools.distinct(), 
+                                ts = ts,
+                                responseType = result.responseType,
+                                isRag = result.isRag,
+                            ))
                         }
                     } else {
                         log.error("Slack send failed: {}", sendResult.error)

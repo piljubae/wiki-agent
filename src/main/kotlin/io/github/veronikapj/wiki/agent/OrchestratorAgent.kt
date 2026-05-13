@@ -55,6 +55,12 @@ class OrchestratorAgent(
         }
     }
 
+    data class AnswerResult(
+        val answer: String,
+        val responseType: String,
+        val isRag: Boolean
+    )
+
     suspend fun answer(
         question: String,
         listener: SearchProgressListener? = null,
@@ -62,7 +68,7 @@ class OrchestratorAgent(
         forceAllTools: Boolean = false,
         forceTool: String? = null,
         userId: String? = null,
-    ): String {
+    ): AnswerResult {
         log.info("OrchestratorAgent answering: '{}'", question)
         return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool, userId)
         else {
@@ -81,7 +87,7 @@ class OrchestratorAgent(
         forceAllTools: Boolean = false,
         forceTool: String? = null,
         userId: String? = null,
-    ): String {
+    ): AnswerResult {
         val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description
             ?: defaultPersona.description
 
@@ -516,7 +522,7 @@ class OrchestratorAgent(
         listener: SearchProgressListener? = null,
         sessionId: String? = null,
         userId: String? = null,
-    ): String {
+    ): AnswerResult {
         val contextHistory: List<Turn> = if (sessionId != null && conversationStore != null) {
             conversationStore.load(sessionId)
         } else emptyList()
@@ -548,14 +554,14 @@ class OrchestratorAgent(
                     }
                     conversationStore.compress(sessionId, summarizer)
                 }
-                return answer
+                return AnswerResult(answer, "KOOG", true)
             }
             if (index < fallbackModels.lastIndex) {
                 log.warn("Retrying with {}", fallbackModels[index + 1].id)
                 continue
             }
             log.error("All models failed: {}", ex.message)
-            return "검색 중 오류가 발생했습니다: ${ex.message}"
+            return AnswerResult("검색 중 오류가 발생했습니다: ${ex.message}", "ERROR", false)
         }
         error("unreachable")
     }

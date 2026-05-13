@@ -13,6 +13,8 @@ data class FeedbackEntry(
     val requeryVec: String? = null,
     val requeryAnswer: String? = null,
     val stage: Int = 0,
+    val responseType: String? = null,
+    val isRag: Boolean = false,
 )
 
 class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
@@ -33,7 +35,9 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
                     requery_vec TEXT,
                     requery_answer TEXT,
                     stage INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL
+                    created_at INTEGER NOT NULL,
+                    response_type TEXT,
+                    is_rag INTEGER NOT NULL DEFAULT 0
                 )
             """.trimIndent())
         }
@@ -42,21 +46,24 @@ class FeedbackStore(dbPath: String = ".wiki/feedback.db") {
     @Synchronized
     fun save(ts: String, entry: FeedbackEntry) {
         conn.prepareStatement("""
-            INSERT INTO feedback(ts,query,answer,used_tools,created_at)
-            VALUES(?,?,?,?,?)
+            INSERT INTO feedback(ts,query,answer,used_tools,created_at,response_type,is_rag)
+            VALUES(?,?,?,?,?,?,?)
             ON CONFLICT(ts) DO UPDATE SET
                 query=excluded.query,
                 answer=excluded.answer,
-                used_tools=excluded.used_tools
+                used_tools=excluded.used_tools,
+                response_type=excluded.response_type,
+                is_rag=excluded.is_rag
         """.trimIndent()).use { ps ->
             ps.setString(1, ts)
             ps.setString(2, entry.query)
             ps.setString(3, entry.answer)
             ps.setString(4, entry.usedTools.joinToString(","))
             ps.setLong(5, System.currentTimeMillis())
+            ps.setString(6, entry.responseType)
+            ps.setInt(7, if (entry.isRag) 1 else 0)
             ps.executeUpdate()
         }
-        // DB 성공 후 메모리 갱신 — 기존 reaction/requery 필드 보존
         cache.merge(ts, entry) { existing, new ->
             new.copy(
                 reaction = existing.reaction,
