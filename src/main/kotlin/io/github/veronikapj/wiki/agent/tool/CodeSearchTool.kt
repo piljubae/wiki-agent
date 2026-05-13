@@ -166,6 +166,7 @@ class CodeSearchTool(
      * - 스킴/딥링크 → URL 패턴
      * - PascalCase  → 클래스·인터페이스명 직접 매칭
      * - camelCase   → 함수·변수명 직접 매칭
+     * - snake_case  → 식별자 직접 매칭
      * - @Annotation → 어노테이션 패턴
      * - SCREAMING_CASE → 상수명
      */
@@ -183,11 +184,21 @@ class CodeSearchTool(
         // camelCase 식별자 (소문자 시작, 중간 대문자 포함)
         Regex("[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]+").findAll(query).map { it.value }.forEach { patterns += it }
 
+        // snake_case 식별자 (소문자+언더스코어, 3자 이상)
+        Regex("[a-z0-9_]{2,}_[a-z0-9_]+").findAll(query).map { it.value }.forEach { patterns += it }
+
         // 어노테이션 (@Xxx)
         Regex("@[A-Z][a-zA-Z0-9]+").findAll(query).map { it.value }.forEach { patterns += it }
 
         // SCREAMING_CASE 상수 (대문자+언더스코어, 3자 이상)
         Regex("[A-Z][A-Z0-9_]{2,}").findAll(query).map { it.value }.forEach { patterns += it }
+
+        // 단일 단어가 식별자처럼 보일 때 (영문+숫자 4자 이상)
+        if (patterns.isEmpty()) {
+            Regex("[a-zA-Z][a-zA-Z0-9]{3,}").findAll(query).map { it.value }
+                .filterNot { it.lowercase() in setOf("query", "search", "find", "where", "what", "how", "list") }
+                .forEach { patterns += it }
+        }
 
         return patterns.distinct().filter { it.length >= 3 }
     }

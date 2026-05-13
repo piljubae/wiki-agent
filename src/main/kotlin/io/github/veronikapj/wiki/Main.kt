@@ -205,12 +205,6 @@ fun main() {
         val codeLlmExpandClient = LlmExpandClient(codeLlmFn)
         val githubCodeClient = GitHubCodeClient(githubToken)
 
-        prIndexAgent = PrIndexAgent(
-            codeClient = githubCodeClient,
-            knowledgeStore = knowledgeStore,
-            llmFn = codeLlmFn,
-            chromaClient = codeChromaClient,
-        )
         val sharedGoogleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
         // 인덱싱/검색 API 키 분리 — 미설정 시 공용 키 fallback
         val indexApiKey = SecretLoader.resolveNullable("GOOGLE_INDEX_API_KEY", config.github.codeSearch.indexApiKey)
@@ -231,6 +225,14 @@ fun main() {
         if (indexEmbeddingFn == null) log.warn("Code indexing: no embedding function — using ChromaDB default embedding")
         if (searchEmbeddingFn == null) log.warn("Code search: no embedding function — using BM25 + grep only")
 
+        prIndexAgent = PrIndexAgent(
+            codeClient = githubCodeClient,
+            knowledgeStore = knowledgeStore,
+            llmFn = codeLlmFn,
+            chromaClient = codeChromaClient,
+            embeddingFn = indexEmbeddingFn,
+        )
+
         // Step 3: BM25 인덱스 — localRepoPath 설정 시 활성화
         val bm25Index = if (config.github.codeSearch.localRepoPath != null) {
             BM25Index().also { log.info("BM25 hybrid search enabled") }
@@ -247,7 +249,7 @@ fun main() {
             localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
             bm25Index = bm25Index,
         )
-        prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker)
+        prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker, embeddingFn = searchEmbeddingFn)
         codeSearchTool = CodeSearchTool(
             chromaClient = codeChromaClient,
             llmExpandClient = codeLlmExpandClient,

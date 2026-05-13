@@ -11,6 +11,7 @@ class PrHistoryTool(
     private val llmExpandClient: LlmExpandClient?,
     private val tracker: SourceTracker? = null,
     private val collectionName: String = "code_prs",
+    private val embeddingFn: (suspend (String) -> List<Float>)? = null,
 ) {
 
     @Tool("prHistory")
@@ -28,7 +29,17 @@ class PrHistoryTool(
         runCatching {
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
-            val results = chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 5)
+            
+            val queryEmbeddings = embeddingFn?.let { fn ->
+                runCatching { listOf(fn(expandedQuery)) }.getOrNull()
+            }
+            
+            val results = chromaClient.query(
+                collectionId = collectionId,
+                queryTexts = if (queryEmbeddings == null) listOf(expandedQuery) else null,
+                queryEmbeddings = queryEmbeddings,
+                nResults = 5
+            )
 
             if (results.isEmpty()) return@runBlocking "관련 PR 이력을 찾을 수 없습니다."
 

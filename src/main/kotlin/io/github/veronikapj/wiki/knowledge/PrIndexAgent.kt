@@ -43,7 +43,7 @@ class PrIndexAgent(
             val embeddings = embeddingFn?.let { fn ->
                 runCatching { listOf(fn(document)) }.getOrNull()
             }
-            chromaClient.addDocuments(
+            chromaClient.upsertDocuments(
                 collectionId = collectionId,
                 ids = listOf("${repo.replace("/", "-")}-pr-${prNumber}"),
                 documents = listOf(document),
