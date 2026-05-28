@@ -12,7 +12,6 @@ import io.github.veronikapj.wiki.github.GitHubWikiClient
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.agent.tool.SourceTracker
-import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.knowledge.IngestAgent
 import io.github.veronikapj.wiki.knowledge.KnowledgeStore
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
@@ -27,8 +26,6 @@ import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.GoogleEmbeddingClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
-import io.github.veronikapj.wiki.rag.VectorIndexAgent
-import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.github.veronikapj.wiki.agent.QueryRewriter
 import io.github.veronikapj.wiki.slack.SlackBotGateway
 import io.github.veronikapj.wiki.slack.SlackConfigHandler
@@ -131,52 +128,12 @@ fun main() {
         log.info("Confluence disabled (baseUrl or token not set)")
     }
 
-    // RAG 설정 (VectorSearchAgent를 ConfluenceSearchAgent에 주입하기 위해 먼저 생성)
-    var vectorSearchTool: VectorSearchTool? = null
-    var vectorSearchAgent: VectorSearchAgent? = null
-    var vectorIndexAgent: VectorIndexAgent? = null
-    var wikiChromaClient: ChromaClient? = null
-
-    if (config.rag.enabled) {
-        val chromaClient = ChromaClient(config.rag.chromaUrl)
-        wikiChromaClient = chromaClient
-        val googleApiKey = SecretLoader.resolveNullable("GOOGLE_API_KEY", config.rag.googleApiKey)
-        val llmFn: suspend (String) -> String = { userPrompt ->
-            executor.execute(
-                prompt("llm") { user(userPrompt) }, model
-            ).joinToString("") { it.content }
-        }
-        val llmExpandClient = LlmExpandClient(llmFn)
-        val isGoogleEmbedding = config.rag.embeddingMode == EmbeddingMode.GOOGLE_EMBEDDING
-        // 검색용: GOOGLE_API_KEY (소량, 무료 티어 가능)
-        val googleEmbeddingClient = if (isGoogleEmbedding)
-            GoogleEmbeddingClient(requireNotNull(googleApiKey) { "GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
-        else null
-        // 인덱싱용: GOOGLE_INDEX_API_KEY → fallback GOOGLE_API_KEY (대량 호출, 유료 키 권장)
-        val googleIndexApiKey = SecretLoader.resolveNullable("GOOGLE_INDEX_API_KEY", config.rag.indexApiKey) ?: googleApiKey
-        val googleIndexEmbeddingClient = if (isGoogleEmbedding)
-            GoogleEmbeddingClient(requireNotNull(googleIndexApiKey) { "GOOGLE_INDEX_API_KEY or GOOGLE_API_KEY required for GOOGLE_EMBEDDING mode" })
-        else null
-
-        vectorSearchAgent = VectorSearchAgent(chromaClient, llmExpandClient, googleEmbeddingClient, config.rag)
-        vectorSearchTool = VectorSearchTool(vectorSearchAgent, sourceTracker)
-        if (confluenceClient != null) {
-            vectorIndexAgent = VectorIndexAgent(
-                confluenceClient, chromaClient, llmExpandClient, googleIndexEmbeddingClient, config.rag, config.confluence.spaces
-            )
-        } else {
-            log.info("RAG indexing disabled (Confluence not configured)")
-        }
-        log.info("RAG enabled (mode={})", config.rag.embeddingMode)
-    }
-
-    // Confluence 검색 에이전트 (RAG 병렬 fallback 포함)
+    // Confluence 검색 에이전트
     var confluenceTool: ConfluenceTool? = null
     if (confluenceClient != null) {
         val confluenceSearchAgent = ConfluenceSearchAgent(
             confluenceClient = confluenceClient,
             spaces = config.confluence.spaces,
-            vectorSearchAgent = vectorSearchAgent,
         )
         confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
     }
@@ -286,7 +243,6 @@ fun main() {
         knowledgeTool = knowledgeTool,
         confluenceTool = confluenceTool,
         githubWikiTool = githubWikiTool,
-        vectorSearchTool = vectorSearchTool,
         prHistoryTool = prHistoryTool,
         codeSearchTool = codeSearchTool,
         codeFlowTool = codeFlowTool,
@@ -398,9 +354,7 @@ fun main() {
         val configHandler = SlackConfigHandler(
             config = config,
             persistOnChange = true,
-            onReindex = vectorIndexAgent?.let { agent -> {
-                agent.indexAll().also { gatewayRef.get()?.lastConfluenceIndexedAt = Instant.now() }
-            } },
+            onReindex = null,
             onIngest = { url -> ingestAgent.ingestUrl(url) },
             onIngestWiki = { ingestAgent.ingestLocalWikiDocs() },
             onLint = { lintAgent.lint() },
@@ -411,10 +365,7 @@ fun main() {
             onReindexPr = prIndexAgent?.let { agent -> {
                 agent.indexPrsBulk(config.github.codeRepos, limit = 1000).also { gatewayRef.get()?.lastPrIndexedAt = Instant.now() }
             } },
-            onGetIndexCount = wikiChromaClient?.let { chroma -> {
-                val colId = chroma.getOrCreateCollection("wiki-pages")
-                chroma.count(colId)
-            } },
+            onGetIndexCount = null,
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->

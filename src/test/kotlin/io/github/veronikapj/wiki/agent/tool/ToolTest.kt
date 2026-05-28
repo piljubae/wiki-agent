@@ -2,7 +2,6 @@ package io.github.veronikapj.wiki.agent.tool
 
 import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
-import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -28,15 +27,6 @@ class ToolTest {
         val tool = ConfluenceTool(searchAgent)
         val result = tool.confluenceSearchSuspend("배포 프로세스")
         assertEquals("Confluence 결과", result)
-    }
-
-    @Test
-    fun `VectorSearchTool delegates to VectorSearchAgent`() = runTest {
-        val mockAgent = mockk<VectorSearchAgent>()
-        coEvery { mockAgent.search("배포") } returns "RAG 결과"
-        val tool = VectorSearchTool(mockAgent)
-        val result = tool.vectorSearch("배포")
-        assertTrue(result.contains("RAG"))
     }
 
     @Test

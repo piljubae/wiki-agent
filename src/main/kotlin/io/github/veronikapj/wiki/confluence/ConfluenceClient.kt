@@ -55,7 +55,7 @@ class ConfluenceClient(
             titleClauses.add("title ~ \"${escapeCql(s)}\"")
         }
         val cql = URLEncoder.encode("(${titleClauses.joinToString(" OR ")}) AND type = page$spaceCql$dateCql", "UTF-8")
-        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit"
     }
 
     fun buildTextCqlSearchUrl(
@@ -76,7 +76,7 @@ class ConfluenceClient(
         }
 
         val cql = URLEncoder.encode("(${textClauses.joinToString(" OR ")}) AND type = page$spaceCql$dateCql", "UTF-8")
-        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit"
     }
 
     private fun buildDateCql(dateAfter: String?, dateBefore: String?): String = buildString {
@@ -100,7 +100,7 @@ class ConfluenceClient(
             " AND space IN (${spaces.joinToString(",") { "\"$it\"" }})"
         else ""
         val cql = URLEncoder.encode("type = page$spaceCql ORDER BY lastModified DESC", "UTF-8")
-        val url = "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+        val url = "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit"
         log.info("Listing pages: {}", url)
         val response = httpClient.get(url) {
             header("Authorization", "Basic $token")
@@ -118,7 +118,7 @@ class ConfluenceClient(
         var start = 0
         while (result.size < maxPages) {
             val cql = URLEncoder.encode("type = page$spaceCql ORDER BY lastModified DESC", "UTF-8")
-            val url = "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$pageSize&start=$start&expand=content"
+            val url = "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$pageSize&start=$start"
             val response = runCatching {
                 httpClient.get(url) {
                     header("Authorization", "Basic $token")
@@ -211,7 +211,7 @@ class ConfluenceClient(
         val op = if (useOr) "OR" else "AND"
         val clauses = keywords.joinToString(" $op ") { "text ~ \"${escapeCql(it)}\"" }
         val cql = URLEncoder.encode("($clauses) AND type = page$spaceCql$dateCql", "UTF-8")
-        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit&expand=content"
+        return "$baseUrl/wiki/rest/api/search?cql=$cql&limit=$limit"
     }
 
     suspend fun searchByKeywords(
@@ -330,9 +330,5 @@ class ConfluenceClient(
         private val log = LoggerFactory.getLogger(ConfluenceClient::class.java)
         private const val MAX_TEXT_CLAUSES = 5
         private const val MAX_BODY_LENGTH = 200_000  // ~200KB: 이 이상은 regex StackOverflow 방지용 trim
-        private val STOPWORDS = setOf(
-            "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
-            "그", "저", "이것", "저것", "어떻게", "무엇", "하는", "하는가", "합니다",
-        )
     }
 }

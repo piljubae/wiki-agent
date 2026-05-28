@@ -21,7 +21,6 @@ import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.agent.tool.CodeFlowTool
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
-import io.github.veronikapj.wiki.agent.tool.VectorSearchTool
 import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.context.ConversationStore
@@ -36,7 +35,6 @@ class OrchestratorAgent(
     private val knowledgeTool: KnowledgeTool? = null,
     private val confluenceTool: ConfluenceTool? = null,
     private val githubWikiTool: GitHubWikiTool? = null,
-    private val vectorSearchTool: VectorSearchTool? = null,
     private val prHistoryTool: PrHistoryTool? = null,
     private val codeSearchTool: CodeSearchTool? = null,
     private val codeFlowTool: CodeFlowTool? = null,
@@ -50,7 +48,7 @@ class OrchestratorAgent(
     private val defaultPersona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
 ) {
     init {
-        require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || vectorSearchTool != null || prHistoryTool != null || codeSearchTool != null || codeFlowTool != null) {
+        require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || prHistoryTool != null || codeSearchTool != null || codeFlowTool != null) {
             "At least one tool must be enabled"
         }
     }
@@ -102,7 +100,6 @@ class OrchestratorAgent(
             knowledgeTool?.let { "knowledgeSearch" },
             confluenceTool?.let { "confluenceSearch" },
             githubWikiTool?.let { "githubWikiSearch" },
-            vectorSearchTool?.let { "vectorSearch" },
             prHistoryTool?.let { "prHistory" },
             codeSearchTool?.let { "codeSearch" },
             // codeStats는 파일 통계 전용 — 재검색(forceAllTools) 시 제외
@@ -505,7 +502,6 @@ class OrchestratorAgent(
                     "knowledgeSearch" -> knowledgeTool?.knowledgeSearch(question)
                     "confluenceSearch" -> confluenceTool?.confluenceSearch(question)
                     "githubWikiSearch" -> githubWikiTool?.githubWikiSearch(question)
-                    "vectorSearch" -> vectorSearchTool?.vectorSearch(question)
                     "prHistory" -> prHistoryTool?.prHistory(question)
                     "codeSearch" -> codeSearchTool?.codeSearch(question)
                     "findCallers" -> codeFlowTool?.findCallers(question)
@@ -581,7 +577,6 @@ class OrchestratorAgent(
                 if (knowledgeTool != null) "로컬 지식베이스" else null,
                 if (confluenceTool != null) "Confluence 위키" else null,
                 if (githubWikiTool != null) "GitHub Wiki" else null,
-                if (vectorSearchTool != null) "벡터 검색(RAG)" else null,
                 if (prHistoryTool != null) "PR 이력 검색" else null,
                 if (codeSearchTool != null) "코드 검색" else null,
                 if (codeFlowTool != null) "코드 흐름 분석" else null,
@@ -601,9 +596,6 @@ class OrchestratorAgent(
 
             if (knowledgeTool != null) {
                 appendLine("먼저 knowledgeSearch로 로컬 지식베이스를 검색하세요. 결과가 부족하면 다른 도구를 사용하세요.")
-            }
-            if (confluenceTool != null && vectorSearchTool != null) {
-                appendLine("confluenceSearch로 먼저 검색하고, 결과가 부족하면 vectorSearch도 사용하세요.")
             }
             if (githubWikiTool != null) {
                 appendLine("기술 문서나 코드 관련 질문은 githubWikiSearch도 사용하세요.")
@@ -657,7 +649,6 @@ class OrchestratorAgent(
                 if (knowledgeTool != null) tool(knowledgeTool::knowledgeSearch)
                 if (confluenceTool != null) tool(confluenceTool::confluenceSearch)
                 if (githubWikiTool != null) tool(githubWikiTool::githubWikiSearch)
-                if (vectorSearchTool != null) tool(vectorSearchTool::vectorSearch)
                 if (prHistoryTool != null) tool(prHistoryTool::prHistory)
                 if (codeSearchTool != null) tool(codeSearchTool::codeSearch)
                 if (codeSearchTool != null) tool(codeSearchTool::codeStats)
