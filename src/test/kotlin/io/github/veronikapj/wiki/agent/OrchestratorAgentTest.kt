@@ -1,22 +1,29 @@
 package io.github.veronikapj.wiki.agent
 
+import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.Prompt
+import ai.koog.prompt.llm.Message
+import ai.koog.prompt.tools.ToolDescriptor
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
-import io.github.veronikapj.wiki.config.ModelConfig
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeStore
-import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertContains
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
+import kotlin.test.*
+
+class MockExecutor : MultiLLMPromptExecutor {
+    override fun execute(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): List<Message.Response> {
+        return listOf(Message.Response(ai.koog.prompt.llm.Content("text", "mock-response")))
+    }
+}
 
 class OrchestratorAgentTest {
+
+    private val mockExecutor = MockExecutor()
 
     @Test
     fun `build creates agent with confluenceTool only when rag disabled`() {
@@ -24,7 +31,7 @@ class OrchestratorAgentTest {
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
             vectorSearchTool = null,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         assertNotNull(agent)
     }
@@ -35,7 +42,7 @@ class OrchestratorAgentTest {
         val agent = OrchestratorAgent(
             confluenceTool = null,
             githubWikiTool = githubWikiTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         assertNotNull(agent)
     }
@@ -45,7 +52,7 @@ class OrchestratorAgentTest {
         val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         assertNotNull(agent)
     }
@@ -58,7 +65,7 @@ class OrchestratorAgentTest {
         )
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
             conversationStore = store,
         )
         assertNotNull(agent)
@@ -71,7 +78,7 @@ class OrchestratorAgentTest {
                 confluenceTool = null,
                 githubWikiTool = null,
                 vectorSearchTool = null,
-                executor = LLMExecutorBuilder.build(ModelConfig()),
+                executor = mockExecutor,
             )
         }
     }
@@ -88,7 +95,7 @@ class OrchestratorAgentTest {
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,
             confluenceTool = confluenceTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         val result = agent.executeParallel("배포")
         assertContains(result!!, "[지식베이스]")
@@ -108,7 +115,7 @@ class OrchestratorAgentTest {
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,
             confluenceTool = confluenceTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         val result = agent.executeParallel("배포")
         assertContains(result!!, "배포 가이드")
@@ -127,7 +134,7 @@ class OrchestratorAgentTest {
         val agent = OrchestratorAgent(
             knowledgeTool = knowledgeTool,
             confluenceTool = confluenceTool,
-            executor = LLMExecutorBuilder.build(ModelConfig()),
+            executor = mockExecutor,
         )
         val result = agent.executeParallel("없는내용")
         assertNull(result)
@@ -136,11 +143,9 @@ class OrchestratorAgentTest {
     @Test
     fun `routerExecutor defaults to executor when not specified`() {
         val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
-        val executor = LLMExecutorBuilder.build(ModelConfig())
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
-            executor = executor,
-            // routerExecutor not specified — should default to executor
+            executor = mockExecutor,
         )
         assertNotNull(agent)
     }
@@ -148,12 +153,10 @@ class OrchestratorAgentTest {
     @Test
     fun `routerExecutor can be set independently from executor`() {
         val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
-        val executor = LLMExecutorBuilder.build(ModelConfig())
-        val routerExecutor = LLMExecutorBuilder.build(ModelConfig())
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
-            executor = executor,
-            routerExecutor = routerExecutor,
+            executor = mockExecutor,
+            routerExecutor = mockExecutor,
         )
         assertNotNull(agent)
     }

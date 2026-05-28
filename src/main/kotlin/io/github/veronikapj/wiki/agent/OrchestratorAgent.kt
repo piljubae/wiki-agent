@@ -79,6 +79,7 @@ class OrchestratorAgent(
 
     // In-memory history fallback when no conversationStore/sessionId
     private val history = ArrayDeque<Pair<String, String>>()
+    private val basePersona = runCatching { java.io.File(".wiki/base-persona.md").readText() }.getOrDefault("")
 
     private suspend fun answerWithManualLoop(
         question: String,
@@ -128,6 +129,7 @@ class OrchestratorAgent(
                 appendLine()
             }
             appendLine("당신은 검색 라우터입니다. 사용자의 질문 의도를 파악해 Confluence 검색에 최적화된 검색어를 생성합니다.")
+            appendLine(basePersona)
             appendLine("사용 가능한 도구: ${availableTools.joinToString(", ")}")
             appendLine()
             val toolOptions = listOfNotNull(
