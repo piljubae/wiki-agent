@@ -27,6 +27,16 @@ class PrIndexAgent(
     )
 
     suspend fun indexPr(repo: String, prNumber: Int): String {
+        val prId = "${repo.replace("/", "-")}-pr-${prNumber}"
+        if (chromaClient != null) {
+            val collectionId = chromaClient.getOrCreateCollection(collectionName)
+            val existing = chromaClient.getExistingIds(collectionId, ids = listOf(prId))
+            if (existing.isNotEmpty()) {
+                log.info("PR #{} already indexed, skipping LLM & DB update", prNumber)
+                return "PR #${prNumber} 이미 인덱싱됨."
+            }
+        }
+
         val pr = codeClient.fetchPr(repo, prNumber)
             ?: return "PR #${prNumber}를 가져올 수 없습니다."
         val diff = codeClient.fetchPrDiff(repo, prNumber)
@@ -51,7 +61,7 @@ class PrIndexAgent(
             } else {
                 chromaClient.upsertDocuments(
                     collectionId = collectionId,
-                    ids = listOf("${repo.replace("/", "-")}-pr-${prNumber}"),
+                    ids = listOf(prId),
                     documents = listOf(document),
                     embeddings = embeddings,
                     metadatas = listOf(mapOf(

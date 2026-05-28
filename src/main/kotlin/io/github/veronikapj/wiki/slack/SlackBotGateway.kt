@@ -543,7 +543,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex-code")
-                if (!result.contains("비활성화")) lastCodeIndexedAt = Instant.now()
+                if (!result.contains("비활성화") && !result.contains("오류") && !result.contains("실패")) lastCodeIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()
@@ -553,7 +553,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex-pr")
-                if (!result.contains("비활성화")) lastPrIndexedAt = Instant.now()
+                if (!result.contains("비활성화") && !result.contains("오류") && !result.contains("실패")) lastPrIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()
@@ -563,7 +563,7 @@ class SlackBotGateway(
             val userId = req.payload.user.id
             messageExecutor.submit {
                 val result = configHandler.handle("/wiki reindex")
-                if (!result.contains("비활성화")) lastConfluenceIndexedAt = Instant.now()
+                if (!result.contains("비활성화") && !result.contains("오류") && !result.contains("실패")) lastConfluenceIndexedAt = Instant.now()
                 slackClient.chatPostMessage { it.channel(userId).text(result) }
             }
             ctx.ack()

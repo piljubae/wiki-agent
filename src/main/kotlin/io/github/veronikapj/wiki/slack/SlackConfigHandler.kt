@@ -55,7 +55,6 @@ class SlackConfigHandler(
 
     private fun triggerReindex(): String {
         val indexer = onReindex ?: return "RAG가 비활성화 상태입니다. config.yml에서 rag.enabled=true로 설정하세요."
-        // 비동기 실행 — 슬래시 커맨드 3초 타임아웃 방지
         isIndexing = true
         Thread {
             runCatching {
