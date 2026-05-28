@@ -52,8 +52,6 @@ class SlackBotGateway(
         set(value) { field = value; saveStatusFile("lastCodeIndexedAt", value) }
     @Volatile var lastPrIndexedAt: Instant? = loadStatusFile("lastPrIndexedAt")
         set(value) { field = value; saveStatusFile("lastPrIndexedAt", value) }
-    @Volatile var lastConfluenceIndexedAt: Instant? = loadStatusFile("lastConfluenceIndexedAt")
-        set(value) { field = value; saveStatusFile("lastConfluenceIndexedAt", value) }
 
 
     private fun loadStatusFile(key: String): Instant? = runCatching {
@@ -434,7 +432,6 @@ class SlackBotGateway(
 
         val codeStatus = lastCodeIndexedAt?.let { fmt.format(it) } ?: "미실행"
         val prStatus = lastPrIndexedAt?.let { fmt.format(it) } ?: "미실행"
-        val confluenceStatus = lastConfluenceIndexedAt?.let { fmt.format(it) } ?: "미실행"
         val spaces = projectMemory?.load()
             ?.lines()
             ?.firstOrNull { it.contains("검색 스페이스") }
@@ -454,7 +451,6 @@ class SlackBotGateway(
                             "*상태*\n" +
                             "코드 인덱싱: `$codeStatus`\n" +
                             "PR 인덱싱: `$prStatus`\n" +
-                            "Confluence 인덱싱: `$confluenceStatus`\n" +
                             "검색 스페이스: `$spaces`"
                         ))
                     },
@@ -553,15 +549,6 @@ class SlackBotGateway(
             ctx.ack()
         }
 
-        app.blockAction("home_reindex") { req, ctx ->
-            val userId = req.payload.user.id
-            messageExecutor.submit {
-                val result = configHandler.handle("/wiki reindex")
-                if (!result.contains("비활성화") && !result.contains("오류") && !result.contains("실패")) lastConfluenceIndexedAt = Instant.now()
-                slackClient.chatPostMessage { it.channel(userId).text(result) }
-            }
-            ctx.ack()
-        }
 
         app.blockAction("home_memory_show") { req, ctx ->
             val userId = req.payload.user.id
