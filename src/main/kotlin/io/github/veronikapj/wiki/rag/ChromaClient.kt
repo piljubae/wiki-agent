@@ -9,6 +9,11 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
 data class ChromaQueryResult(
@@ -36,7 +41,7 @@ class ChromaClient(
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
-        return Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(response)?.groupValues?.get(1)
+        return jsonParser.parseToJsonElement(response).jsonObject["id"]?.jsonPrimitive?.content
             ?: error("Cannot parse collection id from: $response")
     }
 
@@ -64,9 +69,8 @@ class ChromaClient(
             contentType(ContentType.Application.Json)
             setBody(body)
         }.bodyAsText()
-        val matched = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(response)
-            ?.groupValues?.get(1) ?: return emptySet()
-        return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toHashSet()
+        val root = runCatching { jsonParser.parseToJsonElement(response).jsonObject }.getOrElse { return emptySet() }
+        return root["ids"]?.jsonArray?.map { it.jsonPrimitive.content }?.toHashSet() ?: emptySet()
     }
 
     /**
@@ -88,23 +92,13 @@ class ChromaClient(
     }
 
     internal fun parseIdsWithLastModified(json: String): Map<String, String> {
-        // ids: ["id1", "id2", ...]  — /get은 단일 배열
-        val idsSection = Regex("\"ids\"\\s*:\\s*\\[([^]]*)]").find(json)
-            ?.groupValues?.get(1) ?: return emptyMap()
-        val idList = Regex("\"([^\"]+)\"").findAll(idsSection)
-            .map { it.groupValues[1] }.toList()
+        val root = runCatching { jsonParser.parseToJsonElement(json).jsonObject }.getOrElse { return emptyMap() }
+        val idList = root["ids"]?.jsonArray?.map { it.jsonPrimitive.content } ?: return emptyMap()
         if (idList.isEmpty()) return emptyMap()
-
-        // metadatas: [{...}, {...}]
-        val metaSection = Regex("\"metadatas\"\\s*:\\s*\\[(.+?)](?=\\s*[,}])", RegexOption.DOT_MATCHES_ALL)
-            .find(json)?.groupValues?.get(1) ?: return emptyMap()
-        val metaList = Regex("\\{([^}]*)}").findAll(metaSection).map { m ->
-            Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").findAll(m.value)
-                .associate { it.groupValues[1] to it.groupValues[2] }
-        }.toList()
-
+        val metaList = root["metadatas"]?.jsonArray ?: return emptyMap()
         return idList.mapIndexedNotNull { i, id ->
-            val lastMod = metaList.getOrNull(i)?.get("lastModified") ?: return@mapIndexedNotNull null
+            val lastMod = metaList.getOrNull(i)?.jsonObject?.get("lastModified")?.jsonPrimitive?.content
+                ?: return@mapIndexedNotNull null
             id to lastMod
         }.toMap()
     }
@@ -133,13 +127,18 @@ class ChromaClient(
     }
 
     internal fun parseGetIdsResponse(json: String): List<String> {
-        val matched = Regex("\"ids\"\\s*:\\s*\\[\\[([^]]*)]").find(json)?.groupValues?.get(1)
-        if (matched == null) {
+        val root = runCatching { jsonParser.parseToJsonElement(json).jsonObject }.getOrElse {
             if (json.isNotBlank()) log.warn("parseGetIdsResponse: unexpected response shape — {}", json.take(200))
             return emptyList()
         }
-        if (matched.isBlank()) return emptyList()
-        return Regex("\"([^\"]+)\"").findAll(matched).map { it.groupValues[1] }.toList()
+        // ChromaDB /get with where filter returns nested [[...]] in v2
+        val innerArr = root["ids"]?.jsonArray?.getOrNull(0)
+            ?.let { runCatching { it.jsonArray }.getOrNull() }
+        if (innerArr == null) {
+            if (json.isNotBlank()) log.warn("parseGetIdsResponse: unexpected response shape — {}", json.take(200))
+            return emptyList()
+        }
+        return innerArr.map { it.jsonPrimitive.content }
     }
 
     suspend fun upsertDocuments(
@@ -221,22 +220,19 @@ class ChromaClient(
     }
 
     internal fun parseQueryResults(json: String): List<ChromaQueryResult> {
-        val ids = Regex("\"ids\"\\s*:\\s*\\[\\[([^]]+)]]").find(json)
-            ?.groupValues?.get(1)?.split(",")
-            ?.map { it.trim().trim('"') } ?: return emptyList()
-        val docs = Regex("\"documents\"\\s*:\\s*\\[\\[([^]]+)]]").find(json)
-            ?.groupValues?.get(1)?.split(Regex(",(?=\")"))
-            ?.map { it.trim().trim('"') } ?: emptyList()
-        val distances = Regex("\"distances\"\\s*:\\s*\\[\\[([^]]+)]]").find(json)
-            ?.groupValues?.get(1)?.split(",")
-            ?.mapNotNull { it.trim().toFloatOrNull() } ?: emptyList()
+        val root = jsonParser.parseToJsonElement(json).jsonObject
+        // /query returns nested arrays [[...]] (one per query text)
+        fun nested(key: String) = root[key]?.jsonArray?.getOrNull(0)
+            ?.let { runCatching { it.jsonArray }.getOrNull() }
 
-        val metaBlock = Regex("\"metadatas\"\\s*:\\s*\\[\\[(.+?)]]", RegexOption.DOT_MATCHES_ALL).find(json)
-            ?.groupValues?.get(1) ?: ""
-        val metas = Regex("\\{([^}]*)\\}").findAll(metaBlock).map { m ->
-            Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").findAll(m.value)
-                .associate { it.groupValues[1] to it.groupValues[2] }
-        }.toList()
+        val ids = nested("ids")?.map { it.jsonPrimitive.content } ?: return emptyList()
+        val docs = nested("documents")?.map { it.jsonPrimitive.content } ?: emptyList()
+        val distances = nested("distances")?.mapNotNull { it.jsonPrimitive.floatOrNull } ?: emptyList()
+        val metas = nested("metadatas")?.map { metaEl ->
+            metaEl.jsonObject.entries.associate { (k, v) ->
+                k to runCatching { v.jsonPrimitive.content }.getOrElse { "" }
+            }
+        } ?: emptyList()
 
         return ids.mapIndexed { i, id ->
             ChromaQueryResult(
@@ -259,6 +255,7 @@ class ChromaClient(
 
     companion object {
         private val log = LoggerFactory.getLogger(ChromaClient::class.java)
+        private val jsonParser = Json { ignoreUnknownKeys = true; isLenient = true }
     }
 }
 

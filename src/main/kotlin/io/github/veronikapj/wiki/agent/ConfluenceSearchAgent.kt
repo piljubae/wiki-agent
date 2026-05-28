@@ -13,13 +13,46 @@ class ConfluenceSearchAgent(
     private val spaces: List<String>,
     private val vectorSearchAgent: VectorSearchAgent? = null,
     private val sufficientThreshold: Int = 3,
+    private val ragTimeoutMs: Long = 3_000L,
 ) {
+    private data class CacheEntry(
+        val results: List<SearchResult>,
+        val createdAt: Long = System.currentTimeMillis(),
+    ) {
+        fun isExpired() = System.currentTimeMillis() - createdAt > TTL_MS
+    }
+
+    private val queryCache = object : LinkedHashMap<String, CacheEntry>(CACHE_MAX_SIZE + 1, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, CacheEntry>) = size > CACHE_MAX_SIZE
+    }
+
+    @Synchronized
+    private fun getCached(key: String): List<SearchResult>? {
+        val entry = queryCache[key] ?: return null
+        if (entry.isExpired()) {
+            queryCache.remove(key)
+            return null
+        }
+        return entry.results
+    }
+
+    @Synchronized
+    private fun putCache(key: String, results: List<SearchResult>) {
+        queryCache[key] = CacheEntry(results)
+    }
+
     suspend fun searchStructured(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
         originalQuestion: String = "",
     ): List<SearchResult> {
         val cleaned = cleanQuery(query)
+        val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore|$originalQuestion"
+        getCached(cacheKey)?.let {
+            log.info("Cache hit: query='{}'", cleaned)
+            return it
+        }
+
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
             query, cleaned, synonyms, spaces, dateAfter, dateBefore)
 
@@ -31,8 +64,12 @@ class ConfluenceSearchAgent(
         if (titleResults.size >= sufficientThreshold) {
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
             log.info("Title results: {}", titleResults.take(5).joinToString { "\"${it.title}\"" })
-            val earlyResults = titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
-            return reRankByOriginalQuestion(earlyResults, originalQuestion)
+            val earlyResults = reRankByOriginalQuestion(
+                titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) },
+                originalQuestion,
+            )
+            putCache(cacheKey, earlyResults)
+            return earlyResults
         }
 
         // 2단계: 부족 → 병렬로 text + 스페이스 확장 + RAG
@@ -48,10 +85,10 @@ class ConfluenceSearchAgent(
             }
             val ragDeferred = async {
                 if (vectorSearchAgent != null) {
-                    withTimeoutOrNull(RAG_TIMEOUT_MS) {
+                    withTimeoutOrNull(ragTimeoutMs) {
                         runCatching { vectorSearchAgent.searchStructured(query, topK) }.getOrElse { emptyList() }
                     } ?: run {
-                        log.warn("RAG search timed out after {}ms", RAG_TIMEOUT_MS)
+                        log.warn("RAG search timed out after {}ms", ragTimeoutMs)
                         emptyList()
                     }
                 } else emptyList()
@@ -59,24 +96,33 @@ class ConfluenceSearchAgent(
             Triple(textDeferred.await(), expandedDeferred.await(), ragDeferred.await())
         }
 
-        // 3-1단계: keyword fallback (text search 0건 시) — AND/OR는 의도에 따라 결정
+        // 3-1단계: keyword fallback (text search 0건 시) — AND 먼저, 0건이면 OR 재시도
         val keywordResults = if (textResults.isEmpty()) {
             val keywords = extractSignificantKeywords(cleaned)
             if (keywords.size >= 2) {
-                val useOr = isConversationalQuery(keywords, cleaned)
-                log.info("Text search empty, trying keyword {} fallback: {}", if (useOr) "OR" else "AND", keywords)
-                runCatching {
-                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = useOr)
+                log.info("Text search empty, trying keyword AND fallback: {}", keywords)
+                val andResults = runCatching {
+                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = false)
                 }.getOrElse { emptyList() }
+                if (andResults.isNotEmpty()) {
+                    andResults
+                } else {
+                    log.info("AND fallback empty, retrying with OR: {}", keywords)
+                    runCatching {
+                        confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = true)
+                    }.getOrElse { emptyList() }
+                }
             } else emptyList()
         } else emptyList()
         log.info("Keyword fallback: {} results", keywordResults.size)
 
         // 3단계: 합산 + 중복 제거 + 랭킹
-        return reRankByOriginalQuestion(
+        val result = reRankByOriginalQuestion(
             combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK),
             originalQuestion,
         )
+        putCache(cacheKey, result)
+        return result
     }
 
     private fun reRankByOriginalQuestion(results: List<SearchResult>, originalQuestion: String): List<SearchResult> {
@@ -132,7 +178,8 @@ class ConfluenceSearchAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceSearchAgent::class.java)
-        private const val RAG_TIMEOUT_MS = 3_000L
+        private const val TTL_MS = 24 * 60 * 60 * 1_000L // 24 hours
+        private const val CACHE_MAX_SIZE = 200
 
         // 대화형 접미사 제거
         private val SUFFIXES = listOf(
@@ -149,26 +196,12 @@ class ConfluenceSearchAgent(
                 "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
                 "그", "저", "이것", "저것", "어떻게", "무엇", "하는", "하는가", "합니다",
                 "관련", "정보", "내용", "문서", "자료", "현황", "대한", "위한", "통한",
-                "Android", "android", "Kotlin", "kotlin",
             )
             return query.split("\\s+".toRegex())
                 .map { it.trim() }
                 .filter { it.length >= 2 && it !in stopwords }
                 .distinct()
                 .take(4) // AND 조건이 너무 많으면 결과 없음
-        }
-
-        /**
-         * 구어체 질문 여부 판단 — true이면 keyword OR, false이면 AND
-         *
-         * 조건: 키워드 중 조사/어미로 끝나는 토큰이 있거나, 유효 키워드 비율이 낮으면 구어체로 판단
-         */
-        internal fun isConversationalQuery(keywords: List<String>, cleanedQuery: String): Boolean {
-            val noisySuffixes = listOf("이", "가", "을", "를", "은", "는", "는지", "하는지", "는가", "해", "해요")
-            val hasNoisyToken = keywords.any { k -> noisySuffixes.any { k.endsWith(it) } }
-            val tokenCount = cleanedQuery.split("\\s+".toRegex()).size
-            val keywordRatio = if (tokenCount > 0) keywords.size.toFloat() / tokenCount else 1f
-            return hasNoisyToken || keywordRatio < 0.6f
         }
 
         /** CQL 검색 전 쿼리 정제: 특수문자 제거 + 대화형 접미사 제거 */

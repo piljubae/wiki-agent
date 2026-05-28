@@ -177,6 +177,7 @@ fun main() {
             confluenceClient = confluenceClient,
             spaces = config.confluence.spaces,
             vectorSearchAgent = vectorSearchAgent,
+            ragTimeoutMs = config.rag.searchTimeoutMs,
         )
         confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
     }
