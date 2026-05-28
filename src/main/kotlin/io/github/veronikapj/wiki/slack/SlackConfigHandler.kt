@@ -13,7 +13,6 @@ class SlackConfigHandler(
     private var config: WikiConfig,
     private val configPath: String = ".wikiq/config.yml",
     private val persistOnChange: Boolean = false,
-    private val onReindex: (suspend () -> Int)? = null,
     private val onIngest: (suspend (String) -> String)? = null,
     private val onIngestWiki: (() -> String)? = null,
     private val onLint: (suspend () -> String)? = null,
@@ -22,10 +21,6 @@ class SlackConfigHandler(
     private val projectMemory: ProjectMemory? = null,
     private val onGetIndexCount: (suspend () -> Int)? = null,
 ) {
-    private var lastIndexTime: LocalDateTime? = null
-    private var lastIndexCount: Int = 0
-    @Volatile private var isIndexing: Boolean = false
-
     fun currentConfig(): WikiConfig = config
 
     fun handle(command: String): String {
@@ -45,28 +40,8 @@ class SlackConfigHandler(
                 triggerReindexCode()
             parts.size >= 2 && parts[1] == "reindex-pr" ->
                 triggerReindexPr()
-            parts.size >= 2 && parts[1] == "reindex" && parts.getOrNull(2) == "status" ->
-                reindexStatus()
-            parts.size >= 2 && parts[1] == "reindex" ->
-                triggerReindex()
             else -> helpMessage()
         }
-    }
-
-    private fun triggerReindex(): String {
-        val indexer = onReindex ?: return "RAG가 비활성화 상태입니다. config.yml에서 rag.enabled=true로 설정하세요."
-        isIndexing = true
-        Thread {
-            runCatching {
-                val count = runBlocking { indexer() }
-                lastIndexCount = count
-                lastIndexTime = LocalDateTime.now()
-                log.info("Reindex completed: {} pages", count)
-            }.onFailure { e ->
-                log.error("Reindex failed", e)
-            }.also { isIndexing = false }
-        }.start()
-        return ":hourglass_flowing_sand: 인덱싱을 시작했습니다. `/askpj reindex status`로 진행 상황을 확인하세요."
     }
 
     private fun triggerReindexCode(): String {
@@ -95,14 +70,6 @@ class SlackConfigHandler(
             }
         }.start()
         return ":hourglass_flowing_sand: PR 인덱싱(최근 1000건)을 시작했습니다. 40~60분 소요 예상."
-    }
-
-    private fun reindexStatus(): String {
-        val currentCount = runCatching { runBlocking(Dispatchers.IO) { onGetIndexCount?.invoke() } }.getOrNull()
-        if (isIndexing) return ":hourglass_flowing_sand: 인덱싱 진행 중... (현재 ${currentCount ?: "?"}건)"
-        val time = lastIndexTime?.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
-            ?: "아직 인덱싱하지 않았습니다"
-        return "마지막 인덱싱: $time / 문서 수: ${currentCount ?: lastIndexCount}"
     }
 
     private fun setSpaces(spacesArg: String): String {

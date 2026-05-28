@@ -354,7 +354,6 @@ fun main() {
         val configHandler = SlackConfigHandler(
             config = config,
             persistOnChange = true,
-            onReindex = null,
             onIngest = { url -> ingestAgent.ingestUrl(url) },
             onIngestWiki = { ingestAgent.ingestLocalWikiDocs() },
             onLint = { lintAgent.lint() },
