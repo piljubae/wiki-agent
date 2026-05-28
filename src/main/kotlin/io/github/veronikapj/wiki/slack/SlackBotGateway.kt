@@ -670,6 +670,13 @@ class SlackBotGateway(
                     override suspend fun onSearchCompleted(toolName: String) {}
                 }
 
+                // 라우터 LLM 실행 전에도 상태 표시 (라우터 응답까지 수 초 지연 존재)
+                runCatching {
+                    slackClient.assistantThreadsSetStatus { req ->
+                        req.channelId(channel).threadTs(threadTs).status("생각 중...")
+                    }
+                }.onFailure { log.warn("Failed to set initial status: {}", it.message) }
+
                 try {
                     val result = runBlocking {
                         orchestrator.answer(query, listener, sessionId = "assistant-$threadTs", forceTool = forcedTool, userId = userId)
