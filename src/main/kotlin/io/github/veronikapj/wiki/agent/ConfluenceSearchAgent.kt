@@ -117,10 +117,19 @@ class ConfluenceSearchAgent(
         log.info("Keyword fallback: {} results", keywordResults.size)
 
         // 3단계: 합산 + 중복 제거 + 랭킹
-        val result = reRankByOriginalQuestion(
-            combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK),
-            originalQuestion,
-        )
+        val combined = combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK)
+
+        // 4단계: 전체 결과가 없으면 space 제한 없이 CQL 텍스트 검색 fallback
+        val finalCombined = if (combined.isEmpty() && spaces.isNotEmpty()) {
+            log.info("No results in configured spaces, falling back to global CQL search")
+            val globalResults = runCatching {
+                confluenceClient.searchByText(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore)
+            }.getOrElse { emptyList() }
+            log.info("Global fallback: {} results", globalResults.size)
+            globalResults.map { it.toSearchResult(SearchStage.SPACE_EXPANSION) }
+        } else combined
+
+        val result = reRankByOriginalQuestion(finalCombined, originalQuestion)
         putCache(cacheKey, result)
         return result
     }
