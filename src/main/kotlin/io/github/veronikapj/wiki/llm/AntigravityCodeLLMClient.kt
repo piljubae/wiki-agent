@@ -42,7 +42,7 @@ class AntigravityCodeLLMClient(
         }
 
         log.info(">>> prompt (tools={}, hasResults={}): {}", tools.map { it.name }, hasToolResults, flatPrompt.take(200))
-        val output = runProcess(flatPrompt)
+        val output = runProcess(flatPrompt, model.id)
         log.info("<<< response: {}", output.take(200))
 
         if (tools.isNotEmpty() && !hasToolResults) {
@@ -124,13 +124,14 @@ class AntigravityCodeLLMClient(
         return toolName to argsJson
     }
 
-    private suspend fun runProcess(prompt: String): String = withContext(Dispatchers.IO) {
+    private suspend fun runProcess(prompt: String, modelId: String): String = withContext(Dispatchers.IO) {
         val args = mutableListOf(
             antigravityPath,
             "--print", prompt,
             "--output-format", "text",
             "--dangerously-skip-permissions"
         )
+        if (modelId.isNotBlank()) args += listOf("--model", modelId)
 
         val process = try {
             ProcessBuilder(args)

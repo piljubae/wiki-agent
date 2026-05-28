@@ -97,9 +97,13 @@ export PATH="$(npm root -g)/../.bin:$PATH"
 ```
 
 ### `agy: command not found`
-Antigravity CLI 공식 설치 스크립트를 사용하거나, headless 환경에서는 환경변수를 추가로 설정합니다:
+Antigravity CLI 공식 설치 스크립트를 실행한 뒤 PATH에 추가합니다:
 ```bash
-# ANTIGRAVITY_API_KEY 환경변수 설정 (Google AI Studio 키 사용)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+headless 환경에서 OAuth 로그인 없이 실행하려면 API 키를 환경변수로 설정합니다:
+```bash
 export ANTIGRAVITY_API_KEY=AIza...
 ```
 

@@ -70,7 +70,7 @@ model:
 - **API 키 불필요** — Google 계정 OAuth 로그인 또는 `ANTIGRAVITY_API_KEY` 환경변수
 - 로컬 개발·세션 실습에 적합
 - 기본 모델: `GoogleModels.Gemini2_5Flash`
-- headless 실행 시 `--dangerously-skip-permissions` 플래그 자동 미포함
+- headless 실행 시 `--dangerously-skip-permissions` 플래그 자동 포함
 
 ## 시크릿 우선순위
 
