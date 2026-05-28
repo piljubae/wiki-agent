@@ -100,8 +100,6 @@ data class RagConfig(
     val googleApiKey: String? = null,
     /** 인덱싱 전용 API 키 (대량 호출) — 미설정 시 googleApiKey(GOOGLE_API_KEY) 공유 */
     val indexApiKey: String? = null,
-    /** Confluence 검색 시 RAG fallback 타임아웃 (ms). 기본 10초. */
-    val searchTimeoutMs: Long = 10_000L,
 )
 
 data class GithubConfig(

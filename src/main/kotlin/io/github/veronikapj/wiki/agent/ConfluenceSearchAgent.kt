@@ -2,18 +2,14 @@ package io.github.veronikapj.wiki.agent
 
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.confluence.ConfluencePageRef
-import io.github.veronikapj.wiki.rag.VectorSearchAgent
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 
 class ConfluenceSearchAgent(
     private val confluenceClient: ConfluenceClient,
     private val spaces: List<String>,
-    private val vectorSearchAgent: VectorSearchAgent? = null,
     private val sufficientThreshold: Int = 3,
-    private val ragTimeoutMs: Long = 10_000L,
 ) {
     private data class CacheEntry(
         val results: List<SearchResult>,
@@ -70,9 +66,9 @@ class ConfluenceSearchAgent(
             return reRankByOriginalQuestion(rawEarlyResults, originalQuestion)
         }
 
-        // 2단계: 부족 → 병렬로 text + 스페이스 확장 + RAG
+        // 2단계: 부족 → 병렬로 text + 스페이스 확장
         log.info("Insufficient title matches ({}<{}), parallel fallback", titleResults.size, sufficientThreshold)
-        val (textResults, expandedResults, ragResults) = coroutineScope {
+        val (textResults, expandedResults) = coroutineScope {
             val textDeferred = async {
                 runCatching { confluenceClient.searchByText(cleaned, spaces, synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
             }
@@ -81,17 +77,7 @@ class ConfluenceSearchAgent(
                     runCatching { confluenceClient.searchByTitle(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
                 } else emptyList()
             }
-            val ragDeferred = async {
-                if (vectorSearchAgent != null) {
-                    withTimeoutOrNull(ragTimeoutMs) {
-                        runCatching { vectorSearchAgent.searchStructured(query, topK) }.getOrElse { emptyList() }
-                    } ?: run {
-                        log.warn("RAG search timed out after {}ms", ragTimeoutMs)
-                        emptyList()
-                    }
-                } else emptyList()
-            }
-            Triple(textDeferred.await(), expandedDeferred.await(), ragDeferred.await())
+            Pair(textDeferred.await(), expandedDeferred.await())
         }
 
         // 3-1단계: keyword fallback (text search 0건 시) — AND 먼저, 0건이면 OR 재시도
@@ -115,7 +101,7 @@ class ConfluenceSearchAgent(
         log.info("Keyword fallback: {} results", keywordResults.size)
 
         // 3단계: 합산 + 중복 제거 + 랭킹
-        val combined = combineAndRank(titleResults, textResults, expandedResults, ragResults, keywordResults, topK)
+        val combined = combineAndRank(titleResults, textResults, expandedResults, keywordResults, topK)
 
         // 4단계: 전체 결과가 없으면 space 제한 없이 CQL 텍스트 검색 fallback
         val finalCombined = if (combined.isEmpty() && spaces.isNotEmpty()) {
@@ -152,7 +138,6 @@ class ConfluenceSearchAgent(
         titleResults: List<ConfluencePageRef>,
         textResults: List<ConfluencePageRef>,
         expandedResults: List<ConfluencePageRef>,
-        ragResults: List<SearchResult>,
         keywordResults: List<ConfluencePageRef>,
         topK: Int,
     ): List<SearchResult> {
@@ -162,7 +147,6 @@ class ConfluenceSearchAgent(
         titleResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.TITLE_MATCH)) }
         expandedResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.SPACE_EXPANSION)) }
         textResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.TEXT_MATCH)) }
-        ragResults.forEach { if (seen.add(it.pageId)) deduplicated.add(it) }
         keywordResults.forEach { if (seen.add(it.id)) deduplicated.add(it.toSearchResult(SearchStage.KEYWORD_AND)) }
 
         return deduplicated.sortedByDescending { it.stage.score }.take(topK)

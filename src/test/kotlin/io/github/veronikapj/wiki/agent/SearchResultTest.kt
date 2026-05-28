@@ -10,7 +10,8 @@ class SearchResultTest {
     fun `SearchStage score ordering matches design`() {
         assertTrue(SearchStage.TITLE_MATCH.score > SearchStage.SPACE_EXPANSION.score)
         assertTrue(SearchStage.SPACE_EXPANSION.score > SearchStage.TEXT_MATCH.score)
-        assertTrue(SearchStage.TEXT_MATCH.score > SearchStage.RAG.score)
+        assertTrue(SearchStage.TEXT_MATCH.score > SearchStage.KEYWORD_AND.score)
+        assertTrue(SearchStage.KEYWORD_AND.score > SearchStage.GLOBAL_FALLBACK.score)
     }
 
     @Test
@@ -18,13 +19,14 @@ class SearchResultTest {
         assertEquals(1.0, SearchStage.TITLE_MATCH.score)
         assertEquals(0.8, SearchStage.SPACE_EXPANSION.score)
         assertEquals(0.6, SearchStage.TEXT_MATCH.score)
-        assertEquals(0.5, SearchStage.RAG.score)
+        assertEquals(0.55, SearchStage.KEYWORD_AND.score)
+        assertEquals(0.4, SearchStage.GLOBAL_FALLBACK.score)
     }
 
     @Test
     fun `results sorted by stage score descending`() {
         val results = listOf(
-            SearchResult("3", "C", "url3", "s3", SearchStage.RAG),
+            SearchResult("3", "C", "url3", "s3", SearchStage.KEYWORD_AND),
             SearchResult("1", "A", "url1", "s1", SearchStage.TITLE_MATCH),
             SearchResult("2", "B", "url2", "s2", SearchStage.TEXT_MATCH),
         )

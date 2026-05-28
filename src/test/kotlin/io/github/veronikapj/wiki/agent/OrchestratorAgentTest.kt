@@ -30,7 +30,6 @@ class OrchestratorAgentTest {
         val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>())
         val agent = OrchestratorAgent(
             confluenceTool = confluenceTool,
-            vectorSearchTool = null,
             executor = mockExecutor,
         )
         assertNotNull(agent)
@@ -77,7 +76,6 @@ class OrchestratorAgentTest {
             OrchestratorAgent(
                 confluenceTool = null,
                 githubWikiTool = null,
-                vectorSearchTool = null,
                 executor = mockExecutor,
             )
         }
