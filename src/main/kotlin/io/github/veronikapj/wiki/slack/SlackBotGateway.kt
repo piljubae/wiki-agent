@@ -82,7 +82,6 @@ class SlackBotGateway(
         "knowledgeSearch" to "지식베이스",
         "confluenceSearch" to "Confluence",
         "githubWikiSearch" to "GitHub Wiki",
-        "vectorSearch" to "RAG",
         "prHistory" to "PR 이력",
         "codeSearch" to "코드 검색",
     )
@@ -475,11 +474,6 @@ class SlackBotGateway(
                                         .value("reindex-pr")
                                 },
                                 button { b ->
-                                    b.text(plainText("Confluence 재인덱싱", true))
-                                        .actionId("home_reindex")
-                                        .value("reindex")
-                                },
-                                button { b ->
                                     b.text(plainText("메모리 보기", true))
                                         .actionId("home_memory_show")
                                         .value("memory show")
@@ -493,7 +487,7 @@ class SlackBotGateway(
                             "*사용법*\n" +
                             "• Slack 좌측 AI 패널에서 질문하세요\n" +
                             "• URL 인제스트: `/askpj ingest <URL>`\n" +
-                            "• 관리 명령: `/askpj reindex-code` | `/askpj reindex-pr` | `/askpj reindex`\n" +
+                            "• 관리 명령: `/askpj reindex-code` | `/askpj reindex-pr`\n" +
                             "• 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색"
                         ))
                     },
@@ -846,7 +840,6 @@ class SlackBotGateway(
                 ```
 
                 *관리 명령:*
-                • `/askpj reindex` — Confluence RAG 재인덱싱
                 • `/askpj reindex-code` — Android 소스코드 재인덱싱
                 • `/askpj reindex-pr` — PR 히스토리 재인덱싱
                 • `/askpj lint` — 지식베이스 품질 검사
@@ -879,7 +872,6 @@ class SlackBotGateway(
 
                 :books: *문서 인제스트*
                 • `/askpj ingest <URL>` — URL 지식베이스 저장
-                • `/askpj reindex` — Confluence 재인덱싱
                 • `/askpj reindex-code` — 코드 재인덱싱
                 • `/askpj reindex-pr` — PR 히스토리 재인덱싱
 

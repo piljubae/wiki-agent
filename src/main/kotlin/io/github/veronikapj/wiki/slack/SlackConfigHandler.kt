@@ -160,8 +160,6 @@ class SlackConfigHandler(
         :gear: *설정*
         • `/askpj config space DEV,PM` — 검색 스페이스 설정
         • `/askpj config space show` — 현재 설정 확인
-        • `/askpj reindex` — RAG 재인덱싱
-        • `/askpj reindex status` — 마지막 인덱싱 정보
         • `/askpj reindex-code` — Android 소스코드 재인덱싱
         • `/askpj reindex-pr` — PR 히스토리 인덱싱 (최근 1000건, 40~60분)
 
