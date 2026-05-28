@@ -53,17 +53,19 @@ class ConfluenceSearchAgent(
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
             query, cleaned, synonyms, spaces, dateAfter, dateBefore)
 
-        // 1단계: 설정 스페이스에서 제목 검색
-        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, topK, dateAfter, dateBefore)
+        // 1단계: 설정 스페이스에서 제목 검색 (re-rank 여유분을 위해 topK*2 fetch)
+        val titleFetchLimit = topK * 2
+        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, titleFetchLimit, dateAfter, dateBefore)
         log.info("Title search: {} results", titleResults.size)
 
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
         if (titleResults.size >= sufficientThreshold) {
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
             log.info("Title results: {}", titleResults.take(5).joinToString { "\"${it.title}\"" })
-            val rawEarlyResults = titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
-            putCache(cacheKey, rawEarlyResults)
-            return reRankByOriginalQuestion(rawEarlyResults, originalQuestion)
+            val rawEarlyResults = titleResults.map { it.toSearchResult(SearchStage.TITLE_MATCH) }
+            val reRanked = reRankByOriginalQuestion(rawEarlyResults, originalQuestion).take(topK)
+            putCache(cacheKey, reRanked)
+            return reRanked
         }
 
         // 2단계: 부족 → 병렬로 text + 스페이스 확장
