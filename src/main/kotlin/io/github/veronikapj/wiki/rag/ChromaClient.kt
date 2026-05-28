@@ -70,7 +70,10 @@ class ChromaClient(
             setBody(body)
         }.bodyAsText()
         val root = runCatching { jsonParser.parseToJsonElement(response).jsonObject }.getOrElse { return emptySet() }
-        return root["ids"]?.jsonArray?.map { it.jsonPrimitive.content }?.toHashSet() ?: emptySet()
+        val idsArr = root["ids"]?.jsonArray ?: return emptySet()
+        // ChromaDB v2 /get: ids 필터는 flat [...], where 필터는 nested [[...]] 가능 → 둘 다 처리
+        val flat = idsArr.getOrNull(0)?.let { runCatching { it.jsonArray }.getOrNull() } ?: idsArr
+        return flat.map { it.jsonPrimitive.content }.toHashSet()
     }
 
     /**

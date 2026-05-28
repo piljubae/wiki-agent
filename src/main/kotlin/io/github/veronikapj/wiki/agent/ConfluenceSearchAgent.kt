@@ -13,7 +13,7 @@ class ConfluenceSearchAgent(
     private val spaces: List<String>,
     private val vectorSearchAgent: VectorSearchAgent? = null,
     private val sufficientThreshold: Int = 3,
-    private val ragTimeoutMs: Long = 3_000L,
+    private val ragTimeoutMs: Long = 10_000L,
 ) {
     private data class CacheEntry(
         val results: List<SearchResult>,
@@ -47,10 +47,11 @@ class ConfluenceSearchAgent(
         originalQuestion: String = "",
     ): List<SearchResult> {
         val cleaned = cleanQuery(query)
-        val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore|$originalQuestion"
+        // originalQuestion은 re-ranking에만 사용 → 캐시 키에서 제외해 동일 검색 쿼리 캐시 공유
+        val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore"
         getCached(cacheKey)?.let {
             log.info("Cache hit: query='{}'", cleaned)
-            return it
+            return reRankByOriginalQuestion(it, originalQuestion)
         }
 
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
@@ -64,12 +65,9 @@ class ConfluenceSearchAgent(
         if (titleResults.size >= sufficientThreshold) {
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
             log.info("Title results: {}", titleResults.take(5).joinToString { "\"${it.title}\"" })
-            val earlyResults = reRankByOriginalQuestion(
-                titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) },
-                originalQuestion,
-            )
-            putCache(cacheKey, earlyResults)
-            return earlyResults
+            val rawEarlyResults = titleResults.take(topK).map { it.toSearchResult(SearchStage.TITLE_MATCH) }
+            putCache(cacheKey, rawEarlyResults)
+            return reRankByOriginalQuestion(rawEarlyResults, originalQuestion)
         }
 
         // 2단계: 부족 → 병렬로 text + 스페이스 확장 + RAG
@@ -126,12 +124,11 @@ class ConfluenceSearchAgent(
                 confluenceClient.searchByText(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore)
             }.getOrElse { emptyList() }
             log.info("Global fallback: {} results", globalResults.size)
-            globalResults.map { it.toSearchResult(SearchStage.SPACE_EXPANSION) }
+            globalResults.map { it.toSearchResult(SearchStage.GLOBAL_FALLBACK) }
         } else combined
 
-        val result = reRankByOriginalQuestion(finalCombined, originalQuestion)
-        putCache(cacheKey, result)
-        return result
+        putCache(cacheKey, finalCombined)
+        return reRankByOriginalQuestion(finalCombined, originalQuestion)
     }
 
     private fun reRankByOriginalQuestion(results: List<SearchResult>, originalQuestion: String): List<SearchResult> {
