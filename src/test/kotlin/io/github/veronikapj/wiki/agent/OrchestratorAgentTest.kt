@@ -150,17 +150,19 @@ class OrchestratorAgentTest {
     }
 
     @Test
-    fun `extractKeywordsAsSynonyms generates individual words and bigrams`() {
+    fun `extractKeywordsAsSynonyms generates bigrams before individual words`() {
         val result = OrchestratorAgent.extractKeywordsAsSynonyms("신규 입사 온보딩 문서")
         // "문서" is a stopword, should be excluded
         assertFalse(result.contains("문서"))
-        // individual keywords
+        // bigrams appear before individual words
+        assertTrue(result.contains("신규 입사"))
+        assertTrue(result.contains("입사 온보딩"))
+        assertTrue(result.indexOf("신규 입사") < result.indexOf("신규"))
+        assertTrue(result.indexOf("입사 온보딩") < result.indexOf("입사"))
+        // individual keywords still present
         assertTrue(result.contains("신규"))
         assertTrue(result.contains("입사"))
         assertTrue(result.contains("온보딩"))
-        // bigrams
-        assertTrue(result.contains("신규 입사"))
-        assertTrue(result.contains("입사 온보딩"))
     }
 
     @Test

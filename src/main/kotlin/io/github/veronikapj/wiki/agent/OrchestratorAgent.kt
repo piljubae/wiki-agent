@@ -699,18 +699,21 @@ class OrchestratorAgent(
             "설명해줘", "정리해줘", "궁금해", "어디있어", "뭐야",
         )
 
-        /** 라우터가 SYNONYMS를 비워서 반환했을 때 query 단어에서 자동으로 후보 생성 */
+        /** 라우터가 SYNONYMS를 비워서 반환했을 때 query 단어에서 자동으로 후보 생성.
+         *  우선순위: bigrams(2-word) 먼저 → 그 다음 개별 단어.
+         *  bigrams가 넓은 단어 조합이므로 CQL OR 스코어링에서 더 구체적인 결과를 먼저 유도한다.
+         */
         internal fun extractKeywordsAsSynonyms(query: String): List<String> {
             val words = query.split("\\s+".toRegex())
                 .map { it.trim() }
                 .filter { it.length >= 2 && it !in SYNONYM_STOPWORDS }
                 .distinct()
             if (words.isEmpty()) return emptyList()
-            // 개별 단어 + 인접 2-word 조합
-            val result = mutableListOf<String>()
-            result.addAll(words)
-            words.zipWithNext { a, b -> result.add("$a $b") }
-            return result.distinct().take(6)
+            // bigrams 먼저, 그 다음 개별 단어
+            val bigrams = mutableListOf<String>()
+            words.zipWithNext { a, b -> bigrams.add("$a $b") }
+            val result = (bigrams + words).distinct()
+            return result.take(6)
         }
 
         fun buildAnswerGuidelines(verbose: Boolean = true): String = buildString {
