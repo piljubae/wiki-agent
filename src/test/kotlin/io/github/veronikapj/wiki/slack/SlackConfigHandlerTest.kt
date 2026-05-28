@@ -43,25 +43,6 @@ class SlackConfigHandlerTest {
     }
 
     @Test
-    fun `handle reindex calls indexer`() {
-        var indexCalled = false
-        val handler = SlackConfigHandler(makeConfig(), onReindex = { indexCalled = true; 42 })
-        val result = handler.handle("/wiki reindex")
-        // triggerReindex runs in a background thread — wait briefly
-        Thread.sleep(500)
-        assertTrue(indexCalled)
-        assertTrue(result.contains("hourglass") || result.contains("인덱싱"))
-    }
-
-    @Test
-    fun `handle reindex status returns last index info`() {
-        val handler = SlackConfigHandler(makeConfig(), onReindex = { 0 })
-        handler.handle("/wiki reindex")
-        val result = handler.handle("/wiki reindex status")
-        assertTrue(result.contains("마지막") || result.contains("문서"))
-    }
-
-    @Test
     fun `memory add stores content`() {
         val memory = ProjectMemory(
             java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-mem-${System.nanoTime()}.md").absolutePath

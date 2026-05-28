@@ -148,4 +148,24 @@ class OrchestratorAgentTest {
         )
         assertNotNull(agent)
     }
+
+    @Test
+    fun `extractKeywordsAsSynonyms generates individual words and bigrams`() {
+        val result = OrchestratorAgent.extractKeywordsAsSynonyms("신규 입사 온보딩 문서")
+        // "문서" is a stopword, should be excluded
+        assertFalse(result.contains("문서"))
+        // individual keywords
+        assertTrue(result.contains("신규"))
+        assertTrue(result.contains("입사"))
+        assertTrue(result.contains("온보딩"))
+        // bigrams
+        assertTrue(result.contains("신규 입사"))
+        assertTrue(result.contains("입사 온보딩"))
+    }
+
+    @Test
+    fun `extractKeywordsAsSynonyms returns empty for all-stopword query`() {
+        val result = OrchestratorAgent.extractKeywordsAsSynonyms("문서 찾아줘 알려줘")
+        assertTrue(result.isEmpty())
+    }
 }

@@ -194,6 +194,7 @@ class OrchestratorAgent(
             appendLine("  예: \"전사 배포 프로세스\" → QUERY: 배포 프로세스  ← 질문에 '전사'가 있으므로 제거 허용")
             appendLine("  예: \"iOS 배포 프로세스\" → QUERY: iOS 배포 프로세스  ← 수식어 유지")
             appendLine()
+            appendLine("★★★ SYNONYMS는 반드시 3개 이상 출력하세요. 비워두면 검색 품질이 크게 저하됩니다. 절대 빈 줄로 남기지 마세요. ★★★")
             appendLine("SYNONYMS 작성 원칙 — 아래 유형을 조합해 3-6개 생성 (각 항목이 CQL OR 절로 검색됨):")
             appendLine("1. 수식어 포함 버전: 플랫폼·컨텍스트 붙인 원래 표현 (예: 안드로이드 tech talk)")
             appendLine("2. 단축/핵심 버전: 수식어 뺀 핵심 단어 (예: Tech Talk Talk, 테크톡)")
@@ -257,8 +258,14 @@ class OrchestratorAgent(
         }
 
         val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
-        val synonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
+        val parsedSynonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
             ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+        // 라우터가 SYNONYMS를 비워서 반환한 경우 → query 단어에서 자동 생성 (개별 키워드가 CQL OR 절로 추가됨)
+        val synonyms = if (parsedSynonyms.isEmpty()) {
+            extractKeywordsAsSynonyms(query).also {
+                if (it.isNotEmpty()) log.info("SYNONYMS empty from router, auto-generated: {}", it)
+            }
+        } else parsedSynonyms
         val dateAfter = Regex("DATE_AFTER:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
         val dateBefore = Regex("DATE_BEFORE:\\s*(\\S+)").find(decision)?.groupValues?.get(1)?.trim()
 
@@ -684,6 +691,27 @@ class OrchestratorAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(OrchestratorAgent::class.java)
+
+        private val SYNONYM_STOPWORDS = setOf(
+            "의", "를", "은", "는", "이", "가", "에", "도", "로", "와", "과", "을",
+            "그", "저", "어떻게", "무엇", "하는", "합니다", "관련", "정보", "내용",
+            "문서", "자료", "현황", "대한", "위한", "통한", "찾아줘", "알려줘", "보여줘",
+            "설명해줘", "정리해줘", "궁금해", "어디있어", "뭐야",
+        )
+
+        /** 라우터가 SYNONYMS를 비워서 반환했을 때 query 단어에서 자동으로 후보 생성 */
+        internal fun extractKeywordsAsSynonyms(query: String): List<String> {
+            val words = query.split("\\s+".toRegex())
+                .map { it.trim() }
+                .filter { it.length >= 2 && it !in SYNONYM_STOPWORDS }
+                .distinct()
+            if (words.isEmpty()) return emptyList()
+            // 개별 단어 + 인접 2-word 조합
+            val result = mutableListOf<String>()
+            result.addAll(words)
+            words.zipWithNext { a, b -> result.add("$a $b") }
+            return result.distinct().take(6)
+        }
 
         fun buildAnswerGuidelines(verbose: Boolean = true): String = buildString {
             appendLine("질문 유형에 맞는 구조로 답변하세요. 질문 유형을 출력하지 마세요. 바로 답변을 시작하세요.")
