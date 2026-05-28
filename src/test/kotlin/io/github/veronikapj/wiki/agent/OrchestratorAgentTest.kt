@@ -1,10 +1,6 @@
 package io.github.veronikapj.wiki.agent
 
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
-import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.Prompt
-import ai.koog.prompt.llm.Message
-import ai.koog.prompt.tools.ToolDescriptor
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
@@ -15,15 +11,9 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
-class MockExecutor : MultiLLMPromptExecutor {
-    override fun execute(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): List<Message.Response> {
-        return listOf(Message.Response(ai.koog.prompt.llm.Content("text", "mock-response")))
-    }
-}
-
 class OrchestratorAgentTest {
 
-    private val mockExecutor = MockExecutor()
+    private val mockExecutor = mockk<MultiLLMPromptExecutor>(relaxed = true)
 
     @Test
     fun `build creates agent with confluenceTool only when rag disabled`() {
