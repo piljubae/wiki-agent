@@ -88,7 +88,7 @@ fun main() {
                 SecretLoader.resolveNullable("ANTHROPIC_API_KEY", routerCfg.apiKey)
             io.github.veronikapj.wiki.config.ModelProvider.GOOGLE ->
                 SecretLoader.resolveNullable("GOOGLE_API_KEY", routerCfg.apiKey)
-            else -> routerCfg.apiKey // CLAUDE_CODE / GEMINI_CODE: no API key env var resolution needed
+            else -> routerCfg.apiKey // CLAUDE_CODE / GEMINI_CODE / ANTIGRAVITY_CODE: no API key env var resolution needed
         }
         val resolvedRouterConfig = routerCfg.copy(apiKey = resolvedRouterApiKey)
         log.info("Router executor: provider={}", resolvedRouterConfig.provider)
@@ -294,7 +294,8 @@ fun main() {
         routerExecutor = routerExecutor,
         routerModel = routerModel,
         useManualLoop = config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.CLAUDE_CODE ||
-                config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE,
+                config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.GEMINI_CODE ||
+                config.model.provider == io.github.veronikapj.wiki.config.ModelProvider.ANTIGRAVITY_CODE,
         conversationStore = conversationStore,
         projectMemory = projectMemory,
         userPersonaStore = userPersonaStore,

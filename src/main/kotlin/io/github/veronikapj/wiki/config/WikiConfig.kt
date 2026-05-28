@@ -1,6 +1,6 @@
 package io.github.veronikapj.wiki.config
 
-enum class ModelProvider { ANTHROPIC, GOOGLE, CLAUDE_CODE, GEMINI_CODE }
+enum class ModelProvider { ANTHROPIC, GOOGLE, CLAUDE_CODE, GEMINI_CODE, ANTIGRAVITY_CODE }
 enum class EmbeddingMode { LLM_EXPAND, GOOGLE_EMBEDDING }
 
 enum class PersonaType(val description: String, val displayName: String) {

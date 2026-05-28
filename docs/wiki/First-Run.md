@@ -9,6 +9,7 @@ Confluence 없이 **GitHub Wiki만으로도 실행 가능**합니다.
 - Slack App 토큰 2개 ([Slack-App-Setup](Slack-App-Setup) 참고)
 - Claude Code CLI 설치 (provider=CLAUDE_CODE 시, API 키 불필요)
 - Node.js 18 이상 — `provider: GEMINI_CODE` 사용 시에만 필요 (`brew install node`)
+- `agy` CLI — `provider: ANTIGRAVITY_CODE` 사용 시 필요 (Antigravity CLI 설치)
 
 ## 1. 레포 클론
 
@@ -80,18 +81,26 @@ github:
 | 모드 | provider 설정 | 필요한 것 | 비용 |
 |------|--------------|---------|------|
 | 로컬 (Claude Code) | `CLAUDE_CODE` | Claude Code CLI | 구독 요금만 |
+| 로컬 (Antigravity) | `ANTIGRAVITY_CODE` | `agy` CLI | 무료 (Google 계정) |
 | Claude API | `ANTHROPIC` | `ANTHROPIC_API_KEY` | API 사용량 |
 | Gemini API | `GOOGLE` | `GOOGLE_API_KEY` | API 사용량 |
 
 ## 트러블슈팅
 
 ### `Warning: True color (24-bit) support not detected`
-`provider: GEMINI_CODE` 사용 시 표시될 수 있는 정상 경고입니다. 동작에 영향 없습니다.
+`provider: GEMINI_CODE` 또는 `provider: ANTIGRAVITY_CODE` 사용 시 표시될 수 있는 정상 경고입니다. 동작에 영향 없습니다.
 
 ### `gemini: command not found`
 ```bash
 npm install -g @google/gemini-cli
 export PATH="$(npm root -g)/../.bin:$PATH"
+```
+
+### `agy: command not found`
+Antigravity CLI 공식 설치 스크립트를 사용하거나, headless 환경에서는 환경변수를 추가로 설정합니다:
+```bash
+# ANTIGRAVITY_API_KEY 환경변수 설정 (Google AI Studio 키 사용)
+export ANTIGRAVITY_API_KEY=AIza...
 ```
 
 ### Gradle 빌드 실패

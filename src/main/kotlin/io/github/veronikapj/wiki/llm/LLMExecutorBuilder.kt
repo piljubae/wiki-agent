@@ -17,6 +17,7 @@ object LLMExecutorBuilder {
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> MultiLLMPromptExecutor(ClaudeCodeLLMClient())
             ModelProvider.GEMINI_CODE -> MultiLLMPromptExecutor(GeminiCodeLLMClient())
+            ModelProvider.ANTIGRAVITY_CODE -> MultiLLMPromptExecutor(AntigravityCodeLLMClient())
             ModelProvider.ANTHROPIC -> MultiLLMPromptExecutor(
                 AnthropicLLMClient(
                     apiKey = requireNotNull(config.apiKey) { "ANTHROPIC apiKey required" }
@@ -33,6 +34,7 @@ object LLMExecutorBuilder {
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> AnthropicModels.Sonnet_4
             ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini2_5Flash
             ModelProvider.ANTHROPIC -> AnthropicModels.Sonnet_4
             ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
         }
@@ -41,6 +43,7 @@ object LLMExecutorBuilder {
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> AnthropicModels.Haiku_4_5
             ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini2_5Flash
             ModelProvider.ANTHROPIC -> AnthropicModels.Haiku_4_5
             ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
         }

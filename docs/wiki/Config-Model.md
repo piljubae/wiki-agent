@@ -8,7 +8,7 @@
 
 ```yaml
 model:
-  provider: CLAUDE_CODE   # 필수. CLAUDE_CODE | ANTHROPIC | GOOGLE
+  provider: CLAUDE_CODE   # 필수. CLAUDE_CODE | ANTHROPIC | GOOGLE | ANTIGRAVITY_CODE
   name: null              # 선택. provider별 모델명 오버라이드
   apiKey: null            # 선택. .env에 넣는 것을 권장
 ```
@@ -59,6 +59,19 @@ GOOGLE_API_KEY=AIza...
 - Google AI API 직접 호출
 - 팀 서버 배포 시 사용 (전사 Gemini 환경)
 
+### ANTIGRAVITY_CODE
+
+```yaml
+model:
+  provider: ANTIGRAVITY_CODE
+```
+
+- Antigravity CLI (`agy`)를 통해 LLM 실행
+- **API 키 불필요** — Google 계정 OAuth 로그인 또는 `ANTIGRAVITY_API_KEY` 환경변수
+- 로컬 개발·세션 실습에 적합
+- 기본 모델: `GoogleModels.Gemini2_5Flash`
+- headless 실행 시 `--dangerously-skip-permissions` 플래그 자동 미포함
+
 ## 시크릿 우선순위
 
 `apiKey`는 다음 순서로 로드됩니다:
@@ -74,9 +87,10 @@ GOOGLE_API_KEY=AIza...
 // LLMExecutorBuilder.kt
 fun defaultModel(config: ModelConfig): LLModel =
     when (config.provider) {
-        CLAUDE_CODE -> AnthropicModels.Sonnet_4
-        ANTHROPIC   -> AnthropicModels.Sonnet_4
-        GOOGLE      -> GoogleModels.Gemini2_0Flash
+        CLAUDE_CODE         -> AnthropicModels.Sonnet_4
+        ANTHROPIC           -> AnthropicModels.Sonnet_4
+        GOOGLE              -> GoogleModels.Gemini2_0Flash
+        ANTIGRAVITY_CODE    -> GoogleModels.Gemini2_5Flash
     }
 ```
 
