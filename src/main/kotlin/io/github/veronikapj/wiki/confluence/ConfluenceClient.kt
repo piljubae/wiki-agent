@@ -276,7 +276,7 @@ class ConfluenceClient(
                 val webUi = content["_links"]?.jsonObject?.get("webui")?.jsonPrimitive?.content
                     ?: resultUrl
                     ?: ""
-                val excerpt = result["excerpt"]?.jsonPrimitive?.content?.take(300) ?: ""
+                val excerpt = result["excerpt"]?.jsonPrimitive?.content?.take(500) ?: ""
                 val lastModified = result["lastModified"]?.jsonPrimitive?.content ?: ""
                 ConfluencePageRef(id = id, title = title, webUrl = "$baseUrlForLinks/wiki$webUi", excerpt = excerpt, lastModified = lastModified)
             }
@@ -328,7 +328,7 @@ class ConfluenceClient(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceClient::class.java)
-        private const val MAX_TEXT_CLAUSES = 5
+        private const val MAX_TEXT_CLAUSES = 7
         private const val MAX_BODY_LENGTH = 200_000  // ~200KB: 이 이상은 regex StackOverflow 방지용 trim
     }
 }

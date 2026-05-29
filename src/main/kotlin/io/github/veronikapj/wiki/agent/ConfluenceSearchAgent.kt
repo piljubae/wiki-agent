@@ -47,7 +47,7 @@ class ConfluenceSearchAgent(
         val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore"
         getCached(cacheKey)?.let {
             log.info("Cache hit: query='{}'", cleaned)
-            return reRankByOriginalQuestion(it, originalQuestion)
+            return reRankByOriginalQuestion(it, originalQuestion, synonyms)
         }
 
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
@@ -63,7 +63,7 @@ class ConfluenceSearchAgent(
             log.info("Sufficient title matches ({}>={}), early return", titleResults.size, sufficientThreshold)
             log.info("Title results: {}", titleResults.take(5).joinToString { "\"${it.title}\"" })
             val rawEarlyResults = titleResults.map { it.toSearchResult(SearchStage.TITLE_MATCH) }
-            val reRanked = reRankByOriginalQuestion(rawEarlyResults, originalQuestion).take(topK)
+            val reRanked = reRankByOriginalQuestion(rawEarlyResults, originalQuestion, synonyms).take(topK)
             putCache(cacheKey, reRanked)
             return reRanked
         }
@@ -116,21 +116,30 @@ class ConfluenceSearchAgent(
         } else combined
 
         putCache(cacheKey, finalCombined)
-        return reRankByOriginalQuestion(finalCombined, originalQuestion)
+        return reRankByOriginalQuestion(finalCombined, originalQuestion, synonyms)
     }
 
-    private fun reRankByOriginalQuestion(results: List<SearchResult>, originalQuestion: String): List<SearchResult> {
+    private fun reRankByOriginalQuestion(
+        results: List<SearchResult>,
+        originalQuestion: String,
+        synonyms: List<String> = emptyList(),
+    ): List<SearchResult> {
         if (originalQuestion.isBlank()) return results
         val keywords = extractSignificantKeywords(originalQuestion)
         if (keywords.isEmpty()) return results
-        val keywordsLower = keywords.map { it.lowercase() }
+        // synonym 단어도 포함 — 한영 불일치 보완 (예: "위클리" 검색 시 "Weekly" 제목 페이지 히트)
+        val synonymKeywords = synonyms
+            .flatMap { it.split("\\s+".toRegex()) }
+            .map { it.trim() }
+            .filter { it.length >= 2 }
+        val keywordsLower = (keywords + synonymKeywords).map { it.lowercase() }.distinct()
         val reRanked = results.sortedByDescending { page ->
             val titleLower = page.title.lowercase()
             keywordsLower.count { kw -> titleLower.contains(kw) }
         }
         log.info(
             "Re-rank (kw={}): {}",
-            keywords,
+            keywordsLower,
             reRanked.take(3).joinToString { "\"${it.title}\"[${keywordsLower.count { kw -> it.title.lowercase().contains(kw) }}]" },
         )
         return reRanked

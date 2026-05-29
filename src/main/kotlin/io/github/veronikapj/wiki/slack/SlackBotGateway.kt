@@ -611,6 +611,11 @@ class SlackBotGateway(
             ctx.ack()
         }
 
+        // 파일 공유 이벤트 — 무시 (핸들러 없으면 404 경고 발생)
+        app.event(com.slack.api.model.event.MessageFileShareEvent::class.java) { _, ctx ->
+            ctx.ack()
+        }
+
         // 3) 사용자 메시지 — orchestrator로 라우팅
         app.event(com.slack.api.model.event.MessageEvent::class.java) { payload, ctx ->
             val event = payload.event
