@@ -340,6 +340,25 @@ class OrchestratorAgent(
             return AnswerResult(noneAnswer, "MANUAL", false)
         }
 
+        // progressAdvisor: LLM 코칭 결과를 직접 반환 (summaryPrompt 경유 안 함)
+        if (toolName == "progressAdvisor" && progressAdvisorTool != null) {
+            listener?.onSearchStarted("progressAdvisor")
+            val advisorAnswer = runCatching { progressAdvisorTool!!.advise(userId ?: "", question) }
+                .getOrElse { e ->
+                    log.error("ProgressAdvisor failed: {}", e.message)
+                    "코칭 피드백 생성 중 오류가 발생했습니다: ${e.message}"
+                }
+            listener?.onSearchCompleted("progressAdvisor")
+
+            if (sessionId != null && conversationStore != null) {
+                conversationStore.append(sessionId, question, advisorAnswer)
+            } else {
+                history.addLast(question to advisorAnswer)
+                if (history.size > 5) history.removeFirst()
+            }
+            return AnswerResult(advisorAnswer, "MANUAL", false)
+        }
+
         val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
         listener?.onSearchStarted(searchLabel)
 
@@ -380,8 +399,6 @@ class OrchestratorAgent(
                 runCatching { personalDataTool!!.getProgressSummary(userId ?: "") }.getOrNull()
             toolName == "personalGoalQuery" && personalDataTool != null ->
                 runCatching { personalDataTool!!.queryGoal(query, userId ?: "") }.getOrNull()
-            toolName == "progressAdvisor" && progressAdvisorTool != null ->
-                runCatching { progressAdvisorTool!!.advise(userId ?: "", question) }.getOrNull()
             else ->
                 runCatching { executeParallel(query, synonyms, dateAfter, dateBefore, question) }.getOrNull()
         }
