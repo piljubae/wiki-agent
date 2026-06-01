@@ -21,3 +21,8 @@ github:
   codeSearch:
     branch: develop
     pollIntervalMinutes: 30
+personalData:
+  enabled: true
+  progressFile: /Users/pilju.bae/Documents/Claude Cowork/성과목표-2026/progress.json
+  allowedUsers:
+    - U_PILJU_REAL_ID    # Slack에서 본인 userId 확인 후 교체
