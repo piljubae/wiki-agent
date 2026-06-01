@@ -36,6 +36,7 @@ import io.github.veronikapj.wiki.knowledge.LocalRepoSync
 import io.github.veronikapj.wiki.knowledge.PrIndexAgent
 import io.github.veronikapj.wiki.agent.tool.CodeFlowTool
 import io.github.veronikapj.wiki.agent.tool.PersonalDataTool
+import io.github.veronikapj.wiki.agent.tool.ProgressAdvisorTool
 import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.knowledge.CallGraphIndexAgent
@@ -249,6 +250,19 @@ fun main() {
         log.info("PersonalData enabled: file={}, allowedUsers={}", config.personalData.progressFile, config.personalData.allowedUsers.size)
     }
 
+    // Progress Advisor Tool
+    var progressAdvisorTool: ProgressAdvisorTool? = null
+    if (personalDataTool != null) {
+        progressAdvisorTool = ProgressAdvisorTool(
+            progressFile = config.personalData.progressFile,
+            allowedUsers = config.personalData.allowedUsers.toSet(),
+            executor = executor,
+            model = routerModel,
+            tracker = sourceTracker,
+        )
+        log.info("ProgressAdvisor enabled")
+    }
+
     val userPersonaStore = io.github.veronikapj.wiki.slack.UserPersonaStore()
 
     val orchestrator = OrchestratorAgent(
@@ -259,6 +273,7 @@ fun main() {
         codeSearchTool = codeSearchTool,
         codeFlowTool = codeFlowTool,
         personalDataTool = personalDataTool,
+        progressAdvisorTool = progressAdvisorTool,
         executor = executor,
         routerExecutor = routerExecutor,
         routerModel = routerModel,
