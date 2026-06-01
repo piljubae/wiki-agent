@@ -239,17 +239,26 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
-        // 코칭 키워드 프리라우팅: LLM 라우터보다 먼저 매칭
-        val coachingForceTool = if (progressAdvisorTool != null && forceTool == null) {
-            val q = question.lowercase()
-            if (q.contains("1:1") || q.contains("1on1") || q.contains("코칭") ||
-                (q.contains("피드백") && (q.contains("줘") || q.contains("해"))) ||
-                (q.contains("조언") && (q.contains("줘") || q.contains("해")))
-            ) "progressAdvisor" else null
+        // 키워드 프리라우팅: LLM 라우터 호출 없이 빠르게 매칭
+        val preRoutedTool = if (forceTool == null) {
+            val q = question.trim()
+            val ql = q.lowercase()
+            when {
+                // 코칭 키워드
+                progressAdvisorTool != null && (
+                    ql.contains("1:1") || ql.contains("1on1") || ql.contains("코칭") ||
+                    (ql.contains("피드백") && (ql.contains("줘") || ql.contains("해"))) ||
+                    (ql.contains("조언") && (ql.contains("줘") || ql.contains("해")))
+                ) -> "progressAdvisor"
+                // 짧은 인사·잡담 (5자 이하이거나 인사 패턴)
+                q.length <= 5 || Regex("^(안녕|하이|헬로|ㅎㅇ|hi|hello|hey|감사|고마워|ㄳ|ㄱㅅ|ㅎㅎ|ㅋㅋ).*", RegexOption.IGNORE_CASE).matches(q)
+                    -> "none"
+                else -> null
+            }
         } else null
 
         // forceTool이 있으면 라우터 LLM 호출 스킵 — 쿼리는 원본 질문 그대로 사용
-        val effectiveForceTool = forceTool ?: coachingForceTool
+        val effectiveForceTool = forceTool ?: preRoutedTool
         val decision = if (effectiveForceTool != null) {
             log.info("Forced tool: {} — skipping router", effectiveForceTool)
             "TOOL: $effectiveForceTool\nQUERY: $question\nSYNONYMS:"

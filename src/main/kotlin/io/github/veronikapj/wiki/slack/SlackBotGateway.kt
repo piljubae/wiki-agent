@@ -294,9 +294,9 @@ class SlackBotGateway(
                         append("\uD83D\uDCCB ")
                         append(searchedTools.distinct().joinToString(" · ") { toolDisplayNames[it] ?: it })
                     }
-                    append("\n$FEEDBACK_GUIDE")
+                    if (result.isRag) append("\n$FEEDBACK_GUIDE")
                 }
-                val finalText = "${result.answer}\n\n$footer"
+                val finalText = if (footer.isBlank()) result.answer else "${result.answer}\n\n$footer"
 
                 val sendResult = slackClient.chatPostMessage { req ->
                     req.channel(channel).text(finalText).let { b ->
@@ -695,11 +695,12 @@ class SlackBotGateway(
                             append("\uD83D\uDCCB ")
                             append(searchedTools.distinct().joinToString(" · ") { toolDisplayNames[it] ?: it })
                         }
-                        append("\n$FEEDBACK_GUIDE")
+                        if (result.isRag) append("\n$FEEDBACK_GUIDE")
                     }
+                    val finalText = if (footer.isBlank()) result.answer else "${result.answer}\n\n$footer"
 
                     val sendResult = slackClient.chatPostMessage { req ->
-                        req.channel(channel).threadTs(threadTs).text("${result.answer}\n\n$footer")
+                        req.channel(channel).threadTs(threadTs).text(finalText)
                     }
 
                     if (sendResult.isOk) {
