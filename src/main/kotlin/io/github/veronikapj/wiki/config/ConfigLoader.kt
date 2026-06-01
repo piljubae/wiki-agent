@@ -49,18 +49,24 @@ object ConfigLoader {
         var inCallGraph = false
         var callGraphCloneRepoPath = ""
         var callGraphDbPath = "call_graph.db"
+        var inPersonalData = false
+        var personalDataEnabled = false
+        var personalDataProgressFile = ""
+        val personalDataAllowedUsers = mutableListOf<String>()
+        var inAllowedUsers = false
 
         for (raw in lines) {
             val line = raw.substringBefore("#").trimEnd()
             val indent = line.length - line.trimStart().length
             when {
-                line == "model:" -> { inModel = true; inRouter = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "confluence:" -> { inConfluence = true; inRouter = false; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "slack:" -> { inSlack = true; inRouter = false; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "rag:" -> { inRag = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false }
-                line == "github:" -> { inGithub = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false }
-                line == "router:" -> { inRouter = true; inCallGraph = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
-                line == "callGraph:" -> { inCallGraph = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
+                line == "model:" -> { inModel = true; inRouter = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "confluence:" -> { inConfluence = true; inRouter = false; inModel = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "slack:" -> { inSlack = true; inRouter = false; inModel = false; inConfluence = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "rag:" -> { inRag = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "github:" -> { inGithub = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inRag = false; inSpaces = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "router:" -> { inRouter = true; inCallGraph = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "callGraph:" -> { inCallGraph = true; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false; inPersonalData = false; inAllowedUsers = false }
+                line == "personalData:" -> { inPersonalData = true; inAllowedUsers = false; inCallGraph = false; inRouter = false; inModel = false; inConfluence = false; inSlack = false; inSpaces = false; inRag = false; inGithub = false; inCodeSearch = false }
                 inConfluence && line.trimStart().startsWith("spaces:") -> inSpaces = true
                 inSpaces && line.trimStart().startsWith("- ") -> spaces.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && inSpaces && line.isNotBlank() -> inSpaces = false
@@ -70,6 +76,9 @@ object ConfigLoader {
                 inGithubRepos && line.trimStart().startsWith("- ") -> githubRepos.add(line.trimStart().removePrefix("- ").trim())
                 inGithubCodeRepos && line.trimStart().startsWith("- ") -> githubCodeRepos.add(line.trimStart().removePrefix("- ").trim())
                 !line.trimStart().startsWith("- ") && (inGithubRepos || inGithubCodeRepos) && line.isNotBlank() -> { inGithubRepos = false; inGithubCodeRepos = false }
+                inPersonalData && line.trimStart().startsWith("allowedUsers:") -> inAllowedUsers = true
+                inAllowedUsers && line.trimStart().startsWith("- ") -> personalDataAllowedUsers.add(line.trimStart().removePrefix("- ").trim())
+                !line.trimStart().startsWith("- ") && inAllowedUsers && line.isNotBlank() -> inAllowedUsers = false
             }
             val trimmed = line.trim()
             when {
@@ -127,6 +136,10 @@ object ConfigLoader {
                     routerModelName = trimmed.substringAfter("name:").trim().ifEmpty { null }
                 inRouter && trimmed.startsWith("apiKey:") ->
                     routerApiKey = trimmed.substringAfter("apiKey:").trim().ifEmpty { null }
+                inPersonalData && !inAllowedUsers && trimmed.startsWith("enabled:") ->
+                    personalDataEnabled = trimmed.substringAfter("enabled:").trim() == "true"
+                inPersonalData && !inAllowedUsers && trimmed.startsWith("progressFile:") ->
+                    personalDataProgressFile = trimmed.substringAfter("progressFile:").trim()
                 inCallGraph && trimmed.startsWith("cloneRepoPath:") ->
                     callGraphCloneRepoPath = trimmed.substringAfter("cloneRepoPath:").trim()
                 inCallGraph && trimmed.startsWith("dbPath:") ->
@@ -162,6 +175,7 @@ object ConfigLoader {
             routerConfig = routerProvider?.let { ModelConfig(it, routerModelName, routerApiKey) },
             callGraph = if (callGraphCloneRepoPath.isNotBlank())
                 CallGraphConfig(callGraphCloneRepoPath, callGraphDbPath) else null,
+            personalData = PersonalDataConfig(personalDataEnabled, personalDataProgressFile, personalDataAllowedUsers),
         )
     }
 
