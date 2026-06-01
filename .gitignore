@@ -21,6 +21,7 @@ Thumbs.db
 
 # Config with secrets
 .env
+.wikiq/config.yml
 
 # Conversation session files
 .wiki/sessions/
