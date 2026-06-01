@@ -2,7 +2,9 @@ package io.github.veronikapj.wiki.config
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ConfigLoaderTest {
 
@@ -152,6 +154,34 @@ class ConfigLoaderTest {
         val config = ConfigLoader.fromString(yaml)
         assertEquals(ModelProvider.GOOGLE, config.routerConfig?.provider)
         assertEquals("gkey", config.routerConfig?.apiKey)
+    }
+
+    @Test
+    fun `parses personalData section`() {
+        val yaml = """
+            model:
+              provider: CLAUDE_CODE
+            personalData:
+              enabled: true
+              progressFile: /tmp/progress.json
+              allowedUsers:
+                - U01ABC
+                - U02DEF
+        """.trimIndent()
+        val config = ConfigLoader.fromString(yaml)
+        assertTrue(config.personalData.enabled)
+        assertEquals("/tmp/progress.json", config.personalData.progressFile)
+        assertEquals(listOf("U01ABC", "U02DEF"), config.personalData.allowedUsers)
+    }
+
+    @Test
+    fun `personalData defaults to disabled`() {
+        val yaml = """
+            model:
+              provider: CLAUDE_CODE
+        """.trimIndent()
+        val config = ConfigLoader.fromString(yaml)
+        assertFalse(config.personalData.enabled)
     }
 
     @Test

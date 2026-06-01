@@ -69,6 +69,14 @@ data class WikiConfig(
     val routerConfig: ModelConfig? = null,
     /** 콜 그래프 설정. cloneRepoPath 없으면 비활성화. */
     val callGraph: CallGraphConfig? = null,
+    /** 개인 성과 데이터 설정. */
+    val personalData: PersonalDataConfig = PersonalDataConfig(),
+)
+
+data class PersonalDataConfig(
+    val enabled: Boolean = false,
+    val progressFile: String = "",
+    val allowedUsers: List<String> = emptyList(),
 )
 
 data class CallGraphConfig(
