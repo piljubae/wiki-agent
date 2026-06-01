@@ -314,8 +314,8 @@ class OrchestratorAgent(
         // none: 인사·잡담·소프트챗 → LLM이 자유롭게 대화 (검색 없이)
         if (toolName == "none") {
             val chatPrompt = buildString {
-                appendLine("당신은 Kurly Android 팀의 위키 검색 봇입니다.")
-                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다.")
+                if (basePersona.isNotBlank()) appendLine(basePersona)
+                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다. 짧고 친근하게 답변하세요.")
                 appendLine("단, 내부 코드·문서·시스템 정보는 모르는 척하세요 (검색 없이는 알 수 없습니다).")
                 appendLine()
                 if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
