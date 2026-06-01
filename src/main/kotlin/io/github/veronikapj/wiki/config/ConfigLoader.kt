@@ -4,7 +4,7 @@ import java.io.File
 
 object ConfigLoader {
 
-    fun load(path: String = ".wikiq/config.yml"): WikiConfig =
+    fun load(path: String = ".wiki/config.yml"): WikiConfig =
         fromString(File(path).readText())
 
     fun fromString(yaml: String): WikiConfig {
