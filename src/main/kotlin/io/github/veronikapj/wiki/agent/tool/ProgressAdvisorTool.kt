@@ -3,8 +3,11 @@ package io.github.veronikapj.wiki.agent.tool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
+import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.params.LLMParams
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -135,13 +138,24 @@ class ProgressAdvisorTool(
             appendLine()
             appendLine("사용자 메시지: $message")
             appendLine()
-            appendLine("형식: Slack mrkdwn으로 출력. *굵게* `코드` 허용. # ## ** [링크](url) 금지.")
+            appendLine("★★★ 출력 형식 규칙 (반드시 준수) ★★★")
+            appendLine("Slack mrkdwn 형식으로 출력하세요. Markdown이 아닙니다.")
+            appendLine("허용: *굵게* _기울임_ ~취소선~ `코드` ```코드블록``` :emoji: • 불릿 1. 번호")
+            appendLine("금지 (절대 사용 금지): # ## ### **굵게** __굵게__ [텍스트](URL) --- |테이블| 표")
+            appendLine("Slack에서 굵게는 *한 개*로 감쌉니다. **두 개**가 아닙니다.")
+            appendLine("표 대신 불릿(•)으로 나열하세요.")
+        }
+
+        val params = if (model.provider == AnthropicModels.Haiku_4_5.provider) {
+            AnthropicParams(maxTokens = 4096)
+        } else {
+            LLMParams(maxTokens = 4096)
         }
 
         return runBlocking {
             runCatching {
                 executor.execute(
-                    prompt("advisor") { user(advisorPrompt) }, model
+                    prompt("advisor", params = params) { user(advisorPrompt) }, model
                 ).joinToString("") { it.content }.trim()
             }.getOrElse { e ->
                 log.error("Advisor LLM call failed: {}", e.message)

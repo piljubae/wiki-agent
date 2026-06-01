@@ -58,7 +58,7 @@ class ProgressAdvisorToolTest {
             progressFile = testFile,
             allowedUsers = setOf("U_ALLOWED"),
             executor = executor,
-            model = mockk<LLModel>(),
+            model = mockk<LLModel>(relaxed = true),
         )
     }
 
@@ -67,7 +67,7 @@ class ProgressAdvisorToolTest {
             progressFile = "/nonexistent/progress.json",
             allowedUsers = setOf("U_ALLOWED"),
             executor = executor,
-            model = mockk<LLModel>(),
+            model = mockk<LLModel>(relaxed = true),
         )
     }
 
