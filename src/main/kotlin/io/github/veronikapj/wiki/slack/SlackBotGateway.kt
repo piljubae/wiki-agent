@@ -82,6 +82,8 @@ class SlackBotGateway(
         "githubWikiSearch" to "GitHub Wiki",
         "prHistory" to "PR 이력",
         "codeSearch" to "코드 검색",
+        "personalProgress" to "성과 목표",
+        "personalGoalQuery" to "성과 목표",
     )
 
     // 온보딩 상태: 채널별 진행 단계
