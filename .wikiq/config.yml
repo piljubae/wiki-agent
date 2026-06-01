@@ -1,28 +1,21 @@
 model:
   provider: CLAUDE_CODE  # CLAUDE_CODE | ANTHROPIC | GOOGLE
 confluence:
-  baseUrl: https://kurly0521.atlassian.net
-  spaces:
-    - ProductApp
-    - PSD
-    - ClientDivision
-    - project
+  baseUrl: ""
+  spaces: []
 slack: {}
 rag:
-  enabled: true
+  enabled: false
   chromaUrl: http://localhost:8000
   embeddingMode: LLM_EXPAND
 github:
-  enabled: true
-  repos:
-    - piljubae/wiki-agent
-  codeRepos:
-    - thefarmersfront/kurly-android
+  enabled: false
+  repos: []
+  codeRepos: []
   codeSearch:
     branch: develop
-    pollIntervalMinutes: 30
+    pollIntervalMinutes: 60
 personalData:
-  enabled: true
-  progressFile: /Users/pilju.bae/Documents/Claude Cowork/성과목표-2026/progress.json
-  allowedUsers:
-    - U0AD2U8TEES
+  enabled: false
+  progressFile: ""
+  allowedUsers: []
