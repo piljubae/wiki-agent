@@ -41,9 +41,9 @@ class ClaudeCodeLLMClient(
             flattenPrompt(prompt)
         }
 
-        log.info(">>> prompt (tools={}, hasResults={}): {}", tools.map { it.name }, hasToolResults, flatPrompt.take(200))
+        log.info(">>> prompt (tools={}, hasResults={}): {}", tools.map { it.name }, hasToolResults, flatPrompt.take(500))
         val output = runProcess(flatPrompt, model.id)
-        log.info("<<< response: {}", output.take(200))
+        log.info("<<< response ({}chars): {}", output.length, output)
 
         if (tools.isNotEmpty() && !hasToolResults) {
             val toolCall = parseToolCall(output, tools)
