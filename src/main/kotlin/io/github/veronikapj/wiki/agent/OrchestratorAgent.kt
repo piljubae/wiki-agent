@@ -239,10 +239,20 @@ class OrchestratorAgent(
             appendLine("질문: $question")
         }
 
+        // 코칭 키워드 프리라우팅: LLM 라우터보다 먼저 매칭
+        val coachingForceTool = if (progressAdvisorTool != null && forceTool == null) {
+            val q = question.lowercase()
+            if (q.contains("1:1") || q.contains("1on1") || q.contains("코칭") ||
+                (q.contains("피드백") && (q.contains("줘") || q.contains("해"))) ||
+                (q.contains("조언") && (q.contains("줘") || q.contains("해")))
+            ) "progressAdvisor" else null
+        } else null
+
         // forceTool이 있으면 라우터 LLM 호출 스킵 — 쿼리는 원본 질문 그대로 사용
-        val decision = if (forceTool != null) {
-            log.info("Forced tool: {} — skipping router", forceTool)
-            "TOOL: $forceTool\nQUERY: $question\nSYNONYMS:"
+        val effectiveForceTool = forceTool ?: coachingForceTool
+        val decision = if (effectiveForceTool != null) {
+            log.info("Forced tool: {} — skipping router", effectiveForceTool)
+            "TOOL: $effectiveForceTool\nQUERY: $question\nSYNONYMS:"
         } else try {
             routerExecutor.execute(
                 prompt("decision") { user(decisionPrompt) }, routerModel
