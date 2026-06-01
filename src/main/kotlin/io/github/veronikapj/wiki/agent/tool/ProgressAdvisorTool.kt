@@ -102,7 +102,16 @@ class ProgressAdvisorTool(
         }
 
         // 4. LLM 프롬프트 구성
+        val slackFormatRule = """
+            |[출력 형식: Slack mrkdwn — 이 규칙을 최우선으로 준수]
+            |허용: *굵게* _기울임_ ~취소선~ `코드` :emoji: • 불릿 1. 번호
+            |금지: # ## ### **굵게** --- |테이블| [링크](url)
+            |굵게는 *한 개*로 감싼다. 표는 • 불릿으로 대체한다.
+        """.trimMargin()
+
         val advisorPrompt = buildString {
+            appendLine(slackFormatRule)
+            appendLine()
             if (data != null) {
                 appendLine("당신은 성과 목표 코칭 전문가입니다. 아래 성과 데이터를 분석하고, 두 관점에서 1:1 피드백을 제공하세요.")
                 appendLine()
@@ -137,13 +146,6 @@ class ProgressAdvisorTool(
             }
             appendLine()
             appendLine("사용자 메시지: $message")
-            appendLine()
-            appendLine("★★★ 출력 형식 규칙 (반드시 준수) ★★★")
-            appendLine("Slack mrkdwn 형식으로 출력하세요. Markdown이 아닙니다.")
-            appendLine("허용: *굵게* _기울임_ ~취소선~ `코드` ```코드블록``` :emoji: • 불릿 1. 번호")
-            appendLine("금지 (절대 사용 금지): # ## ### **굵게** __굵게__ [텍스트](URL) --- |테이블| 표")
-            appendLine("Slack에서 굵게는 *한 개*로 감쌉니다. **두 개**가 아닙니다.")
-            appendLine("표 대신 불릿(•)으로 나열하세요.")
         }
 
         val params = if (model.provider == AnthropicModels.Haiku_4_5.provider) {
