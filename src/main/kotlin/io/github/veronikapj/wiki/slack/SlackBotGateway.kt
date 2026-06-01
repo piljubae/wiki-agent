@@ -84,6 +84,7 @@ class SlackBotGateway(
         "codeSearch" to "코드 검색",
         "personalProgress" to "성과 목표",
         "personalGoalQuery" to "성과 목표",
+        "progressAdvisor" to "성과 코칭",
     )
 
     // 온보딩 상태: 채널별 진행 단계
