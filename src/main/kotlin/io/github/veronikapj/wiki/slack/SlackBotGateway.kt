@@ -20,6 +20,8 @@ import io.github.veronikapj.wiki.agent.QueryRewriter
 import io.github.veronikapj.wiki.config.SlackConfig
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.context.ProjectMemory
+import io.github.veronikapj.wiki.onboarding.OnboardingSessionStore
+import io.github.veronikapj.wiki.onboarding.OnboardingTool
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -85,6 +87,7 @@ class SlackBotGateway(
         "personalProgress" to "성과 목표",
         "personalGoalQuery" to "성과 목표",
         "progressAdvisor" to "성과 코칭",
+        "onboarding" to "온보딩 가이드",
     )
 
     // 온보딩 상태: 채널별 진행 단계
@@ -582,6 +585,13 @@ class SlackBotGateway(
 
             response
         }
+
+        // 온보딩 Block Kit 버튼 핸들러
+        for (actionId in listOf("onboarding_next", "onboarding_skip", "onboarding_progress")) {
+            app.blockAction(actionId) { req, ctx ->
+                ctx.ack()
+            }
+        }
     }
 
     private fun registerAssistantHandler() {
@@ -653,6 +663,7 @@ class SlackBotGateway(
             }
 
             val forcedTool = threadForcedTool[threadTs]
+                ?: if (userId != null && OnboardingSessionStore.isActive(userId)) "onboarding" else null
             if (!handleAssistantQueryAsync(channel, threadTs, query, forcedTool, userId = userId)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }
@@ -754,6 +765,7 @@ class SlackBotGateway(
             SuggestedPrompt.builder().title("코드에서 찾기").message("코드 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("PR 히스토리 보기").message("PR 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("종합 검색 (문서+코드)").message("종합 검색 예시 보여줘").build(),
+            SuggestedPrompt.builder().title("온보딩 가이드 시작").message("온보딩 가이드 시작").build(),
         )
 
         val HINT_FORCED_TOOL = mapOf(
@@ -761,6 +773,7 @@ class SlackBotGateway(
             "코드 검색 예시 보여줘" to "codeSearch",
             "PR 검색 예시 보여줘" to "prHistory",
             "종합 검색 예시 보여줘" to "confluenceSearch+codeSearch",
+            "온보딩 가이드 시작" to "onboarding",
         )
 
         val CANNED_RESPONSES = mapOf(
@@ -880,6 +893,8 @@ class SlackBotGateway(
 
                 :repeat: 답변에 이모지로 피드백: :thumbsup: 도움됨 | :thumbsdown: 아쉬움 | :repeat: 재검색
             """.trimIndent(),
+
+            "온보딩 가이드 시작" to OnboardingTool.CANNED_RESPONSE,
 
             "종합 검색 예시 보여줘" to """
                 :mag: *종합 검색 — Confluence + 코드 동시 검색*
