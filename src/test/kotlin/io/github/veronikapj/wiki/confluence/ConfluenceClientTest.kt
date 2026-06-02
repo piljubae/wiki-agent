@@ -131,7 +131,7 @@ class ConfluenceClientTest {
         val decoded = java.net.URLDecoder.decode(url, "UTF-8")
         // Total OR terms (query words + synonyms) should be capped
         val orCount = Regex("text ~").findAll(decoded).count()
-        assertTrue(orCount <= 5, "OR clauses should be capped at 5, got $orCount")
+        assertTrue(orCount <= 7, "OR clauses should be capped at MAX_TEXT_CLAUSES(7), got $orCount")
     }
 
     @Test

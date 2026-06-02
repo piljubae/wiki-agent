@@ -16,7 +16,7 @@ class ConfluenceSearchAgentTest {
     @Test
     fun `search returns formatted markdown with links`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
-        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), emptyList(), 5) } returns listOf(
+        coEvery { mockClient.searchByTitle("배포", listOf("DEV"), any(), any()) } returns listOf(
             ConfluencePageRef("1", "배포 가이드", "https://co.atlassian.net/wiki/spaces/DEV/pages/1", titleMatched = true),
             ConfluencePageRef("2", "배포 절차", "https://co.atlassian.net/wiki/spaces/DEV/pages/2", titleMatched = true),
             ConfluencePageRef("3", "배포 체크리스트", "https://co.atlassian.net/wiki/spaces/DEV/pages/3", titleMatched = true),

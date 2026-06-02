@@ -105,14 +105,21 @@ class ConfluenceSearchAgent(
         // 3단계: 합산 + 중복 제거 + 랭킹
         val combined = combineAndRank(titleResults, textResults, expandedResults, keywordResults, topK)
 
-        // 4단계: 전체 결과가 없으면 space 제한 없이 CQL 텍스트 검색 fallback
-        val finalCombined = if (combined.isEmpty() && spaces.isNotEmpty()) {
-            log.info("No results in configured spaces, falling back to global CQL search")
+        // 4단계: 결과가 없거나 관련성 없는 결과만 있으면 space 제한 없이 CQL 텍스트 검색 fallback
+        val needsGlobalFallback = spaces.isNotEmpty() &&
+            (combined.isEmpty() || !anyResultRelevant(combined, originalQuestion, synonyms))
+        val finalCombined = if (needsGlobalFallback) {
+            log.info("No relevant results in configured spaces (combined={}, relevant=false), falling back to global CQL search", combined.size)
             val globalResults = runCatching {
                 confluenceClient.searchByText(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore)
             }.getOrElse { emptyList() }
             log.info("Global fallback: {} results", globalResults.size)
-            globalResults.map { it.toSearchResult(SearchStage.GLOBAL_FALLBACK) }
+            if (globalResults.isNotEmpty()) {
+                val globalMapped = globalResults.map { it.toSearchResult(SearchStage.GLOBAL_FALLBACK) }
+                // global 결과 우선, 기존 combined와 merge (dedup by pageId)
+                val seen = mutableSetOf<String>()
+                (globalMapped + combined).filter { seen.add(it.pageId) }.take(topK)
+            } else combined
         } else combined
 
         putCache(cacheKey, finalCombined)
@@ -203,6 +210,28 @@ class ConfluenceSearchAgent(
                 .filter { it.length >= 2 && it !in stopwords }
                 .distinct()
                 .take(4) // AND 조건이 너무 많으면 결과 없음
+        }
+
+        /** combined 결과 중 하나라도 원문 질문 키워드와 매칭되는지 판정.
+         *  전부 무관하면 global fallback을 트리거하기 위한 게이트. */
+        internal fun anyResultRelevant(
+            results: List<SearchResult>,
+            originalQuestion: String,
+            synonyms: List<String>,
+        ): Boolean {
+            if (results.isEmpty()) return false
+            if (originalQuestion.isBlank()) return true // 판단 불가 → 기존 동작 유지
+            val keywords = extractSignificantKeywords(originalQuestion)
+            if (keywords.isEmpty()) return true
+            val synonymKeywords = synonyms
+                .flatMap { it.split("\\s+".toRegex()) }
+                .map { it.trim() }
+                .filter { it.length >= 2 }
+            val allKeywords = (keywords + synonymKeywords).map { it.lowercase() }.distinct()
+            return results.any { result ->
+                val titleLower = result.title.lowercase()
+                allKeywords.any { kw -> titleLower.contains(kw) }
+            }
         }
 
         /** CQL 검색 전 쿼리 정제: 특수문자 제거 + 대화형 접미사 제거 */
