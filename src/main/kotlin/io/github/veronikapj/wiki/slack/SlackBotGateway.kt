@@ -866,7 +866,6 @@ class SlackBotGateway(
             SuggestedPrompt.builder().title("Confluence에서 검색").message("Confluence 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("코드에서 찾기").message("코드 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("PR 히스토리 보기").message("PR 검색 예시 보여줘").build(),
-            SuggestedPrompt.builder().title("종합 검색 (문서+코드)").message("종합 검색 예시 보여줘").build(),
             SuggestedPrompt.builder().title("온보딩 가이드 시작").message("온보딩 가이드 시작").build(),
         )
 
