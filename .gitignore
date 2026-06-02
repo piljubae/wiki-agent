@@ -30,7 +30,10 @@ Thumbs.db
 .wiki/memory.md
 
 # Runtime data (ChromaDB, logs)
-.wiki/
+.wiki/*
+!.wiki/onboarding/
+.wiki/onboarding/*
+!.wiki/onboarding/curriculum.yaml
 chroma/
 chroma_data/
 chroma.log

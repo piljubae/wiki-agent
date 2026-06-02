@@ -1,0 +1,200 @@
+lastUpdated: "2026-06-01"
+
+phases:
+  # Phase 1: Day 1~2 — Environment & First Build
+  - id: env-setup
+    name: "개발 환경 설정"
+    phase: 1
+    day: "Day 1"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/env-setup.md"
+      - type: confluence
+        query: "Android 개발 환경 설정 가이드"
+
+  - id: app-build
+    name: "앱 빌드 및 실행"
+    phase: 1
+    day: "Day 1"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/app-build.md"
+      - type: confluence
+        query: "앱 빌드 가이드"
+
+  - id: project-structure
+    name: "프로젝트 구조 파악"
+    phase: 1
+    day: "Day 2"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/project-structure.md"
+      - type: code
+        query: "모듈 구조 및 패키지 레이아웃"
+
+  # Phase 2: Day 3~5 — Core Concepts
+  - id: domain-terms
+    name: "도메인 용어 정리"
+    phase: 2
+    day: "Day 3"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/domain-terms.md"
+      - type: confluence
+        query: "컬리 도메인 용어 사전"
+
+  - id: architecture
+    name: "아키텍처 개요"
+    phase: 2
+    day: "Day 3~4"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/architecture.md"
+      - type: confluence
+        query: "Android 아키텍처 가이드"
+
+  - id: common-modules
+    name: "공통 모듈 사용법"
+    phase: 2
+    day: "Day 4"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/common-modules.md"
+      - type: code
+        query: "공통 모듈 core, design-system"
+
+  - id: compose-convention
+    name: "Compose 컨벤션"
+    phase: 2
+    day: "Day 5"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        compose: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/compose-convention.md"
+      - type: confluence
+        query: "Compose 코딩 컨벤션"
+
+  # Phase 3: Week 2 — Process & Tooling
+  - id: branch-convention
+    name: "브랜치 컨벤션"
+    phase: 3
+    day: "Week 2"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/branch-convention.md"
+      - type: confluence
+        query: "Git 브랜치 전략"
+
+  - id: qa-deploy
+    name: "QA 및 배포 프로세스"
+    phase: 3
+    day: "Week 2"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/qa-deploy.md"
+      - type: confluence
+        query: "QA 배포 프로세스"
+
+  - id: monitoring
+    name: "모니터링 도구"
+    phase: 3
+    day: "Week 2"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/monitoring.md"
+      - type: confluence
+        query: "모니터링 대시보드 가이드"
+
+  # Phase 4: Week 2~3 — First Contribution
+  - id: first-pr
+    name: "첫 번째 PR 작성"
+    phase: 4
+    day: "Week 2~3"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/first-pr.md"
+      - type: confluence
+        query: "PR 작성 가이드"
+
+  - id: code-review
+    name: "코드 리뷰 문화"
+    phase: 4
+    day: "Week 2~3"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/code-review.md"
+      - type: confluence
+        query: "코드 리뷰 가이드라인"
+
+  - id: testing-guide
+    name: "테스트 작성 가이드"
+    phase: 4
+    day: "Week 3"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/testing-guide.md"
+      - type: confluence
+        query: "테스트 전략 가이드"
+
+  - id: first-ticket
+    name: "첫 번째 티켓 처리"
+    phase: 4
+    day: "Week 3"
+    skippable: false
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/first-ticket.md"
+
+  # Phase 5: Week 3~4 — Productivity
+  - id: claude-skills
+    name: "Claude 스킬 활용"
+    phase: 5
+    day: "Week 3~4"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        tooling: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/claude-skills.md"
+
+  - id: ci-cd
+    name: "CI/CD 파이프라인"
+    phase: 5
+    day: "Week 3~4"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: static
+        path: ".wiki/onboarding/steps/ci-cd.md"
+      - type: confluence
+        query: "CI/CD 파이프라인 가이드"
