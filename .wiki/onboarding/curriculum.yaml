@@ -45,13 +45,17 @@ phases:
 
   # Phase 2: Day 3~5 — Core Concepts
   - id: domain-terms
-    name: "도메인 용어 정리"
+    name: "앱 도메인 용어 & 코드 약어"
     phase: 2
     day: "Day 3"
     skippable: false
     sources:
-      - type: static
-        path: ".wiki/onboarding/steps/domain-terms.md"
+      - type: code
+        query: "PDP PLP PLPSection panelCode deeplink"
+      - type: code
+        query: "sealed class Screen extension:kt"
+      - type: code
+        query: "enum class Section Type extension:kt path:features"
       - type: confluence
         query: "컬리 도메인 용어 사전"
 
