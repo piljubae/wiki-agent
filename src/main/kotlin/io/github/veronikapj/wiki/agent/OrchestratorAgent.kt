@@ -169,6 +169,8 @@ class OrchestratorAgent(
             appendLine("규칙:")
             if (githubWikiTool != null) {
                 appendLine("- githubWikiSearch: 소스코드·함수·클래스 사용법, PR·커밋 내용, 코드 구현 방법을 묻는 질문에만 선택.")
+            }
+            if (confluenceTool != null) {
                 appendLine("- confluenceSearch: 그 외 모든 질문 (지식베이스+Confluence 병렬 검색).")
                 appendLine("  핵심 판단 원칙: 기술 주제라도 내부 문서를 찾는 질문이면 confluenceSearch.")
             }
