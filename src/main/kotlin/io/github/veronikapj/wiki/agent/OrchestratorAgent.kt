@@ -25,6 +25,7 @@ import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.agent.tool.PersonalDataTool
 import io.github.veronikapj.wiki.agent.tool.ProgressAdvisorTool
+import io.github.veronikapj.wiki.onboarding.OnboardingTool
 import io.github.veronikapj.wiki.context.ConversationStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -42,6 +43,7 @@ class OrchestratorAgent(
     private val codeFlowTool: CodeFlowTool? = null,
     private val personalDataTool: PersonalDataTool? = null,
     private val progressAdvisorTool: ProgressAdvisorTool? = null,
+    private val onboardingTool: OnboardingTool? = null,
     private val executor: MultiLLMPromptExecutor,
     private val routerExecutor: MultiLLMPromptExecutor = executor,
     private val routerModel: LLModel = AnthropicModels.Haiku_4_5,
@@ -282,6 +284,7 @@ class OrchestratorAgent(
             "findCallers", "traceChain", "findImpact",
             "personalProgress", "personalGoalQuery",
             "progressAdvisor",
+            "onboarding",
             "none",
         )
         // 1차: 정확한 형식 파싱
@@ -357,6 +360,30 @@ class OrchestratorAgent(
                 if (history.size > 5) history.removeFirst()
             }
             return AnswerResult(advisorAnswer, "MANUAL", false)
+        }
+
+        // onboarding: 온보딩 가이드 결과를 직접 반환 (summaryPrompt 경유 안 함)
+        if (toolName == "onboarding" && onboardingTool != null) {
+            listener?.onSearchStarted("onboarding")
+            val conversationContext = if (sessionId != null && conversationStore != null) {
+                conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
+            } else ""
+
+            val onboardingAnswer = runCatching {
+                onboardingTool!!.handle(userId ?: "", question, conversationContext)
+            }.getOrElse { e ->
+                log.error("Onboarding failed: {}", e.message)
+                "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"
+            }
+            listener?.onSearchCompleted("onboarding")
+
+            if (sessionId != null && conversationStore != null) {
+                conversationStore.append(sessionId, question, onboardingAnswer)
+            } else {
+                history.addLast(question to onboardingAnswer)
+                if (history.size > 5) history.removeFirst()
+            }
+            return AnswerResult(onboardingAnswer, "MANUAL", false)
         }
 
         val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
