@@ -85,9 +85,15 @@ class OnboardingTool(
 
     private fun handleStart(userId: String): String {
         val session = OnboardingSessionStore.load(userId)
-        if (session != null && session.currentStepId != null) {
-            val step = findCurrentStep(session) ?: return "커리큘럼이 변경되어 현재 단계를 찾을 수 없습니다. 다음 단계로 이동합니다."
-            return generateGuide(userId, step, session)
+        if (session != null) {
+            if (session.currentStepId != null) {
+                val step = findCurrentStep(session) ?: return "커리큘럼이 변경되어 현재 단계를 찾을 수 없습니다. 다음 단계로 이동합니다."
+                return generateGuide(userId, step, session)
+            }
+            // 이미 완료된 세션
+            return ":white_check_mark: 이전 온보딩을 이미 완료했습니다!\n\n" +
+                "다시 처음부터 시작하려면 \"온보딩 초기화\"라고 입력해주세요.\n" +
+                "특정 단계를 다시 보려면 \"OO 다시 보여줘\"라고 말해주세요."
         }
         return LEVEL_CHECK_MESSAGE
     }
@@ -290,7 +296,7 @@ class OnboardingTool(
                 val content = when (source.type) {
                     SourceType.STATIC -> {
                         source.path?.let { path ->
-                            runCatching { File(path).readText() }
+                            runCatching { File(path).readText().take(3000) }
                                 .onFailure { log.warn("Failed to read static file {}: {}", path, it.message) }
                                 .getOrNull()
                         }
