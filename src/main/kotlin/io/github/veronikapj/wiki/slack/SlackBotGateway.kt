@@ -587,10 +587,41 @@ class SlackBotGateway(
         }
 
         // 온보딩 Block Kit 버튼 핸들러
-        for (actionId in listOf("onboarding_next", "onboarding_skip", "onboarding_progress")) {
+        val onboardingActionMessages = mapOf(
+            "onboarding_next" to "다음",
+            "onboarding_skip" to "건너뛰기",
+            "onboarding_progress" to "진행률",
+        )
+        for ((actionId, message) in onboardingActionMessages) {
             app.blockAction(actionId) { req, ctx ->
+                val userId = req.payload.user.id
+                val channel = req.payload.channel?.id ?: req.payload.user.id
+                val threadTs = req.payload.message?.threadTs ?: req.payload.message?.ts ?: ""
+                if (channel.isNotBlank() && threadTs.isNotBlank()) {
+                    handleAssistantQueryAsync(channel, threadTs, message, forcedTool = "onboarding", userId = userId)
+                }
                 ctx.ack()
             }
+        }
+
+        // 온보딩 레벨 체크 드롭다운 핸들러
+        app.blockAction("onboarding_level_android") { _, ctx -> ctx.ack() }
+        app.blockAction("onboarding_level_compose") { _, ctx -> ctx.ack() }
+        app.blockAction("onboarding_level_domain") { _, ctx -> ctx.ack() }
+        app.blockAction("onboarding_level_submit") { req, ctx ->
+            val userId = req.payload.user.id
+            val channel = req.payload.channel?.id ?: req.payload.user.id
+            val threadTs = req.payload.message?.threadTs ?: req.payload.message?.ts ?: ""
+            // state.values에서 드롭다운 선택값 추출
+            val state = req.payload.state?.values ?: emptyMap()
+            val android = state["level_android"]?.get("onboarding_level_android")?.selectedOption?.value ?: "A"
+            val compose = state["level_compose"]?.get("onboarding_level_compose")?.selectedOption?.value ?: "A"
+            val domain = state["level_domain"]?.get("onboarding_level_domain")?.selectedOption?.value ?: "A"
+            val levelMessage = "$android, $compose, $domain"
+            if (channel.isNotBlank() && threadTs.isNotBlank()) {
+                handleAssistantQueryAsync(channel, threadTs, levelMessage, forcedTool = "onboarding", userId = userId)
+            }
+            ctx.ack()
         }
     }
 
@@ -710,8 +741,15 @@ class SlackBotGateway(
                     }
                     val finalText = if (footer.isBlank()) result.answer else "${result.answer}\n\n$footer"
 
-                    val sendResult = slackClient.chatPostMessage { req ->
-                        req.channel(channel).threadTs(threadTs).text(finalText)
+                    val sendResult = if (forcedTool == "onboarding" && !result.answer.contains("비활성화")) {
+                        slackClient.chatPostMessage { req ->
+                            req.channel(channel).threadTs(threadTs).text(finalText)
+                                .blocks(buildOnboardingBlocks(finalText))
+                        }
+                    } else {
+                        slackClient.chatPostMessage { req ->
+                            req.channel(channel).threadTs(threadTs).text(finalText)
+                        }
                     }
 
                     if (sendResult.isOk) {
@@ -751,6 +789,70 @@ class SlackBotGateway(
             }
             false
         }
+    }
+
+    private fun buildOnboardingBlocks(text: String): List<com.slack.api.model.block.LayoutBlock> {
+        // 레벨 체크 메시지면 드롭다운 UI로 대체
+        if (text.contains(OnboardingTool.LEVEL_CHECK_MESSAGE.take(20))) {
+            return buildLevelCheckBlocks()
+        }
+        val blocks = mutableListOf<com.slack.api.model.block.LayoutBlock>()
+        blocks.add(section { it.text(markdownText(text)) })
+        blocks.add(actions { it.elements(listOf(
+            button { b -> b.text(plainText("다음 ➡️")).actionId("onboarding_next") },
+            button { b -> b.text(plainText("건너뛰기 ⏭")).actionId("onboarding_skip") },
+            button { b -> b.text(plainText("진행률 📊")).actionId("onboarding_progress") },
+        )) })
+        return blocks
+    }
+
+    private fun buildLevelCheckBlocks(): List<com.slack.api.model.block.LayoutBlock> {
+        return listOf(
+            section { it.text(markdownText(":wave: 안녕하세요! 온보딩 가이드를 시작합니다.\n먼저 경험 수준을 선택해주세요.")) },
+            input { it
+                .blockId("level_android")
+                .label(plainText("1. Android 개발 경험"))
+                .element(staticSelect { s -> s
+                    .actionId("onboarding_level_android")
+                    .placeholder(plainText("선택하세요"))
+                    .options(listOf(
+                        option(plainText("A — 1년 미만 (입문)"), "A"),
+                        option(plainText("B — 1~3년 (중급)"), "B"),
+                        option(plainText("C — 3년 이상 (숙련)"), "C"),
+                    ))
+                })
+                .optional(false)
+            },
+            input { it
+                .blockId("level_compose")
+                .label(plainText("2. Compose 프로덕션 배포 경험"))
+                .element(staticSelect { s -> s
+                    .actionId("onboarding_level_compose")
+                    .placeholder(plainText("선택하세요"))
+                    .options(listOf(
+                        option(plainText("A — 없음"), "A"),
+                        option(plainText("B — 있음"), "B"),
+                    ))
+                })
+                .optional(false)
+            },
+            input { it
+                .blockId("level_domain")
+                .label(plainText("3. 커머스 도메인 경험"))
+                .element(staticSelect { s -> s
+                    .actionId("onboarding_level_domain")
+                    .placeholder(plainText("선택하세요"))
+                    .options(listOf(
+                        option(plainText("A — 없음"), "A"),
+                        option(plainText("B — 있음"), "B"),
+                    ))
+                })
+                .optional(false)
+            },
+            actions { it.elements(listOf(
+                button { b -> b.text(plainText("시작하기 🚀")).actionId("onboarding_level_submit").style("primary") },
+            )) },
+        )
     }
 
     companion object {
