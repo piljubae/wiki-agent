@@ -15,6 +15,7 @@ import java.io.File
 
 class OnboardingTool(
     private val curriculumPath: String = ".wiki/onboarding/curriculum.yaml",
+    private val projectName: String = "kurly-android",
     private val executor: MultiLLMPromptExecutor,
     private val model: LLModel,
     private val confluenceTool: ConfluenceTool,
@@ -189,7 +190,7 @@ class OnboardingTool(
         val questionPrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
-            appendLine("당신은 Android 신규 입사자 온보딩을 도와주는 멘토입니다.")
+            appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩을 도와주는 멘토입니다.")
             appendLine("아래 컨텍스트와 참고 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요.")
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
             if (contextBlock.isNotBlank()) {
@@ -255,7 +256,7 @@ class OnboardingTool(
         val guidePrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
-            appendLine("당신은 Android 신규 입사자 온보딩 멘토입니다.")
+            appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩 멘토입니다.")
             appendLine("아래 참고 자료를 바탕으로 온보딩 단계를 안내하세요.")
             appendLine()
             appendLine("단계 정보:")
@@ -444,7 +445,7 @@ class OnboardingTool(
 
         const val CANNED_RESPONSE = """:books: *온보딩 가이드*
 
-Android 팀 온보딩을 도와드릴게요!
+kurly-android 프로젝트 온보딩을 도와드릴게요!
 경험 수준에 맞춰 커리큘럼을 구성해 드립니다.
 
 `온보딩 시작`을 입력하면 시작됩니다."""

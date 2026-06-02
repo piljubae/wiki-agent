@@ -269,6 +269,7 @@ fun main() {
     if (confluenceTool != null && codeSearchTool != null) {
         onboardingTool = OnboardingTool(
             curriculumPath = ".wiki/onboarding/curriculum.yaml",
+            projectName = config.github.codeRepos.firstOrNull()?.substringAfter("/") ?: "kurly-android",
             executor = executor,
             model = routerModel,
             confluenceTool = confluenceTool,
