@@ -10,11 +10,29 @@ data class UserLevel(
     val domain: String,   // A, B
 )
 
+enum class StepStatusType {
+    PENDING, COMPLETED, SKIPPED;
+
+    val marker: String get() = when (this) {
+        COMPLETED -> "x"
+        SKIPPED -> "-"
+        PENDING -> " "
+    }
+
+    companion object {
+        fun fromMarker(marker: String): StepStatusType = when (marker) {
+            "x" -> COMPLETED
+            "-" -> SKIPPED
+            else -> PENDING
+        }
+    }
+}
+
 data class StepStatus(
     val id: String,
     val name: String,
     val phase: Int,
-    val status: String,        // "pending", "completed", "skipped"
+    val status: StepStatusType,
     val completedAt: String? = null,
 )
 
@@ -47,10 +65,14 @@ object OnboardingSessionStore {
         }.getOrNull()
     }
 
-    fun save(session: OnboardingSession) {
+    fun save(session: OnboardingSession): Boolean {
         val file = sessionFile(session.userId)
-        file.parentFile.mkdirs()
-        file.writeText(toMd(session))
+        return runCatching {
+            file.parentFile.mkdirs()
+            file.writeText(toMd(session))
+        }.onFailure { e ->
+            log.error("Failed to save session for {}: {}", session.userId, e.message)
+        }.isSuccess
     }
 
     fun create(
@@ -58,7 +80,7 @@ object OnboardingSessionStore {
         level: UserLevel?,
         steps: List<StepStatus>,
     ): OnboardingSession {
-        val currentStepId = steps.firstOrNull { it.status == "pending" }?.id
+        val currentStepId = steps.firstOrNull { it.status == StepStatusType.PENDING }?.id
         val session = OnboardingSession(
             userId = userId,
             startedAt = LocalDate.now().toString(),
@@ -71,9 +93,11 @@ object OnboardingSessionStore {
         return session
     }
 
-    fun addMemo(userId: String, memo: String) {
-        val session = load(userId) ?: return
-        save(session.copy(memos = session.memos + memo))
+    fun addMemo(userId: String, memo: String): OnboardingSession? {
+        val session = load(userId) ?: return null
+        val updated = session.copy(memos = session.memos + memo)
+        save(updated)
+        return updated
     }
 
     fun advanceStep(userId: String): OnboardingSession? {
@@ -82,10 +106,10 @@ object OnboardingSessionStore {
 
         val today = LocalDate.now().toString()
         val updatedSteps = session.steps.map { step ->
-            if (step.id == currentId) step.copy(status = "completed", completedAt = today)
+            if (step.id == currentId) step.copy(status = StepStatusType.COMPLETED, completedAt = today)
             else step
         }
-        val nextPending = updatedSteps.firstOrNull { it.status == "pending" }
+        val nextPending = updatedSteps.firstOrNull { it.status == StepStatusType.PENDING }
         val updated = session.copy(
             steps = updatedSteps,
             currentStepId = nextPending?.id,
@@ -99,10 +123,10 @@ object OnboardingSessionStore {
         val currentId = session.currentStepId ?: return session
 
         val updatedSteps = session.steps.map { step ->
-            if (step.id == currentId) step.copy(status = "skipped")
+            if (step.id == currentId) step.copy(status = StepStatusType.SKIPPED)
             else step
         }
-        val nextPending = updatedSteps.firstOrNull { it.status == "pending" }
+        val nextPending = updatedSteps.firstOrNull { it.status == StepStatusType.PENDING }
         val updated = session.copy(
             steps = updatedSteps,
             currentStepId = nextPending?.id,
@@ -117,6 +141,8 @@ object OnboardingSessionStore {
     }
 
     // ── MD serialization ──
+    // Step lines: - [marker] name [id|phase] (date) ← 현재
+    // Single-line memos only.
 
     internal fun toMd(session: OnboardingSession): String = buildString {
         appendLine("# 온보딩 — ${session.userId}")
@@ -135,14 +161,9 @@ object OnboardingSessionStore {
         // Progress section
         appendLine("## 진행 현황")
         for (step in session.steps) {
-            val marker = when (step.status) {
-                "completed" -> "x"
-                "skipped" -> "-"
-                else -> " "
-            }
             val dateSuffix = if (step.completedAt != null) " (${step.completedAt})" else ""
             val currentSuffix = if (step.id == session.currentStepId) " ← 현재" else ""
-            appendLine("- [$marker] ${step.name} [${step.id}]${dateSuffix}${currentSuffix}")
+            appendLine("- [${step.status.marker}] ${step.name} [${step.id}|${step.phase}]${dateSuffix}${currentSuffix}")
         }
         appendLine()
 
@@ -190,14 +211,11 @@ object OnboardingSessionStore {
                     val marker = stepMatch.groupValues[1]
                     val name = stepMatch.groupValues[2].trim()
                     val id = stepMatch.groupValues[3]
-                    val completedAt = stepMatch.groupValues[4].ifEmpty { null }
-                    val isCurrent = stepMatch.groupValues[5].isNotEmpty()
+                    val phase = stepMatch.groupValues[4].toIntOrNull() ?: 0
+                    val completedAt = stepMatch.groupValues[5].ifEmpty { null }
+                    val isCurrent = stepMatch.groupValues[6].isNotEmpty()
 
-                    val status = when (marker) {
-                        "x" -> "completed"
-                        "-" -> "skipped"
-                        else -> "pending"
-                    }
+                    val status = StepStatusType.fromMarker(marker)
 
                     if (isCurrent) currentStepId = id
 
@@ -205,14 +223,14 @@ object OnboardingSessionStore {
                         StepStatus(
                             id = id,
                             name = name,
-                            phase = 0, // phase is not stored in MD; will be enriched from curriculum
+                            phase = phase,
                             status = status,
                             completedAt = completedAt,
                         )
                     )
                 }
                 "메모" -> {
-                    if (trimmed.startsWith("- ") && trimmed != "- (없음)") {
+                    if (trimmed.startsWith("- ")) {
                         memos.add(trimmed.removePrefix("- "))
                     }
                 }
@@ -233,9 +251,9 @@ object OnboardingSessionStore {
         )
     }
 
-    // Matches: - [x] 개발 환경 세팅 [env-setup] (2026-06-01) ← 현재
-    // Groups: 1=marker  2=name  3=id  4=date (optional)  5=← 현재 (optional)
+    // Matches: - [x] 개발 환경 세팅 [env-setup|2] (2026-06-01) ← 현재
+    // Groups: 1=marker  2=name  3=id  4=phase  5=date (optional)  6=← 현재 (optional)
     private val STEP_PATTERN = Regex(
-        """^- \[([x\- ])] (.+?) \[([^\]]+)](?:\s+\((\d{4}-\d{2}-\d{2})\))?(?: (← 현재))?$"""
+        """^- \[([x\- ])] (.+?) \[([^|]+)\|(\d+)](?:\s+\((\d{4}-\d{2}-\d{2})\))?(?: (← 현재))?$"""
     )
 }
