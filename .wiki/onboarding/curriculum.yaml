@@ -51,13 +51,13 @@ phases:
     skippable: false
     sources:
       - type: code
-        query: "PDP PLP PLPSection panelCode deeplink"
+        query: "PDP PLP PLPSection panelCode extension:kt"
       - type: code
-        query: "sealed class Screen extension:kt"
+        query: "deeplink DeepLink scheme extension:kt"
+      - type: code
+        query: "sealed class Screen Route extension:kt"
       - type: code
         query: "enum class Section Type extension:kt path:features"
-      - type: confluence
-        query: "컬리 도메인 용어 사전"
 
   - id: architecture
     name: "아키텍처 개요"
