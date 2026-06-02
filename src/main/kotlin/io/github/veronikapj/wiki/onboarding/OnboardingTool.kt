@@ -1,0 +1,453 @@
+package io.github.veronikapj.wiki.onboarding
+
+import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
+import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
+import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.params.LLMParams
+import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
+import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
+import io.github.veronikapj.wiki.agent.tool.SourceTracker
+import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
+import java.io.File
+
+class OnboardingTool(
+    private val curriculumPath: String = ".wiki/onboarding/curriculum.yaml",
+    private val executor: MultiLLMPromptExecutor,
+    private val model: LLModel,
+    private val confluenceTool: ConfluenceTool,
+    private val codeSearchTool: CodeSearchTool,
+    private val tracker: SourceTracker? = null,
+) {
+    private val log = LoggerFactory.getLogger(OnboardingTool::class.java)
+
+    private val curriculum: OnboardingCurriculum? by lazy {
+        CurriculumLoader.load(curriculumPath)
+    }
+
+    // ── Intent classification ──
+
+    private enum class Intent {
+        START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, REVISIT, QUESTION
+    }
+
+    private fun classifyIntent(message: String): Intent {
+        val trimmed = message.trim()
+
+        // LEVEL_RESPONSE: comma or space separated A/B/C pattern (e.g. "B, A, A" or "B A A")
+        if (LEVEL_PATTERN.matches(trimmed)) return Intent.LEVEL_RESPONSE
+
+        // NEXT: exact matches
+        if (trimmed in NEXT_KEYWORDS) return Intent.NEXT
+
+        // SKIP: exact matches
+        if (trimmed in SKIP_KEYWORDS) return Intent.SKIP
+
+        // START: contains "온보딩" + ("시작" or "이어")
+        if (trimmed.contains("온보딩") && (trimmed.contains("시작") || trimmed.contains("이어"))) {
+            return Intent.START
+        }
+
+        // PROGRESS: contains keywords
+        if (trimmed.contains("진행률") || trimmed.contains("현황") || trimmed.contains("progress")) {
+            return Intent.PROGRESS
+        }
+
+        // REVISIT: contains keywords
+        if (trimmed.contains("다시 보여") || trimmed.contains("다시 알려")) {
+            return Intent.REVISIT
+        }
+
+        return Intent.QUESTION
+    }
+
+    // ── Main entry point ──
+
+    fun handle(userId: String, message: String, conversationContext: String = ""): String {
+        tracker?.record("Onboarding")
+        val intent = classifyIntent(message)
+        log.info("Onboarding intent for user={}: {} (message={})", userId, intent, message.take(50))
+
+        return when (intent) {
+            Intent.START -> handleStart(userId)
+            Intent.LEVEL_RESPONSE -> handleLevelResponse(userId, message)
+            Intent.NEXT -> handleNext(userId)
+            Intent.SKIP -> handleSkip(userId)
+            Intent.PROGRESS -> handleProgress(userId)
+            Intent.REVISIT -> handleRevisit(userId, message)
+            Intent.QUESTION -> handleQuestion(userId, message, conversationContext)
+        }
+    }
+
+    // ── Intent handlers ──
+
+    private fun handleStart(userId: String): String {
+        val session = OnboardingSessionStore.load(userId)
+        if (session != null && session.currentStepId != null) {
+            val step = findCurrentStep(session) ?: return "커리큘럼이 변경되어 현재 단계를 찾을 수 없습니다. 다음 단계로 이동합니다."
+            return generateGuide(userId, step, session)
+        }
+        return LEVEL_CHECK_MESSAGE
+    }
+
+    private fun handleLevelResponse(userId: String, message: String): String {
+        val cur = curriculum ?: return "커리큘럼 파일을 불러올 수 없습니다. ($curriculumPath)"
+
+        val level = parseLevelResponse(message.trim())
+            ?: return "레벨을 파싱할 수 없습니다. 예시: `B, A, A` (Android, Compose, 도메인 순서)"
+
+        val steps = buildStepsForLevel(level)
+        if (steps.isEmpty()) return "커리큘럼에 단계가 없습니다."
+
+        val session = OnboardingSessionStore.create(userId, level, steps)
+        val firstStep = cur.phases.firstOrNull { it.id == session.currentStepId }
+            ?: return "첫 번째 단계를 찾을 수 없습니다."
+
+        return generateGuide(userId, firstStep, session)
+    }
+
+    private fun handleNext(userId: String): String {
+        val session = OnboardingSessionStore.advanceStep(userId)
+            ?: return "진행 중인 온보딩 세션이 없습니다. `온보딩 시작`으로 시작해 주세요."
+
+        if (session.currentStepId == null) {
+            return COMPLETION_MESSAGE
+        }
+
+        val step = findCurrentStep(session)
+            ?: return "커리큘럼이 변경되어 다음 단계를 찾을 수 없습니다."
+        return generateGuide(userId, step, session)
+    }
+
+    private fun handleSkip(userId: String): String {
+        val session = OnboardingSessionStore.skipStep(userId)
+            ?: return "진행 중인 온보딩 세션이 없습니다. `온보딩 시작`으로 시작해 주세요."
+
+        if (session.currentStepId == null) {
+            return COMPLETION_MESSAGE
+        }
+
+        val step = findCurrentStep(session)
+            ?: return "커리큘럼이 변경되어 다음 단계를 찾을 수 없습니다."
+        return generateGuide(userId, step, session)
+    }
+
+    private fun handleProgress(userId: String): String {
+        val session = OnboardingSessionStore.load(userId)
+            ?: return "진행 중인 온보딩 세션이 없습니다. `온보딩 시작`으로 시작해 주세요."
+        return formatProgress(session)
+    }
+
+    private fun handleRevisit(userId: String, message: String): String {
+        val cur = curriculum ?: return "커리큘럼 파일을 불러올 수 없습니다."
+        val session = OnboardingSessionStore.load(userId)
+            ?: return "진행 중인 온보딩 세션이 없습니다. `온보딩 시작`으로 시작해 주세요."
+
+        // Find step by name match
+        val step = cur.phases.firstOrNull { step ->
+            message.contains(step.name, ignoreCase = true)
+        } ?: return "해당 단계를 찾을 수 없습니다. 정확한 단계 이름을 입력해 주세요."
+
+        return generateGuide(userId, step, session)
+    }
+
+    private fun handleQuestion(userId: String, message: String, conversationContext: String): String {
+        val session = OnboardingSessionStore.load(userId)
+        val cur = curriculum
+
+        val currentStep = if (session?.currentStepId != null && cur != null) {
+            cur.phases.firstOrNull { it.id == session.currentStepId }
+        } else null
+
+        val contextBlock = buildString {
+            if (currentStep != null) {
+                appendLine("현재 온보딩 단계: ${currentStep.name} (Phase ${currentStep.phase}, ${currentStep.day})")
+                val content = collectContent(currentStep)
+                if (content.isNotBlank()) {
+                    appendLine()
+                    appendLine("=== 현재 단계 참고 자료 ===")
+                    appendLine(content)
+                    appendLine("=== 끝 ===")
+                }
+            }
+            if (conversationContext.isNotBlank()) {
+                appendLine()
+                appendLine("=== 대화 히스토리 ===")
+                appendLine(conversationContext)
+                appendLine("=== 끝 ===")
+            }
+        }
+
+        val questionPrompt = buildString {
+            appendLine(SLACK_FORMAT_RULE)
+            appendLine()
+            appendLine("당신은 Android 신규 입사자 온보딩을 도와주는 멘토입니다.")
+            appendLine("아래 컨텍스트와 참고 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요.")
+            appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
+            if (contextBlock.isNotBlank()) {
+                appendLine()
+                appendLine(contextBlock)
+            }
+            appendLine()
+            appendLine("사용자 질문: $message")
+        }
+
+        return callLLM(questionPrompt)
+    }
+
+    // ── Helper methods ──
+
+    private fun buildStepsForLevel(level: UserLevel): List<StepStatus> {
+        val cur = curriculum ?: return emptyList()
+
+        return cur.phases.map { step ->
+            val shouldSkip = step.skippable && step.levelFilter != null &&
+                step.levelFilter.skipWhen.all { (dimension, requiredLevel) ->
+                    when (dimension) {
+                        "android" -> level.android == requiredLevel
+                        "compose" -> level.compose == requiredLevel
+                        "domain" -> level.domain == requiredLevel
+                        else -> false
+                    }
+                }
+
+            StepStatus(
+                id = step.id,
+                name = step.name,
+                phase = step.phase,
+                status = if (shouldSkip) StepStatusType.SKIPPED else StepStatusType.PENDING,
+            )
+        }
+    }
+
+    private fun findCurrentStep(session: OnboardingSession): CurriculumStep? {
+        val cur = curriculum ?: return null
+        val currentId = session.currentStepId ?: return null
+
+        val step = cur.phases.firstOrNull { it.id == currentId }
+        if (step != null) return step
+
+        // Curriculum was updated — advance to the next existing step
+        log.warn("Step {} not found in curriculum, advancing to next", currentId)
+        val updated = OnboardingSessionStore.advanceStep(session.userId) ?: return null
+        val nextId = updated.currentStepId ?: return null
+        return cur.phases.firstOrNull { it.id == nextId }
+    }
+
+    private fun generateGuide(userId: String, step: CurriculumStep, session: OnboardingSession): String {
+        val content = collectContent(step)
+
+        // Calculate step position within the phase
+        val phaseSteps = session.steps.filter { it.phase == step.phase }
+        val stepIndex = phaseSteps.indexOfFirst { it.id == step.id } + 1
+        val phaseTotal = phaseSteps.size
+
+        val header = ":books: *[Phase ${step.phase}: $stepIndex/$phaseTotal] ${step.name}* (${step.day})"
+
+        val guidePrompt = buildString {
+            appendLine(SLACK_FORMAT_RULE)
+            appendLine()
+            appendLine("당신은 Android 신규 입사자 온보딩 멘토입니다.")
+            appendLine("아래 참고 자료를 바탕으로 온보딩 단계를 안내하세요.")
+            appendLine()
+            appendLine("단계 정보:")
+            appendLine("- 이름: ${step.name}")
+            appendLine("- Phase: ${step.phase}")
+            appendLine("- 예상 소요 기간: ${step.day}")
+            appendLine()
+            if (content.isNotBlank()) {
+                appendLine("=== 참고 자료 ===")
+                appendLine(content)
+                appendLine("=== 끝 ===")
+                appendLine()
+            }
+            appendLine("가이드 작성 규칙:")
+            appendLine("1. 핵심 내용을 불릿으로 정리하세요.")
+            appendLine("2. 실습이 필요한 경우 구체적인 액션 아이템을 제시하세요.")
+            appendLine("3. 참고 링크가 있으면 포함하세요.")
+            appendLine("4. 다음 단계로 넘어갈 준비가 되면 `다음`을 입력하라고 안내하세요.")
+            appendLine("5. 모르는 부분은 질문하라고 안내하세요.")
+        }
+
+        val guideBody = callLLM(guidePrompt)
+        return "$header\n\n$guideBody"
+    }
+
+    private fun collectContent(step: CurriculumStep): String {
+        // Sort sources: STATIC first, then CODE, then CONFLUENCE
+        val sorted = step.sources.sortedBy { source ->
+            when (source.type) {
+                SourceType.STATIC -> 0
+                SourceType.CODE -> 1
+                SourceType.CONFLUENCE -> 2
+            }
+        }
+
+        return buildString {
+            for (source in sorted) {
+                val content = when (source.type) {
+                    SourceType.STATIC -> {
+                        source.path?.let { path ->
+                            runCatching { File(path).readText() }
+                                .onFailure { log.warn("Failed to read static file {}: {}", path, it.message) }
+                                .getOrNull()
+                        }
+                    }
+
+                    SourceType.CONFLUENCE -> {
+                        source.query?.let { query ->
+                            runCatching { confluenceTool.confluenceSearch(query) }
+                                .onFailure { log.warn("Confluence search failed for '{}': {}", query, it.message) }
+                                .getOrNull()
+                                ?.take(2000)
+                        }
+                    }
+
+                    SourceType.CODE -> {
+                        source.query?.let { query ->
+                            runCatching { codeSearchTool.codeSearch(query) }
+                                .onFailure { log.warn("Code search failed for '{}': {}", query, it.message) }
+                                .getOrNull()
+                                ?.take(2000)
+                        }
+                    }
+                }
+
+                if (!content.isNullOrBlank()) {
+                    appendLine("[${source.type.name}] ${source.query ?: source.path ?: ""}")
+                    appendLine(content)
+                    appendLine()
+                }
+            }
+        }.trim()
+    }
+
+    private fun formatProgress(session: OnboardingSession): String {
+        return buildString {
+            appendLine(":bar_chart: *온보딩 진행 현황*")
+            appendLine()
+
+            val grouped = session.steps.groupBy { it.phase }
+            for (phase in grouped.keys.sorted()) {
+                val steps = grouped[phase] ?: continue
+                val phaseName = PHASE_NAMES[phase] ?: "Phase $phase"
+                val completed = steps.count { it.status == StepStatusType.COMPLETED }
+                val skipped = steps.count { it.status == StepStatusType.SKIPPED }
+                val total = steps.size
+                val done = completed + skipped
+
+                appendLine("*Phase $phase: $phaseName* ($done/$total)")
+
+                for (step in steps) {
+                    val icon = when (step.status) {
+                        StepStatusType.COMPLETED -> ":white_check_mark:"
+                        StepStatusType.SKIPPED -> ":fast_forward:"
+                        StepStatusType.PENDING -> if (step.id == session.currentStepId) ":point_right:" else ":white_circle:"
+                    }
+                    val dateSuffix = step.completedAt?.let { " ($it)" } ?: ""
+                    appendLine("  $icon ${step.name}$dateSuffix")
+                }
+                appendLine()
+            }
+
+            val totalCompleted = session.steps.count { it.status == StepStatusType.COMPLETED }
+            val totalSkipped = session.steps.count { it.status == StepStatusType.SKIPPED }
+            val totalSteps = session.steps.size
+            val pct = if (totalSteps > 0) ((totalCompleted + totalSkipped) * 100 / totalSteps) else 0
+            appendLine("*전체 진행률: $pct%* ($totalCompleted 완료, $totalSkipped 건너뜀 / $totalSteps 전체)")
+        }.trim()
+    }
+
+    private fun callLLM(prompt: String): String {
+        val params = if (model.provider == AnthropicModels.Haiku_4_5.provider) {
+            AnthropicParams(maxTokens = 4096)
+        } else {
+            LLMParams(maxTokens = 4096)
+        }
+
+        return runBlocking {
+            runCatching {
+                executor.execute(
+                    prompt("onboarding", params = params) { user(prompt) }, model
+                ).joinToString("") { it.content }.trim()
+            }.getOrElse { e ->
+                log.error("Onboarding LLM call failed: {}", e.message)
+                "가이드 생성 중 오류가 발생했습니다: ${e.message}"
+            }
+        }
+    }
+
+    private fun parseLevelResponse(input: String): UserLevel? {
+        val parts = input.uppercase()
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+
+        if (parts.size != 3) return null
+
+        val android = parts[0]
+        val compose = parts[1]
+        val domain = parts[2]
+
+        // Validate: android A/B/C, compose A/B, domain A/B
+        if (android !in listOf("A", "B", "C")) return null
+        if (compose !in listOf("A", "B")) return null
+        if (domain !in listOf("A", "B")) return null
+
+        return UserLevel(android = android, compose = compose, domain = domain)
+    }
+
+    companion object {
+        private val LEVEL_PATTERN = Regex("""^[ABCabc][,\s]+[ABab][,\s]+[ABab]$""")
+
+        private val NEXT_KEYWORDS = setOf("다음", "넘어가기", "다음 단계", "next")
+        private val SKIP_KEYWORDS = setOf("건너뛰기", "스킵", "skip")
+
+        private val PHASE_NAMES = mapOf(
+            1 to "환경 & 기본기",
+            2 to "도메인 & 코드 이해",
+            3 to "프로세스",
+            4 to "실전",
+            5 to "스킬 가이드",
+        )
+
+        private const val SLACK_FORMAT_RULE = """[출력 형식: Slack mrkdwn — 이 규칙을 최우선으로 준수]
+허용: *굵게* _기울임_ ~취소선~ `코드` :emoji: • 불릿 1. 번호
+금지: # ## ### **굵게** --- |테이블| [링크](url)
+굵게는 *한 개*로 감싼다. 표는 • 불릿으로 대체한다."""
+
+        const val LEVEL_CHECK_MESSAGE = """:wave: 안녕하세요! 온보딩 가이드를 시작합니다.
+
+먼저 경험 수준을 파악할게요. 아래 3가지 질문에 해당하는 레벨을 *한 줄*로 답해주세요.
+
+*1. Android 개발 경험*
+• A — 1년 미만 (입문)
+• B — 1~3년 (중급)
+• C — 3년 이상 (숙련)
+
+*2. Compose 경험*
+• A — 거의 없음
+• B — 프로젝트 적용 경험 있음
+
+*3. 도메인(커머스) 경험*
+• A — 거의 없음
+• B — 커머스 or 유사 도메인 경험 있음
+
+:pencil2: 예시: `B, A, A`"""
+
+        const val CANNED_RESPONSE = """:books: *온보딩 가이드*
+
+Android 팀 온보딩을 도와드릴게요!
+경험 수준에 맞춰 커리큘럼을 구성해 드립니다.
+
+`온보딩 시작`을 입력하면 시작됩니다."""
+
+        private const val COMPLETION_MESSAGE = """:tada: *온보딩 완료!*
+
+모든 단계를 마쳤습니다. 수고하셨어요!
+궁금한 점이 있으면 언제든 질문해 주세요.
+
+`진행률`을 입력하면 전체 진행 현황을 확인할 수 있습니다."""
+    }
+}
