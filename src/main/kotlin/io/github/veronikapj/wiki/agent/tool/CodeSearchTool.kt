@@ -34,7 +34,9 @@ class CodeSearchTool(
         query: String,
     ): String = runBlocking {
         tracker?.record("CodeSearch")
-        runCatching {
+
+        // 1차: ChromaDB 벡터 + BM25 + grep
+        val localResult = runCatching {
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
 
@@ -131,25 +133,30 @@ class CodeSearchTool(
                 }
 
             // ChromaDB + grep 결과 병합 (둘 다 있으면 함께, 하나만 있으면 그것만)
-            val combined = listOfNotNull(chromaResult, grepSection).joinToString("\n\n")
-            if (combined.isNotBlank()) return@runBlocking combined
+            listOfNotNull(chromaResult, grepSection).joinToString("\n\n").takeIf { it.isNotBlank() }
+        }.onFailure { e ->
+            log.warn("ChromaDB/grep search failed, falling back to GitHub API: {}", e.message)
+        }.getOrNull()
 
-            // 모두 없으면 GitHub Code Search API fallback
-            val apiResults = codeRepos.flatMap { repo ->
-                runCatching { codeClient.searchCode(repo, query, branch) }.getOrDefault(emptyList())
-            }.take(5)
+        if (!localResult.isNullOrBlank()) return@runBlocking localResult
 
-            if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+        // 2차: GitHub Code Search API fallback (ChromaDB 실패 시에도 반드시 실행)
+        val apiResults = codeRepos.flatMap { repo ->
+            runCatching { codeClient.searchCode(repo, query, branch) }
+                .onFailure { e -> log.warn("GitHub Code Search failed for {}: {}", repo, e.message) }
+                .getOrDefault(emptyList())
+        }.take(5)
 
-            buildString {
-                appendLine("*\"$query\"* 관련 코드 (GitHub Search):\n")
-                apiResults.forEachIndexed { i, r ->
-                    appendLine("${i + 1}. `${r.filePath}`")
-                    appendLine("   <${r.htmlUrl}|소스 보기>")
-                    appendLine()
-                }
-            }.trim()
-        }.getOrElse { "코드 검색 중 오류: ${it.message}" }
+        if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+
+        buildString {
+            appendLine("*\"$query\"* 관련 코드 (GitHub Search):\n")
+            apiResults.forEachIndexed { i, r ->
+                appendLine("${i + 1}. `${r.filePath}`")
+                appendLine("   <${r.htmlUrl}|소스 보기>")
+                appendLine()
+            }
+        }.trim()
     }
 
     companion object {

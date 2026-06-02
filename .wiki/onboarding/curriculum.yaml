@@ -36,10 +36,12 @@ phases:
     day: "Day 2"
     skippable: false
     sources:
-      - type: static
-        path: ".wiki/onboarding/steps/project-structure.md"
-      - type: code
-        query: "모듈 구조 및 패키지 레이아웃"
+      - type: github-file
+        path: "settings.gradle.kts"
+      - type: github-file
+        path: "app/build.gradle.kts"
+      - type: github-file
+        path: "build-logic/settings.gradle.kts"
 
   # Phase 2: Day 3~5 — Core Concepts
   - id: domain-terms
@@ -66,6 +68,23 @@ phases:
         path: ".wiki/onboarding/steps/architecture.md"
       - type: confluence
         query: "Android 아키텍처 가이드"
+      - type: code
+        query: "ViewModel UseCase Repository"
+
+  - id: kpds-design-system
+    name: "KPDS 디자인 시스템"
+    phase: 2
+    day: "Day 4"
+    skippable: false
+    sources:
+      - type: github-file
+        path: "settings.gradle.kts"
+        repo: "thefarmersfront/kpds-compose"
+      - type: github-file
+        path: "build.gradle.kts"
+        repo: "thefarmersfront/kpds-compose"
+      - type: confluence
+        query: "KPDS 디자인 시스템 가이드"
 
   - id: common-modules
     name: "공통 모듈 사용법"
@@ -76,7 +95,7 @@ phases:
       - type: static
         path: ".wiki/onboarding/steps/common-modules.md"
       - type: code
-        query: "공통 모듈 core, design-system"
+        query: "filename:build.gradle dependencies implementation project"
 
   - id: compose-convention
     name: "Compose 컨벤션"
@@ -91,6 +110,8 @@ phases:
         path: ".wiki/onboarding/steps/compose-convention.md"
       - type: confluence
         query: "Compose 코딩 컨벤션"
+      - type: code
+        query: "@Composable Preview extension:kt"
 
   # Phase 3: Week 2 — Process & Tooling
   - id: branch-convention
@@ -162,6 +183,8 @@ phases:
         path: ".wiki/onboarding/steps/testing-guide.md"
       - type: confluence
         query: "테스트 전략 가이드"
+      - type: code
+        query: "@Test class extension:kt path:test"
 
   - id: first-ticket
     name: "첫 번째 티켓 처리"

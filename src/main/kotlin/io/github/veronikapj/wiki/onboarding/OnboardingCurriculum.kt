@@ -34,6 +34,7 @@ enum class SourceType {
     @SerialName("static") STATIC,
     @SerialName("confluence") CONFLUENCE,
     @SerialName("code") CODE,
+    @SerialName("github-file") GITHUB_FILE,
 }
 
 @Serializable
@@ -41,6 +42,7 @@ data class ContentSource(
     val type: SourceType,
     val path: String? = null,
     val query: String? = null,
+    val repo: String? = null,  // github-file 전용: 특정 repo 지정 (미지정 시 기본 codeRepo 사용)
 )
 
 object CurriculumLoader {

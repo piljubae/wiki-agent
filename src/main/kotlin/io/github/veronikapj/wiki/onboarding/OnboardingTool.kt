@@ -9,6 +9,7 @@ import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.SourceTracker
+import io.github.veronikapj.wiki.github.GitHubCodeClient
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -20,6 +21,9 @@ class OnboardingTool(
     private val model: LLModel,
     private val confluenceTool: ConfluenceTool,
     private val codeSearchTool: CodeSearchTool,
+    private val codeClient: GitHubCodeClient? = null,
+    private val codeRepo: String? = null,
+    private val codeBranch: String = "develop",
     private val tracker: SourceTracker? = null,
 ) {
     private val log = LoggerFactory.getLogger(OnboardingTool::class.java)
@@ -191,6 +195,7 @@ class OnboardingTool(
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
             appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩을 도와주는 멘토입니다.")
+            appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
             appendLine("아래 컨텍스트와 참고 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요.")
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
             if (contextBlock.isNotBlank()) {
@@ -257,6 +262,7 @@ class OnboardingTool(
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
             appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩 멘토입니다.")
+            appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
             appendLine("아래 참고 자료를 바탕으로 온보딩 단계를 안내하세요.")
             appendLine()
             appendLine("단계 정보:")
@@ -268,6 +274,10 @@ class OnboardingTool(
                 appendLine("=== 참고 자료 ===")
                 appendLine(content)
                 appendLine("=== 끝 ===")
+                appendLine()
+            } else {
+                appendLine("참고 자료를 수집하지 못했습니다. Android 프로젝트에 대한 일반 지식을 바탕으로 가이드를 작성하세요.")
+                appendLine("절대로 사용자에게 경로를 요청하거나 참고 자료가 없다고 말하지 마세요. 바로 가이드를 작성하세요.")
                 appendLine()
             }
             appendLine("가이드 작성 규칙:")
@@ -283,12 +293,13 @@ class OnboardingTool(
     }
 
     private fun collectContent(step: CurriculumStep): String {
-        // Sort sources: STATIC first, then CODE, then CONFLUENCE
+        // Sort sources: GITHUB_FILE first (실제 파일 내용), then STATIC, CODE, CONFLUENCE
         val sorted = step.sources.sortedBy { source ->
             when (source.type) {
-                SourceType.STATIC -> 0
-                SourceType.CODE -> 1
-                SourceType.CONFLUENCE -> 2
+                SourceType.GITHUB_FILE -> 0
+                SourceType.STATIC -> 1
+                SourceType.CODE -> 2
+                SourceType.CONFLUENCE -> 3
             }
         }
 
@@ -297,7 +308,12 @@ class OnboardingTool(
                 val content = when (source.type) {
                     SourceType.STATIC -> {
                         source.path?.let { path ->
-                            runCatching { File(path).readText().take(3000) }
+                            runCatching {
+                                val text = File(path).readText()
+                                // stub 파일은 건너뛰기 — LLM이 빈 콘텐츠에서 잘못 추론하는 것 방지
+                                if (text.contains("status: stub")) null
+                                else text.take(3000)
+                            }
                                 .onFailure { log.warn("Failed to read static file {}: {}", path, it.message) }
                                 .getOrNull()
                         }
@@ -320,10 +336,35 @@ class OnboardingTool(
                                 ?.take(2000)
                         }
                     }
+
+                    SourceType.GITHUB_FILE -> {
+                        val repo = source.repo ?: codeRepo
+                        val client = codeClient
+                        if (repo != null && client != null && source.path != null) {
+                            val fetched = try {
+                                kotlinx.coroutines.runBlocking {
+                                    client.fetchFileContent(repo, source.path, codeBranch)
+                                }
+                            } catch (e: Exception) {
+                                log.warn("GitHub file fetch failed for '{}': {}", source.path, e.message)
+                                null
+                            }
+                            fetched?.take(5000)
+                        } else {
+                            log.warn("GITHUB_FILE source requires codeClient+codeRepo, but not configured")
+                            null
+                        }
+                    }
                 }
 
                 if (!content.isNullOrBlank()) {
-                    appendLine("[${source.type.name}] ${source.query ?: source.path ?: ""}")
+                    // GITHUB_FILE은 repo 내 경로를 그대로 노출 (실제 프로젝트 파일이므로)
+                    // STATIC은 로컬 파일 경로를 숨김 (wiki-agent 내부 경로이므로)
+                    val label = when (source.type) {
+                        SourceType.GITHUB_FILE -> source.path ?: ""
+                        else -> source.query ?: source.path?.substringAfterLast("/")?.substringBeforeLast(".") ?: ""
+                    }
+                    appendLine("[${source.type.name}] $label")
                     appendLine(content)
                     appendLine()
                 }

@@ -141,8 +141,11 @@ fun main() {
         confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
     }
 
-    // GitHub Wiki
+    // GitHub
     val githubToken = SecretLoader.resolve("GITHUB_TOKEN", config.github.token)
+    val sharedGithubCodeClient = GitHubCodeClient(githubToken)
+
+    // GitHub Wiki
     var githubWikiTool: GitHubWikiTool? = null
     if (config.github.enabled && config.github.repos.isNotEmpty()) {
         val githubClient = GitHubWikiClient(githubToken)
@@ -274,6 +277,9 @@ fun main() {
             model = routerModel,
             confluenceTool = confluenceTool,
             codeSearchTool = codeSearchTool,
+            codeClient = sharedGithubCodeClient,
+            codeRepo = config.github.codeRepos.firstOrNull(),
+            codeBranch = config.github.codeSearch.branch,
             tracker = sourceTracker,
         )
         log.info("Onboarding enabled")
