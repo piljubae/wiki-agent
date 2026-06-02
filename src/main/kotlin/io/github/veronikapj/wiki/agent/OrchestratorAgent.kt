@@ -77,6 +77,7 @@ class OrchestratorAgent(
         return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool, userId)
         else {
             if (forceAllTools) log.warn("forceAllTools=true is not supported in Koog agent path, ignored")
+            if (forceTool != null) log.warn("forceTool='{}' is not supported in Koog agent path, ignored", forceTool)
             answerWithKoogAgent(question, listener, sessionId, userId)
         }
     }
@@ -363,6 +364,10 @@ class OrchestratorAgent(
         }
 
         // onboarding: 온보딩 가이드 결과를 직접 반환 (summaryPrompt 경유 안 함)
+        if (toolName == "onboarding" && onboardingTool == null) {
+            log.warn("forceTool=onboarding but onboardingTool is null")
+            return AnswerResult("온보딩 기능이 현재 비활성화되어 있습니다.", "MANUAL", false)
+        }
         if (toolName == "onboarding" && onboardingTool != null) {
             listener?.onSearchStarted("onboarding")
             val conversationContext = if (sessionId != null && conversationStore != null) {
