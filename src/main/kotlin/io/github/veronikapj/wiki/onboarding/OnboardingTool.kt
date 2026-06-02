@@ -286,6 +286,7 @@ class OnboardingTool(
             appendLine("3. 참고 링크가 있으면 포함하세요.")
             appendLine("4. 다음 단계로 넘어갈 준비가 되면 `다음`을 입력하라고 안내하세요.")
             appendLine("5. 모르는 부분은 질문하라고 안내하세요.")
+            appendLine("6. 컨벤션/규칙 관련 단계는 :white_check_mark: DO / :x: DON'T 형식으로 정리하세요. 코드 예시를 Good/Bad로 보여주세요.")
         }
 
         val guideBody = callLLM(guidePrompt)

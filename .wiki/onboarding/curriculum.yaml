@@ -102,7 +102,7 @@ phases:
         query: "filename:build.gradle dependencies implementation project"
 
   - id: compose-convention
-    name: "Compose 컨벤션"
+    name: "Compose 컨벤션 — DO / DON'T"
     phase: 2
     day: "Day 5"
     skippable: true
@@ -110,12 +110,18 @@ phases:
       skipWhen:
         compose: "C"
     sources:
-      - type: static
-        path: ".wiki/onboarding/steps/compose-convention.md"
       - type: confluence
-        query: "Compose 코딩 컨벤션"
+        query: "Compose ViewModel 사용 가이드"
+      - type: confluence
+        query: "migration-compose 스킬 가이드"
       - type: code
-        query: "@Composable Preview extension:kt"
+        query: "Modifier @Composable UiState extension:kt"
+      - type: code
+        query: "rememberSaveable collectAsStateWithLifecycle extension:kt"
+      - type: github-file
+        path: "detekt.yml"
+      - type: github-file
+        path: "build-logic/convention/src/main/kotlin"
 
   # Phase 3: Week 2 — Process & Tooling
   - id: branch-convention
