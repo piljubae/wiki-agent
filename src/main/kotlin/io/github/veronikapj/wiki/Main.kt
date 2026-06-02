@@ -39,6 +39,7 @@ import io.github.veronikapj.wiki.agent.tool.PersonalDataTool
 import io.github.veronikapj.wiki.agent.tool.ProgressAdvisorTool
 import io.github.veronikapj.wiki.agent.tool.PrHistoryTool
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
+import io.github.veronikapj.wiki.onboarding.OnboardingTool
 import io.github.veronikapj.wiki.knowledge.CallGraphIndexAgent
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -263,6 +264,20 @@ fun main() {
         log.info("ProgressAdvisor enabled")
     }
 
+    // Onboarding Tool
+    var onboardingTool: OnboardingTool? = null
+    if (confluenceTool != null && codeSearchTool != null) {
+        onboardingTool = OnboardingTool(
+            curriculumPath = ".wiki/onboarding/curriculum.yaml",
+            executor = executor,
+            model = routerModel,
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+            tracker = sourceTracker,
+        )
+        log.info("Onboarding enabled")
+    }
+
     val userPersonaStore = io.github.veronikapj.wiki.slack.UserPersonaStore()
 
     val orchestrator = OrchestratorAgent(
@@ -274,6 +289,7 @@ fun main() {
         codeFlowTool = codeFlowTool,
         personalDataTool = personalDataTool,
         progressAdvisorTool = progressAdvisorTool,
+        onboardingTool = onboardingTool,
         executor = executor,
         routerExecutor = routerExecutor,
         routerModel = routerModel,
