@@ -7,6 +7,8 @@ import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -36,12 +38,25 @@ class CodeSearchTool(
     ): String = runBlocking {
         tracker?.record("CodeSearch")
 
-        val expandedQuery = runCatching { llmExpandClient?.expandQuery(query) }.getOrNull() ?: query
-        log.info("codeSearch: query='{}', expandedQuery='{}'", query.take(80), expandedQuery.take(200))
         log.info("codeSearch: embeddingFn={}, bm25Index={}, localRepoPath={}",
             if (embeddingFn != null) "available" else "null",
             if (bm25Index != null) "available" else "null",
             localRepoPath ?: "null")
+
+        // expandQuery + grep 패턴 LLM 호출을 병렬로 시작
+        val (expandedQuery, llmGrepPatterns) = runBlocking {
+            coroutineScope {
+                val expandDeferred = async {
+                    runCatching { llmExpandClient?.expandQuery(query) }.getOrNull() ?: query
+                }
+                val grepDeferred = async {
+                    runCatching { llmExpandClient?.extractGrepPatterns(query) }.getOrNull() ?: emptyList()
+                }
+                expandDeferred.await() to grepDeferred.await()
+            }
+        }
+        log.info("codeSearch: query='{}', expandedQuery='{}'", query.take(80), expandedQuery.take(200))
+        log.info("codeSearch: LLM grep patterns={}", llmGrepPatterns)
 
         // 1차: ChromaDB 벡터 + BM25 + grep
         val localResult = runCatching {
@@ -114,9 +129,9 @@ class CodeSearchTool(
                 }.trim()
             } else null
 
-            // 로컬 grep 보완: expandedQuery에서 식별자 추출 → 한글 질문도 영문 코드 용어로 grep 가능
-            val grepPatterns = buildGrepPatterns(expandedQuery)
-            log.info("grep patterns from expandedQuery: {}", grepPatterns.take(10))
+            // 로컬 grep 보완: LLM 패턴 우선, 실패 시 expandedQuery에서 휴리스틱 추출
+            val grepPatterns = llmGrepPatterns.ifEmpty { buildGrepPatterns(expandedQuery) }
+            log.info("grep patterns ({}): {}", if (llmGrepPatterns.isNotEmpty()) "LLM" else "heuristic", grepPatterns.take(10))
             val grepSection = localRepoPath
                 ?.takeIf { grepPatterns.isNotEmpty() }
                 ?.let { repoPath ->
@@ -153,8 +168,12 @@ class CodeSearchTool(
         if (!localResult.isNullOrBlank()) return@runBlocking localResult
         log.info("localResult empty → falling back to GitHub Code Search")
 
-        // 2차: GitHub Code Search API fallback — expandedQuery에서 영문 식별자만 추출
-        val codeSearchKeywords = extractEnglishKeywords(expandedQuery)
+        // 2차: GitHub Code Search API fallback — LLM 패턴 우선, 없으면 expandedQuery에서 영문 추출
+        val codeSearchKeywords = if (llmGrepPatterns.isNotEmpty()) {
+            llmGrepPatterns.take(8).joinToString(" ")
+        } else {
+            extractEnglishKeywords(expandedQuery)
+        }
         if (codeSearchKeywords.isBlank()) return@runBlocking "관련 코드를 찾을 수 없습니다."
 
         // 1차: 전체 AND → 0건이면 3개씩 청크 분할 재시도 (순서 유지 = 의미 클러스터)

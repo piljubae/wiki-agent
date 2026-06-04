@@ -33,6 +33,31 @@ class LlmExpandClient(
         """.trimIndent()
         return runCatching { "$query ${llmFn(prompt)}" }.getOrDefault(query)
     }
+
+    /**
+     * Kotlin/Android 코드에서 grep할 패턴을 LLM에게 직접 요청.
+     * 쿼리 의도에 맞는 클래스명, 함수명, 어노테이션 등 코드 식별자만 반환.
+     */
+    suspend fun extractGrepPatterns(query: String): List<String> {
+        val prompt = """
+            아래 질문의 의도에 맞는 Kotlin/Android 코드를 grep으로 찾으려 합니다.
+            실제 코드에서 검색해야 할 클래스명, 함수명, 어노테이션, 인터페이스명을 줄바꿈으로 구분해 반환하세요.
+
+            규칙:
+            - 실제 Kotlin/Android 코드에 존재할 법한 식별자만 (PascalCase, camelCase, snake_case)
+            - 너무 일반적인 단어(Type, Content, Custom, User, Agent 등)는 제외
+            - 최대 10개
+            - 설명 없이 식별자만 출력
+
+            질문: $query
+        """.trimIndent()
+        return runCatching {
+            llmFn(prompt).lines()
+                .map { it.trim().removePrefix("- ").removePrefix("* ").trim() }
+                .filter { it.isNotBlank() && it.length >= 3 && !it.contains(" ") }
+                .take(10)
+        }.getOrDefault(emptyList())
+    }
 }
 
 class GoogleEmbeddingClient(private val apiKey: String) {
