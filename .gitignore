@@ -31,6 +31,7 @@ Thumbs.db
 
 # Runtime data (ChromaDB, logs)
 .wiki/*
+!.wiki/config.yml.template
 !.wiki/onboarding/
 .wiki/onboarding/*
 !.wiki/onboarding/curriculum.yaml

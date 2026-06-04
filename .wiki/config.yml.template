@@ -1,0 +1,54 @@
+# wiki-agent 설정 템플릿
+# 복사해서 .wiki/config.yml 로 사용하세요.
+# 시크릿(API 키, 토큰)은 .env 파일에 설정하세요.
+
+model:
+  provider: CLAUDE_CODE  # CLAUDE_CODE | ANTHROPIC | GOOGLE | GEMINI_CODE | ANTIGRAVITY_CODE
+  # name: claude-sonnet-4-6  # 모델명 직접 지정 (선택)
+
+confluence:
+  baseUrl: https://your-domain.atlassian.net
+  # token: .env의 CONFLUENCE_TOKEN 사용
+  spaces:
+    - SpaceName1
+    - SpaceName2
+
+slack: {}
+  # botToken/appToken: .env의 SLACK_BOT_TOKEN, SLACK_APP_TOKEN 사용
+
+rag:
+  enabled: true
+  chromaUrl: http://localhost:8000
+  embeddingMode: LLM_EXPAND  # LLM_EXPAND | GOOGLE_EMBEDDING
+  # googleApiKey: .env의 GOOGLE_API_KEY 사용 (공용 fallback)
+
+github:
+  enabled: true
+  # token: .env의 GITHUB_TOKEN 사용
+  repos:
+    - owner/wiki-repo  # GitHub Wiki 검색 대상
+  codeRepos:
+    - owner/android-repo  # 코드 검색 대상
+  codeSearch:
+    branch: develop
+    pollIntervalMinutes: 30
+    localRepoPath: /path/to/local/clone  # BM25 + grep 활성화 (필수 권장)
+    embeddingMode: GOOGLE_EMBEDDING       # 벡터 검색 활성화 (필수 권장)
+    # indexApiKey: .env의 GOOGLE_INDEX_API_KEY 사용 (대량 인덱싱용)
+    # searchApiKey: .env의 GOOGLE_SEARCH_API_KEY 사용 (실시간 검색용)
+
+# router:  # 라우팅 전용 모델 (선택, 미설정 시 model 섹션 재사용)
+#   provider: ANTHROPIC
+#   name: claude-haiku-4-5-20251001
+
+# callGraph:  # 콜 그래프 분석 (선택)
+#   cloneRepoPath: /path/to/clone
+#   dbPath: call_graph.db
+
+# persona: DEFAULT  # DEFAULT | MZ_INTERN | GODLIFE | BURNOUT | POLITE_GPT | YOUTUBER | SIGMA | STARTUP | PHILOSOPHER | NPC | SENIOR
+
+personalData:
+  enabled: false
+  progressFile: /path/to/progress.json
+  allowedUsers:
+    - SLACK_USER_ID
