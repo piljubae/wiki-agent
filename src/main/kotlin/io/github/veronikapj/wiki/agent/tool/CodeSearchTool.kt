@@ -2,6 +2,7 @@ package io.github.veronikapj.wiki.agent.tool
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
+import io.github.veronikapj.wiki.github.GithubCodeResult
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.knowledge.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
@@ -153,15 +154,11 @@ class CodeSearchTool(
         log.info("localResult empty → falling back to GitHub Code Search")
 
         // 2차: GitHub Code Search API fallback — expandedQuery에서 영문 식별자만 추출
-        val codeSearchQuery = extractEnglishKeywords(expandedQuery)
-        if (codeSearchQuery.isBlank()) return@runBlocking "관련 코드를 찾을 수 없습니다."
-        log.info("GitHub Code Search query: {}", codeSearchQuery)
-        val apiResults = codeRepos.flatMap { repo ->
-            runCatching { codeClient.searchCode(repo, codeSearchQuery, branch) }
-                .onFailure { e -> log.warn("GitHub Code Search failed for {}: {}", repo, e.message) }
-                .getOrDefault(emptyList())
-        }.take(5)
-        log.info("GitHub Code Search: {} results", apiResults.size)
+        val codeSearchKeywords = extractEnglishKeywords(expandedQuery)
+        if (codeSearchKeywords.isBlank()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+
+        // 1차: 전체 AND → 0건이면 3개씩 청크 분할 재시도 (순서 유지 = 의미 클러스터)
+        val apiResults = searchGitHubWithChunkedFallback(codeSearchKeywords, codeRepos, branch)
 
         if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
 
@@ -193,6 +190,50 @@ class CodeSearchTool(
                 .take(8)
                 .joinToString(" ")
         }
+    }
+
+    /**
+     * GitHub Code Search: 전체 AND → 0건이면 3개씩 청크 분할 재시도.
+     * 키워드 순서 유지 = expandQuery의 자연 순서가 의미 클러스터를 형성.
+     */
+    private suspend fun searchGitHubWithChunkedFallback(
+        keywords: String,
+        repos: List<String>,
+        branch: String,
+    ): List<GithubCodeResult> {
+        // 1차: 전체 키워드 AND
+        log.info("GitHub Code Search [full]: {}", keywords)
+        val fullResults = repos.flatMap { repo ->
+            runCatching { codeClient.searchCode(repo, keywords, branch) }
+                .onFailure { e -> log.warn("GitHub Code Search failed for {}: {}", repo, e.message) }
+                .getOrDefault(emptyList())
+        }
+        if (fullResults.isNotEmpty()) {
+            log.info("GitHub Code Search [full]: {} results", fullResults.size)
+            return fullResults.take(5)
+        }
+
+        // 2차: 3개씩 청크 분할 → 각각 검색 후 병합 (최대 3청크)
+        val words = keywords.split(" ")
+        if (words.size <= 3) return emptyList()  // 이미 3개 이하면 재시도 무의미
+
+        val chunks = words.chunked(3).take(3).map { it.joinToString(" ") }
+        log.info("GitHub Code Search [chunked]: {}", chunks)
+
+        val seen = mutableSetOf<String>()
+        val merged = mutableListOf<GithubCodeResult>()
+        for (chunk in chunks) {
+            val chunkResults = repos.flatMap { repo ->
+                runCatching { codeClient.searchCode(repo, chunk, branch) }
+                    .onFailure { e -> log.warn("GitHub Code Search chunk failed for {}: {}", repo, e.message) }
+                    .getOrDefault(emptyList())
+            }
+            for (r in chunkResults) {
+                if (seen.add(r.filePath)) merged.add(r)
+            }
+        }
+        log.info("GitHub Code Search [chunked]: {} results (merged)", merged.size)
+        return merged.take(5)
     }
 
     private val schemeKeywords = setOf("스킴", "scheme", "딥링크", "deeplink", "deep link", "딥 링크")
