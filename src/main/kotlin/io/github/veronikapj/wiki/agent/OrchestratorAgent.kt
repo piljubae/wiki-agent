@@ -450,8 +450,19 @@ class OrchestratorAgent(
 
         // 3단계: 검색 결과 + 히스토리로 최종 답변
         val summaryPrompt = buildString {
-            appendLine("회사 내부 위키 검색 봇입니다. 아래 검색 결과만을 바탕으로 질문에 답변하세요.")
-            appendLine("검색 결과와 무관한 내용은 '관련 문서를 찾지 못했습니다'로 안내하세요.")
+            val (roleDesc, notFoundMsg) = when {
+                toolName in setOf("codeSearch", "codeStats", "findCallers", "traceChain", "findImpact") ->
+                    "소스코드 검색 봇입니다. 아래 코드 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 코드를 찾지 못했습니다"
+                toolName in setOf("prHistory", "prHistory+codeSearch") ->
+                    "PR 이력 검색 봇입니다. 아래 PR/코드 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 PR 이력을 찾지 못했습니다"
+                else ->
+                    "회사 내부 위키 검색 봇입니다. 아래 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 문서를 찾지 못했습니다"
+            }
+            appendLine(roleDesc)
+            appendLine("검색 결과와 무관한 내용은 '$notFoundMsg'로 안내하세요.")
             appendLine()
             if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
             appendLine()
@@ -476,7 +487,7 @@ class OrchestratorAgent(
                 appendLine(buildAnswerGuidelines(verbose = true))
             } else {
                 appendLine("검색 결과가 없습니다. 아래 형식으로 안내하세요:")
-                appendLine("1. '관련 문서를 찾지 못했습니다'로 시작")
+                appendLine("1. '$notFoundMsg'로 시작")
                 appendLine("2. 질문 유형별 재시도 팁 제공:")
                 appendLine("   - 코드 위치: '함수명/클래스명 어디있어?' 형태로 질문")
                 appendLine("   - PR 이력: 'KMA-XXXX 무슨 작업이야?' 형태로 질문")
