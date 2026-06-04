@@ -5,6 +5,7 @@ import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 
 class PrHistoryTool(
     private val chromaClient: ChromaClient,
@@ -30,13 +31,20 @@ class PrHistoryTool(
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
             val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
             
+            // 이 컬렉션은 서버 내장 임베딩 함수 없음, 반드시 queryEmbeddings 필요
             val queryEmbeddings = embeddingFn?.let { fn ->
-                runCatching { listOf(fn(expandedQuery)) }.getOrNull()
+                runCatching { listOf(fn(expandedQuery)) }.getOrElse { e ->
+                    log.warn("Embedding failed, skipping vector search: {}", e.message)
+                    null
+                }
             }
-            
+            if (queryEmbeddings == null) {
+                log.warn("embeddingFn unavailable — vector search disabled for collection '{}'", collectionName)
+                return@runBlocking "PR 이력 검색을 위한 임베딩 기능이 비활성화 상태입니다."
+            }
+
             val results = chromaClient.query(
                 collectionId = collectionId,
-                queryTexts = if (queryEmbeddings == null) listOf(expandedQuery) else null,
                 queryEmbeddings = queryEmbeddings,
                 nResults = 5
             )
@@ -60,5 +68,9 @@ class PrHistoryTool(
                 }
             }.trim()
         }.getOrElse { "PR 이력 검색 중 오류: ${it.message}" }
+    }
+
+    companion object {
+        private val log = LoggerFactory.getLogger(PrHistoryTool::class.java)
     }
 }

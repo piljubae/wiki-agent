@@ -35,24 +35,24 @@ class CodeSearchTool(
     ): String = runBlocking {
         tracker?.record("CodeSearch")
 
+        val expandedQuery = runCatching { llmExpandClient?.expandQuery(query) }.getOrNull() ?: query
+
         // 1차: ChromaDB 벡터 + BM25 + grep
         val localResult = runCatching {
             val collectionId = chromaClient.getOrCreateCollection(collectionName)
-            val expandedQuery = llmExpandClient?.expandQuery(query) ?: query
 
-            // 벡터 검색 — 임베딩 실패 시 텍스트 쿼리로 fallback (grep은 항상 실행)
+            // 벡터 검색 — 이 컬렉션은 서버 내장 임베딩 함수 없음, 반드시 queryEmbeddings 필요
             val vectorResults = if (embeddingFn != null) {
                 runCatching {
                     val embedding = embeddingFn(expandedQuery)
                     chromaClient.query(collectionId, queryEmbeddings = listOf(embedding), nResults = 10)
                 }.getOrElse { e ->
-                    log.warn("Embedding failed, falling back to text query: {}", e.message)
-                    runCatching {
-                        chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
-                    }.getOrDefault(emptyList())
+                    log.warn("Embedding failed, skipping vector search — BM25+grep will handle: {}", e.message)
+                    emptyList()
                 }
             } else {
-                chromaClient.query(collectionId, queryTexts = listOf(expandedQuery), nResults = 10)
+                log.warn("embeddingFn is null — vector search disabled for collection '{}'", collectionName)
+                emptyList()
             }
 
             fun resultToId(r: io.github.veronikapj.wiki.rag.ChromaQueryResult): String {
@@ -106,12 +106,12 @@ class CodeSearchTool(
                 }.trim()
             } else null
 
-            // 로컬 grep 보완: 쿼리에서 동적으로 패턴 추출 → 벡터가 놓치는 식별자/사용위치 보완
-            val grepPatterns = buildGrepPatterns(query)
+            // 로컬 grep 보완: expandedQuery에서 식별자 추출 → 한글 질문도 영문 코드 용어로 grep 가능
+            val grepPatterns = buildGrepPatterns(expandedQuery)
             val grepSection = localRepoPath
                 ?.takeIf { grepPatterns.isNotEmpty() }
                 ?.let { repoPath ->
-                    val keywords = extractQueryKeywords(query)
+                    val keywords = extractQueryKeywords(expandedQuery)
                     log.info("grep: localRepoPath={}, keywords={}, patterns={}", repoPath, keywords, grepPatterns)
                     val hits = grepLocalRepo(
                         repoDir = File(repoPath),
@@ -140,9 +140,12 @@ class CodeSearchTool(
 
         if (!localResult.isNullOrBlank()) return@runBlocking localResult
 
-        // 2차: GitHub Code Search API fallback (ChromaDB 실패 시에도 반드시 실행)
+        // 2차: GitHub Code Search API fallback — expandedQuery에서 영문 식별자만 추출
+        val codeSearchQuery = extractEnglishKeywords(expandedQuery)
+        if (codeSearchQuery.isBlank()) return@runBlocking "관련 코드를 찾을 수 없습니다."
+        log.info("GitHub Code Search query: {}", codeSearchQuery)
         val apiResults = codeRepos.flatMap { repo ->
-            runCatching { codeClient.searchCode(repo, query, branch) }
+            runCatching { codeClient.searchCode(repo, codeSearchQuery, branch) }
                 .onFailure { e -> log.warn("GitHub Code Search failed for {}: {}", repo, e.message) }
                 .getOrDefault(emptyList())
         }.take(5)
@@ -161,6 +164,22 @@ class CodeSearchTool(
 
     companion object {
         private val log = LoggerFactory.getLogger(CodeSearchTool::class.java)
+
+        private val GITHUB_SEARCH_STOPWORDS = setOf(
+            "query", "search", "find", "where", "what", "how", "list", "show",
+            "display", "get", "set", "add", "remove", "update", "delete",
+            "configure", "enumerate", "fetch",
+        )
+
+        /** expandedQuery에서 영문 키워드만 추출 → GitHub Code Search용 */
+        internal fun extractEnglishKeywords(expandedQuery: String): String {
+            return expandedQuery.split("\\s+".toRegex())
+                .filter { it.matches(Regex("[a-zA-Z][a-zA-Z0-9._-]*")) && it.length >= 3 }
+                .filterNot { it.lowercase() in GITHUB_SEARCH_STOPWORDS }
+                .distinct()
+                .take(8)
+                .joinToString(" ")
+        }
     }
 
     private val schemeKeywords = setOf("스킴", "scheme", "딥링크", "deeplink", "deep link", "딥 링크")

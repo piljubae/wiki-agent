@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import org.slf4j.LoggerFactory
+import java.net.URLEncoder
 
 data class GithubPrInfo(
     val repo: String,
@@ -92,8 +93,9 @@ class GitHubCodeClient(private val token: String = "") {
 
     // Note: GitHub Code Search API indexes only the default branch — branch param is informational only
     suspend fun searchCode(repo: String, query: String, branch: String = "develop"): List<GithubCodeResult> {
-        val q = "$query+repo:$repo"
-        val url = "https://api.github.com/search/code?q=${q.replace(" ", "+")}&per_page=10"
+        val sanitized = query.replace(Regex("[*\"()\\[\\]{}]"), " ").trim()
+        val encoded = URLEncoder.encode(sanitized, "UTF-8")
+        val url = "https://api.github.com/search/code?q=${encoded}+repo:${repo}&per_page=10"
         val json = apiGet(url) ?: return emptyList()
         return runCatching { parseCodeSearchJson(repo, json) }.getOrDefault(emptyList())
     }

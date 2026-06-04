@@ -43,6 +43,26 @@ class ChromaClientTest {
     }
 
     @Test
+    fun `buildQueryBody uses query_embeddings only — queryTexts 없이 동작`() {
+        val json = client.buildQueryBody(
+            queryTexts = null,
+            queryEmbeddings = listOf(listOf(0.1f, 0.2f, 0.3f)),
+            nResults = 10,
+        )
+        assertTrue(json.contains("query_embeddings"))
+        assertTrue(!json.contains("query_texts"), "queryTexts가 없어야 함")
+        assertTrue(json.contains("\"n_results\":10"))
+    }
+
+    @Test
+    fun `buildQueryBody — queryTexts와 queryEmbeddings 모두 null이면 n_results만 포함`() {
+        val json = client.buildQueryBody(queryTexts = null, queryEmbeddings = null, nResults = 5)
+        assertEquals("{\"n_results\":5}", json)
+        assertTrue(!json.contains("query_texts"))
+        assertTrue(!json.contains("query_embeddings"))
+    }
+
+    @Test
     fun `parseQueryResults extracts documents`() {
         val response = """{"ids":[["id1","id2"]],"documents":[["doc1 content","doc2 content"]],"metadatas":[[{"title":"Page1"},{"title":"Page2"}]],"distances":[[0.1,0.2]]}"""
         val results = client.parseQueryResults(response)
