@@ -36,6 +36,11 @@ class CodeSearchTool(
         tracker?.record("CodeSearch")
 
         val expandedQuery = runCatching { llmExpandClient?.expandQuery(query) }.getOrNull() ?: query
+        log.info("codeSearch: query='{}', expandedQuery='{}'", query.take(80), expandedQuery.take(200))
+        log.info("codeSearch: embeddingFn={}, bm25Index={}, localRepoPath={}",
+            if (embeddingFn != null) "available" else "null",
+            if (bm25Index != null) "available" else "null",
+            localRepoPath ?: "null")
 
         // 1차: ChromaDB 벡터 + BM25 + grep
         val localResult = runCatching {
@@ -70,9 +75,11 @@ class CodeSearchTool(
             // BM25 키워드 검색 + RRF 병합 (벡터 결과 없으면 BM25 단독 사용)
             val orderedIds = if (bm25Index != null) {
                 val bm25Ids = bm25Index.search(query, limit = 10)
+                log.info("BM25: {} results (vector: {})", bm25Ids.size, vectorIds.size)
                 if (vectorIds.isEmpty()) bm25Ids  // embedding 실패 시 BM25 단독
                 else BM25Index.mergeRRF(vectorIds, bm25Ids)
             } else {
+                log.info("BM25: index null, using vector only ({} results)", vectorIds.size)
                 vectorIds
             }
 
@@ -108,6 +115,7 @@ class CodeSearchTool(
 
             // 로컬 grep 보완: expandedQuery에서 식별자 추출 → 한글 질문도 영문 코드 용어로 grep 가능
             val grepPatterns = buildGrepPatterns(expandedQuery)
+            log.info("grep patterns from expandedQuery: {}", grepPatterns.take(10))
             val grepSection = localRepoPath
                 ?.takeIf { grepPatterns.isNotEmpty() }
                 ?.let { repoPath ->
@@ -133,12 +141,16 @@ class CodeSearchTool(
                 }
 
             // ChromaDB + grep 결과 병합 (둘 다 있으면 함께, 하나만 있으면 그것만)
+            log.info("localResult: chromaResult={}, grepSection={}",
+                if (chromaResult != null) "${chromaResult.length}chars" else "null",
+                if (grepSection != null) "${grepSection.length}chars" else "null")
             listOfNotNull(chromaResult, grepSection).joinToString("\n\n").takeIf { it.isNotBlank() }
         }.onFailure { e ->
             log.warn("ChromaDB/grep search failed, falling back to GitHub API: {}", e.message)
         }.getOrNull()
 
         if (!localResult.isNullOrBlank()) return@runBlocking localResult
+        log.info("localResult empty → falling back to GitHub Code Search")
 
         // 2차: GitHub Code Search API fallback — expandedQuery에서 영문 식별자만 추출
         val codeSearchQuery = extractEnglishKeywords(expandedQuery)
@@ -149,6 +161,7 @@ class CodeSearchTool(
                 .onFailure { e -> log.warn("GitHub Code Search failed for {}: {}", repo, e.message) }
                 .getOrDefault(emptyList())
         }.take(5)
+        log.info("GitHub Code Search: {} results", apiResults.size)
 
         if (apiResults.isEmpty()) return@runBlocking "관련 코드를 찾을 수 없습니다."
 
