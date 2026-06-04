@@ -796,14 +796,44 @@ class SlackBotGateway(
         if (text.contains(OnboardingTool.LEVEL_CHECK_MESSAGE.take(20))) {
             return buildLevelCheckBlocks()
         }
+        val sanitized = sanitizeSlackMrkdwn(text)
         val blocks = mutableListOf<com.slack.api.model.block.LayoutBlock>()
-        blocks.add(section { it.text(markdownText(text)) })
+        // Slack section text 제한 3000자 — 초과 시 분할
+        splitForSlackSections(sanitized).forEach { chunk ->
+            blocks.add(section { it.text(markdownText(chunk)) })
+        }
         blocks.add(actions { it.elements(listOf(
             button { b -> b.text(plainText("다음 ➡️")).actionId("onboarding_next") },
             button { b -> b.text(plainText("건너뛰기 ⏭")).actionId("onboarding_skip") },
             button { b -> b.text(plainText("진행률 📊")).actionId("onboarding_progress") },
         )) })
         return blocks
+    }
+
+    /** LLM이 출력한 GitHub-flavored markdown을 Slack mrkdwn 호환으로 변환 */
+    private fun sanitizeSlackMrkdwn(text: String): String {
+        return text
+            .replace(Regex("^#{1,6}\\s+", RegexOption.MULTILINE), "") // # ## ### 헤더 → 제거
+            .replace(Regex("^---+\\s*$", RegexOption.MULTILINE), "")  // --- 수평선 → 제거
+            .replace(Regex("\\*\\*(.+?)\\*\\*"), "*$1*")              // **bold** → *bold*
+            .replace(Regex("\\[([^]]+)]\\(([^)]+)\\)"), "<$2|$1>")   // [text](url) → <url|text>
+            .replace(Regex("\n{3,}"), "\n\n")                         // 과다 개행 정리
+    }
+
+    /** 텍스트를 3000자 이하 청크로 분할 (빈 줄 경계 우선) */
+    private fun splitForSlackSections(text: String, limit: Int = 2900): List<String> {
+        if (text.length <= limit) return listOf(text)
+        val chunks = mutableListOf<String>()
+        var remaining = text
+        while (remaining.length > limit) {
+            // 빈 줄(\n\n) 경계에서 분할 시도
+            val splitIdx = remaining.lastIndexOf("\n\n", limit)
+            val cutAt = if (splitIdx > limit / 3) splitIdx else remaining.lastIndexOf('\n', limit).let { if (it > limit / 3) it else limit }
+            chunks.add(remaining.substring(0, cutAt).trimEnd())
+            remaining = remaining.substring(cutAt).trimStart()
+        }
+        if (remaining.isNotBlank()) chunks.add(remaining)
+        return chunks
     }
 
     private fun buildLevelCheckBlocks(): List<com.slack.api.model.block.LayoutBlock> {
