@@ -9,6 +9,7 @@ import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
 import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
 import io.github.veronikapj.wiki.agent.tool.SourceTracker
+import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
@@ -20,6 +21,7 @@ class OnboardingTool(
     private val executor: MultiLLMPromptExecutor,
     private val model: LLModel,
     private val confluenceTool: ConfluenceTool,
+    private val confluenceClient: ConfluenceClient? = null,
     private val codeSearchTool: CodeSearchTool,
     private val codeClient: GitHubCodeClient? = null,
     private val codeRepo: String? = null,
@@ -294,19 +296,41 @@ class OnboardingTool(
     }
 
     private fun collectContent(step: CurriculumStep): String {
-        // Sort sources: GITHUB_FILE first (실제 파일 내용), then STATIC, CODE, CONFLUENCE
+        // Sort sources: CONFLUENCE_PAGE first (wiki single source), then GITHUB_FILE, STATIC, CODE, CONFLUENCE
         val sorted = step.sources.sortedBy { source ->
             when (source.type) {
-                SourceType.GITHUB_FILE -> 0
-                SourceType.STATIC -> 1
-                SourceType.CODE -> 2
-                SourceType.CONFLUENCE -> 3
+                SourceType.CONFLUENCE_PAGE -> 0
+                SourceType.GITHUB_FILE -> 1
+                SourceType.STATIC -> 2
+                SourceType.CODE -> 3
+                SourceType.CONFLUENCE -> 4
             }
         }
 
         return buildString {
             for (source in sorted) {
                 val content = when (source.type) {
+                    SourceType.CONFLUENCE_PAGE -> {
+                        val client = confluenceClient
+                        val pid = source.pageId
+                        if (client != null && pid != null) {
+                            runCatching {
+                                val page = runBlocking { client.fetchPageContent(pid) }
+                                val content = page.content
+                                if (source.section != null && content.isNotBlank()) {
+                                    extractSection(content, source.section)?.take(5000)
+                                } else {
+                                    content.take(5000)
+                                }
+                            }
+                                .onFailure { log.warn("Confluence page fetch failed for pageId={}: {}", pid, it.message) }
+                                .getOrNull()
+                        } else {
+                            log.warn("CONFLUENCE_PAGE requires confluenceClient and pageId")
+                            null
+                        }
+                    }
+
                     SourceType.STATIC -> {
                         source.path?.let { path ->
                             runCatching {
@@ -409,6 +433,38 @@ class OnboardingTool(
         }.trim()
     }
 
+    /**
+     * Confluence 페이지 HTML 본문에서 섹션을 추출한다.
+     * H1~H3 헤딩을 모두 스캔하고, sectionKeyword가 포함된 헤딩을 찾으면
+     * 해당 헤딩부터 같은 레벨 이상의 다음 헤딩까지를 반환한다.
+     *
+     * 예: section="개발자 모드"이면 H2 "앱 개발자 모드 활용법"을 매칭하고,
+     * 다음 H1 또는 H2가 나올 때까지의 내용을 추출.
+     */
+    private fun extractSection(html: String, sectionKeyword: String): String? {
+        val headingPattern = Regex("<(h[123])[^>]*>(.*?)</\\1>", RegexOption.DOT_MATCHES_ALL)
+        val allHeadings = headingPattern.findAll(html).toList()
+
+        for ((index, match) in allHeadings.withIndex()) {
+            val level = match.groupValues[1] // "h1", "h2", "h3"
+            val headerText = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
+
+            if (headerText.contains(sectionKeyword, ignoreCase = true)) {
+                val sectionStart = match.range.first
+                // 같은 레벨 이상(h1 ≤ h2)의 다음 헤딩까지
+                val sectionEnd = allHeadings.drop(index + 1)
+                    .firstOrNull { it.groupValues[1] <= level }
+                    ?.range?.first ?: html.length
+
+                val sectionHtml = html.substring(sectionStart, sectionEnd)
+                return sectionHtml.replace(Regex("<[^>]+>"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+            }
+        }
+        return null
+    }
+
     private fun callLLM(prompt: String): String {
         val params = if (model.provider == AnthropicModels.Haiku_4_5.provider) {
             AnthropicParams(maxTokens = 4096)
@@ -454,11 +510,11 @@ class OnboardingTool(
         private val SKIP_KEYWORDS = setOf("건너뛰기", "스킵", "skip")
 
         private val PHASE_NAMES = mapOf(
-            1 to "환경 & 기본기",
-            2 to "도메인 & 코드 이해",
-            3 to "프로세스",
-            4 to "실전",
-            5 to "스킬 가이드",
+            1 to "환경 셋업 & 프로젝트 구조",
+            2 to "도메인 용어 & Compose 컨벤션",
+            3 to "브랜치 / QA / 배포 / 모니터링",
+            4 to "첫 PR과 코드 리뷰",
+            5 to "Claude 스킬 & CI/CD",
         )
 
         private const val SLACK_FORMAT_RULE = """[출력 형식: Slack mrkdwn — 이 규칙을 최우선으로 준수]
