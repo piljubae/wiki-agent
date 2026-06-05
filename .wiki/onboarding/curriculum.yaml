@@ -52,7 +52,7 @@ phases:
     sources:
       - type: confluence-page
         pageId: "5912232879"
-        section: "도메인 용어"
+        section: "도메인 용어 사전"
 
   - id: biz-metrics
     name: "마케팅/비즈니스 지표 용어"
