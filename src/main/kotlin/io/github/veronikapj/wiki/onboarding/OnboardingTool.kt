@@ -196,7 +196,8 @@ class OnboardingTool(
         val questionPrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
-            appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩을 도와주는 멘토입니다.")
+            appendLine("당신은 컬리(Kurly) $projectName 프로젝트의 신규 입사자 온보딩을 도와주는 멘토입니다.")
+            appendLine("컬리는 한국의 신선식품 이커머스 플랫폼이며, 프로젝트명은 '$projectName'입니다.")
             appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
             appendLine("아래 컨텍스트와 참고 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요.")
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
@@ -260,12 +261,14 @@ class OnboardingTool(
 
         val header = ":books: *[Phase ${step.phase}: $stepIndex/$phaseTotal] ${step.name}* (${step.day})"
 
+        log.info("Generating guide for step={}, content length={}", step.id, content.length)
+
         val guidePrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
             appendLine()
-            appendLine("당신은 $projectName 프로젝트의 신규 입사자 온보딩 멘토입니다.")
+            appendLine("당신은 컬리(Kurly) $projectName 프로젝트의 신규 입사자 온보딩 멘토입니다.")
+            appendLine("컬리는 한국의 신선식품 이커머스 플랫폼이며, 프로젝트명은 '$projectName'입니다.")
             appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
-            appendLine("아래 참고 자료를 바탕으로 온보딩 단계를 안내하세요.")
             appendLine()
             appendLine("단계 정보:")
             appendLine("- 이름: ${step.name}")
@@ -273,22 +276,27 @@ class OnboardingTool(
             appendLine("- 예상 소요 기간: ${step.day}")
             appendLine()
             if (content.isNotBlank()) {
-                appendLine("=== 참고 자료 ===")
+                appendLine("=== 참고 자료 (Confluence 위키에서 가져온 내용) ===")
                 appendLine(content)
                 appendLine("=== 끝 ===")
                 appendLine()
+                appendLine("절대 규칙:")
+                appendLine("- 위 참고 자료에 있는 내용만 안내하세요. 참고 자료에 없는 내용을 추가하거나 추측하지 마세요.")
+                appendLine("- 파일 경로, 클래스명, 모듈명 등은 참고 자료에 명시된 것만 사용하세요.")
+                appendLine("- 참고 자료의 테이블/목록은 그대로 Slack mrkdwn 형식으로 변환하세요.")
             } else {
-                appendLine("참고 자료를 수집하지 못했습니다. Android 프로젝트에 대한 일반 지식을 바탕으로 가이드를 작성하세요.")
-                appendLine("절대로 사용자에게 경로를 요청하거나 참고 자료가 없다고 말하지 마세요. 바로 가이드를 작성하세요.")
-                appendLine()
+                appendLine("참고 자료를 수집하지 못했습니다.")
+                appendLine("\"현재 이 단계의 참고 자료를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.\"라고만 안내하세요.")
+                appendLine("절대로 자체적으로 내용을 생성하지 마세요.")
             }
+            appendLine()
             appendLine("가이드 작성 규칙:")
-            appendLine("1. 핵심 내용을 불릿으로 정리하세요.")
-            appendLine("2. 실습이 필요한 경우 구체적인 액션 아이템을 제시하세요.")
-            appendLine("3. 참고 링크가 있으면 포함하세요.")
+            appendLine("1. 참고 자료의 핵심 내용을 불릿으로 정리하세요.")
+            appendLine("2. 실습이 필요한 경우 참고 자료에 있는 액션 아이템을 제시하세요.")
+            appendLine("3. 참고 자료에 링크가 있으면 포함하세요.")
             appendLine("4. 다음 단계로 넘어갈 준비가 되면 `다음`을 입력하라고 안내하세요.")
             appendLine("5. 모르는 부분은 질문하라고 안내하세요.")
-            appendLine("6. 컨벤션/규칙 관련 단계는 :white_check_mark: DO / :x: DON'T 형식으로 정리하세요. 코드 예시를 Good/Bad로 보여주세요.")
+            appendLine("6. 컨벤션/규칙 관련 단계는 :white_check_mark: DO / :x: DON'T 형식으로 정리하세요.")
         }
 
         val guideBody = callLLM(guidePrompt)
@@ -316,11 +324,18 @@ class OnboardingTool(
                         if (client != null && pid != null) {
                             runCatching {
                                 val page = runBlocking { client.fetchPageContent(pid) }
-                                val content = page.content
-                                if (source.section != null && content.isNotBlank()) {
-                                    extractSection(content, source.section)?.take(5000)
+                                val pageContent = page.content
+                                log.info("CONFLUENCE_PAGE: fetched pageId={}, title='{}', content length={}", pid, page.title, pageContent.length)
+                                if (source.section != null && pageContent.isNotBlank()) {
+                                    val extracted = extractSection(pageContent, source.section)
+                                    if (extracted == null) {
+                                        log.warn("CONFLUENCE_PAGE: section '{}' not found in page '{}'", source.section, page.title)
+                                    } else {
+                                        log.info("CONFLUENCE_PAGE: extracted section '{}', length={}", source.section, extracted.length)
+                                    }
+                                    extracted?.take(5000)
                                 } else {
-                                    content.take(5000)
+                                    pageContent.take(5000)
                                 }
                             }
                                 .onFailure { log.warn("Confluence page fetch failed for pageId={}: {}", pid, it.message) }
@@ -444,6 +459,15 @@ class OnboardingTool(
     private fun extractSection(html: String, sectionKeyword: String): String? {
         val headingPattern = Regex("<(h[123])[^>]*>(.*?)</\\1>", RegexOption.DOT_MATCHES_ALL)
         val allHeadings = headingPattern.findAll(html).toList()
+
+        if (allHeadings.isEmpty()) {
+            log.warn("extractSection: no H1~H3 headings found in page (html length={})", html.length)
+            return null
+        }
+
+        log.debug("extractSection: looking for '{}' in {} headings: {}",
+            sectionKeyword, allHeadings.size,
+            allHeadings.map { it.groupValues[2].replace(Regex("<[^>]+>"), "").trim().take(40) })
 
         for ((index, match) in allHeadings.withIndex()) {
             val level = match.groupValues[1] // "h1", "h2", "h3"
