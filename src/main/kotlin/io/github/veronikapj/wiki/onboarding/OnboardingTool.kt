@@ -449,41 +449,38 @@ class OnboardingTool(
     }
 
     /**
-     * Confluence 페이지 HTML 본문에서 섹션을 추출한다.
-     * H1~H3 헤딩을 모두 스캔하고, sectionKeyword가 포함된 헤딩을 찾으면
-     * 해당 헤딩부터 같은 레벨 이상의 다음 헤딩까지를 반환한다.
+     * Confluence 페이지 콘텐츠에서 섹션을 추출한다.
      *
-     * 예: section="개발자 모드"이면 H2 "앱 개발자 모드 활용법"을 매칭하고,
-     * 다음 H1 또는 H2가 나올 때까지의 내용을 추출.
+     * ConfluenceClient.fetchPageContent()는 HTML을 Slack mrkdwn으로 변환하므로,
+     * 헤딩은 `*헤딩텍스트*` 형식 (줄 시작, 줄바꿈으로 끝남).
+     * sectionKeyword가 포함된 헤딩을 찾으면 다음 헤딩까지의 내용을 반환.
      */
-    private fun extractSection(html: String, sectionKeyword: String): String? {
-        val headingPattern = Regex("<(h[123])[^>]*>(.*?)</\\1>", RegexOption.DOT_MATCHES_ALL)
-        val allHeadings = headingPattern.findAll(html).toList()
+    private fun extractSection(content: String, sectionKeyword: String): String? {
+        // mrkdwn에서 헤딩 패턴: 줄 시작에 *텍스트* (convertHtmlToSlackMrkdwn 결과)
+        val headingPattern = Regex("^\\*(.+?)\\*\\s*$", RegexOption.MULTILINE)
+        val allHeadings = headingPattern.findAll(content).toList()
 
         if (allHeadings.isEmpty()) {
-            log.warn("extractSection: no H1~H3 headings found in page (html length={})", html.length)
+            log.warn("extractSection: no mrkdwn headings found (content length={})", content.length)
             return null
         }
 
         log.debug("extractSection: looking for '{}' in {} headings: {}",
             sectionKeyword, allHeadings.size,
-            allHeadings.map { it.groupValues[2].replace(Regex("<[^>]+>"), "").trim().take(40) })
+            allHeadings.map { it.groupValues[1].trim().take(50) })
 
         for ((index, match) in allHeadings.withIndex()) {
-            val level = match.groupValues[1] // "h1", "h2", "h3"
-            val headerText = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
+            val headerText = match.groupValues[1].trim()
 
             if (headerText.contains(sectionKeyword, ignoreCase = true)) {
                 val sectionStart = match.range.first
-                // 같은 레벨 이상(h1 ≤ h2)의 다음 헤딩까지
-                val sectionEnd = allHeadings.drop(index + 1)
-                    .firstOrNull { it.groupValues[1] <= level }
-                    ?.range?.first ?: html.length
+                val sectionEnd = if (index + 1 < allHeadings.size) {
+                    allHeadings[index + 1].range.first
+                } else {
+                    content.length
+                }
 
-                val sectionHtml = html.substring(sectionStart, sectionEnd)
-                return sectionHtml.replace(Regex("<[^>]+>"), " ")
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
+                return content.substring(sectionStart, sectionEnd).trim()
             }
         }
         return null
