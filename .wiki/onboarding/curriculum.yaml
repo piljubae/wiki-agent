@@ -2,19 +2,33 @@ lastUpdated: "2026-06-05"
 
 # Single Source of Truth: Confluence 위키 페이지
 # https://kurly0521.atlassian.net/wiki/spaces/ProductApp/pages/5912232879/Android
-# 각 step의 confluence-page source가 위키에서 해당 Phase 섹션을 추출한다.
+# section 키워드는 위키 H1/H2/H3 헤딩 텍스트와 매칭된다.
+# 위키 헤딩이 변경되면 여기도 같이 업데이트할 것.
 
 phases:
   # Phase 1: Day 1 — 환경 셋업 & 프로젝트 구조
   - id: env-setup
-    name: "환경 셋업 & 프로젝트 구조"
+    name: "환경 셋업"
+    phase: 1
+    day: "Day 1"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: confluence-page
+        pageId: "5912232879"
+        section: "환경 셋업"
+
+  - id: project-structure
+    name: "프로젝트 구조 & 모듈 맵"
     phase: 1
     day: "Day 1"
     skippable: false
     sources:
       - type: confluence-page
         pageId: "5912232879"
-        section: "Phase 1"
+        section: "프로젝트 구조"
 
   - id: developer-mode
     name: "앱 개발자 모드 활용법"
@@ -40,19 +54,6 @@ phases:
         pageId: "5912232879"
         section: "도메인 용어"
 
-  - id: architecture
-    name: "아키텍처 상세"
-    phase: 2
-    day: "Day 2"
-    skippable: true
-    levelFilter:
-      skipWhen:
-        android: "C"
-    sources:
-      - type: confluence-page
-        pageId: "5912232879"
-        section: "아키텍처 상세"
-
   - id: biz-metrics
     name: "마케팅/비즈니스 지표 용어"
     phase: 2
@@ -65,6 +66,19 @@ phases:
       - type: confluence-page
         pageId: "5912232879"
         section: "마케팅/비즈니스"
+
+  - id: architecture
+    name: "아키텍처 상세"
+    phase: 2
+    day: "Day 2"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources:
+      - type: confluence-page
+        pageId: "5912232879"
+        section: "아키텍처 상세"
 
   - id: compose-convention
     name: "Compose 컨벤션 — DO / DON'T"
@@ -79,16 +93,36 @@ phases:
         pageId: "5912232879"
         section: "Compose 컨벤션"
 
-  # Phase 3: Day 3 — 브랜치 컨벤션 / QA / 배포 / 모니터링
-  - id: branch-convention
-    name: "브랜치 컨벤션 & Git Flow"
+  # Phase 3: Day 3 — 브랜치 / QA / 배포 / 모니터링
+  - id: git-flow
+    name: "Git Flow & 브랜치 네이밍"
     phase: 3
     day: "Day 3"
     skippable: false
     sources:
       - type: confluence-page
         pageId: "5912232879"
-        section: "Phase 3"
+        section: "Git Flow"
+
+  - id: branch-naming
+    name: "브랜치 네이밍 규칙"
+    phase: 3
+    day: "Day 3"
+    skippable: false
+    sources:
+      - type: confluence-page
+        pageId: "5912232879"
+        section: "브랜치 네이밍"
+
+  - id: skill-workflow
+    name: "Claude Code 스킬 연동 워크플로우"
+    phase: 3
+    day: "Day 3"
+    skippable: false
+    sources:
+      - type: confluence-page
+        pageId: "5912232879"
+        section: "Claude Code 스킬 연동"
 
   - id: qa-deploy
     name: "QA 및 배포 프로세스"
@@ -163,7 +197,7 @@ phases:
     sources:
       - type: confluence-page
         pageId: "5912232879"
-        section: "Claude 스킬"
+        section: "Claude Code 스킬"
 
   - id: ci-cd
     name: "CI/CD — GitHub Actions"

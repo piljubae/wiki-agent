@@ -434,22 +434,29 @@ class OnboardingTool(
     }
 
     /**
-     * Confluence 페이지 HTML 본문에서 H1 섹션을 추출한다.
-     * sectionKeyword가 H1 태그 텍스트에 포함되면 해당 섹션(다음 H1까지)을 반환.
+     * Confluence 페이지 HTML 본문에서 섹션을 추출한다.
+     * H1~H3 헤딩을 모두 스캔하고, sectionKeyword가 포함된 헤딩을 찾으면
+     * 해당 헤딩부터 같은 레벨 이상의 다음 헤딩까지를 반환한다.
+     *
+     * 예: section="개발자 모드"이면 H2 "앱 개발자 모드 활용법"을 매칭하고,
+     * 다음 H1 또는 H2가 나올 때까지의 내용을 추출.
      */
     private fun extractSection(html: String, sectionKeyword: String): String? {
-        // HTML 태그 제거하여 plain text로 변환 후 섹션 추출
-        // H1 패턴: <h1>...</h1> 또는 Confluence storage format
-        val h1Pattern = Regex("<h1[^>]*>(.*?)</h1>", RegexOption.DOT_MATCHES_ALL)
-        val matches = h1Pattern.findAll(html).toList()
+        val headingPattern = Regex("<(h[123])[^>]*>(.*?)</\\1>", RegexOption.DOT_MATCHES_ALL)
+        val allHeadings = headingPattern.findAll(html).toList()
 
-        for ((index, match) in matches.withIndex()) {
-            val headerText = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+        for ((index, match) in allHeadings.withIndex()) {
+            val level = match.groupValues[1] // "h1", "h2", "h3"
+            val headerText = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
+
             if (headerText.contains(sectionKeyword, ignoreCase = true)) {
                 val sectionStart = match.range.first
-                val sectionEnd = if (index + 1 < matches.size) matches[index + 1].range.first else html.length
+                // 같은 레벨 이상(h1 ≤ h2)의 다음 헤딩까지
+                val sectionEnd = allHeadings.drop(index + 1)
+                    .firstOrNull { it.groupValues[1] <= level }
+                    ?.range?.first ?: html.length
+
                 val sectionHtml = html.substring(sectionStart, sectionEnd)
-                // Strip HTML tags for cleaner LLM input
                 return sectionHtml.replace(Regex("<[^>]+>"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
