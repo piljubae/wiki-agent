@@ -135,6 +135,13 @@ object OnboardingSessionStore {
         return updated
     }
 
+    fun jumpToStep(userId: String, stepId: String): OnboardingSession? {
+        val session = load(userId) ?: return null
+        val updated = session.copy(currentStepId = stepId)
+        save(updated)
+        return updated
+    }
+
     fun isActive(userId: String): Boolean {
         val session = load(userId) ?: return false
         return session.currentStepId != null

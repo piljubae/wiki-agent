@@ -144,7 +144,7 @@ class OnboardingTool(
     // ── Intent classification ──
 
     private enum class Intent {
-        START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, REVISIT, QUESTION
+        START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, JUMP, QUESTION
     }
 
     private fun classifyIntent(message: String): Intent {
@@ -169,9 +169,10 @@ class OnboardingTool(
             return Intent.PROGRESS
         }
 
-        // REVISIT: contains keywords
-        if (trimmed.contains("다시 보여") || trimmed.contains("다시 알려")) {
-            return Intent.REVISIT
+        // JUMP: 숫자만 (e.g. "5", "12") 또는 "N번" 또는 "다시 보여/알려" + step 이름
+        if (JUMP_NUMBER_PATTERN.matches(trimmed)) return Intent.JUMP
+        if (trimmed.contains("다시 보여") || trimmed.contains("다시 알려") || trimmed.contains("보여줘")) {
+            return Intent.JUMP
         }
 
         return Intent.QUESTION
@@ -190,7 +191,7 @@ class OnboardingTool(
             Intent.NEXT -> handleNext(userId)
             Intent.SKIP -> handleSkip(userId)
             Intent.PROGRESS -> handleProgress(userId)
-            Intent.REVISIT -> handleRevisit(userId, message)
+            Intent.JUMP -> handleJump(userId, message)
             Intent.QUESTION -> handleQuestion(userId, message, conversationContext)
         }
     }
@@ -260,17 +261,37 @@ class OnboardingTool(
         return formatProgress(session)
     }
 
-    private fun handleRevisit(userId: String, message: String): String {
+    private fun handleJump(userId: String, message: String): String {
         val cur = curriculum ?: return "커리큘럼 파일을 불러올 수 없습니다."
         val session = OnboardingSessionStore.load(userId)
             ?: return "진행 중인 온보딩 세션이 없습니다. `온보딩 시작`으로 시작해 주세요."
 
-        // Find step by name match
-        val step = cur.phases.firstOrNull { step ->
-            message.contains(step.name, ignoreCase = true)
-        } ?: return "해당 단계를 찾을 수 없습니다. 정확한 단계 이름을 입력해 주세요."
+        val trimmed = message.trim()
 
-        return generateGuide(userId, step, session)
+        // 1) 숫자로 점프 (e.g. "5", "5번")
+        val number = JUMP_NUMBER_PATTERN.find(trimmed)?.groupValues?.get(1)?.toIntOrNull()
+        if (number != null) {
+            val targetStep = session.steps.getOrNull(number - 1)
+                ?: return "잘못된 번호입니다. 1~${session.steps.size} 범위로 입력해주세요."
+            val step = cur.phases.firstOrNull { it.id == targetStep.id }
+                ?: return "해당 단계를 찾을 수 없습니다."
+            // currentStepId 업데이트
+            OnboardingSessionStore.jumpToStep(userId, targetStep.id)
+            val updated = OnboardingSessionStore.load(userId) ?: session
+            return generateGuide(userId, step, updated)
+        }
+
+        // 2) 이름으로 점프 (e.g. "도메인 용어 다시 보여줘", "Compose 컨벤션 보여줘")
+        val step = cur.phases.firstOrNull { step ->
+            trimmed.contains(step.name, ignoreCase = true)
+        }
+        if (step != null) {
+            OnboardingSessionStore.jumpToStep(userId, step.id)
+            val updated = OnboardingSessionStore.load(userId) ?: session
+            return generateGuide(userId, step, updated)
+        }
+
+        return "해당 단계를 찾을 수 없습니다. 번호(예: `5`) 또는 단계 이름을 입력해 주세요.\n`진행률`을 입력하면 전체 목록을 볼 수 있습니다."
     }
 
     private fun handleQuestion(userId: String, message: String, conversationContext: String): String {
@@ -418,6 +439,7 @@ class OnboardingTool(
             appendLine()
 
             val grouped = session.steps.groupBy { it.phase }
+            var globalIndex = 0
             for (phase in grouped.keys.sorted()) {
                 val steps = grouped[phase] ?: continue
                 val phaseName = PHASE_NAMES[phase] ?: "Phase $phase"
@@ -429,13 +451,14 @@ class OnboardingTool(
                 appendLine("*Phase $phase: $phaseName* ($done/$total)")
 
                 for (step in steps) {
+                    globalIndex++
                     val icon = when (step.status) {
                         StepStatusType.COMPLETED -> ":white_check_mark:"
                         StepStatusType.SKIPPED -> ":fast_forward:"
                         StepStatusType.PENDING -> if (step.id == session.currentStepId) ":point_right:" else ":white_circle:"
                     }
                     val dateSuffix = step.completedAt?.let { " ($it)" } ?: ""
-                    appendLine("  $icon ${step.name}$dateSuffix")
+                    appendLine("  $icon `$globalIndex` ${step.name}$dateSuffix")
                 }
                 appendLine()
             }
@@ -445,6 +468,8 @@ class OnboardingTool(
             val totalSteps = session.steps.size
             val pct = if (totalSteps > 0) ((totalCompleted + totalSkipped) * 100 / totalSteps) else 0
             appendLine("*전체 진행률: $pct%* ($totalCompleted 완료, $totalSkipped 건너뜀 / $totalSteps 전체)")
+            appendLine()
+            appendLine("_번호(예: `5`) 또는 단계 이름을 입력하면 해당 단계로 이동합니다._")
         }.trim()
     }
 
@@ -491,6 +516,7 @@ class OnboardingTool(
 
         private val NEXT_KEYWORDS = setOf("다음", "넘어가기", "다음 단계", "next")
         private val SKIP_KEYWORDS = setOf("건너뛰기", "스킵", "skip")
+        private val JUMP_NUMBER_PATTERN = Regex("""^(\d+)\s*번?$""")
 
         private val PHASE_NAMES = mapOf(
             1 to "환경 셋업 & 프로젝트 구조",
