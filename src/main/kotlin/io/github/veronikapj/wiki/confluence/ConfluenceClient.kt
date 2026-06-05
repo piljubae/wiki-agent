@@ -252,6 +252,29 @@ class ConfluenceClient(
         return parsePage(response, baseUrl)
     }
 
+    /**
+     * 페이지의 raw HTML body를 반환한다 (mrkdwn 변환 없이).
+     * 온보딩 등 HTML 구조를 직접 파싱해야 하는 경우 사용.
+     */
+    suspend fun fetchPageRawHtml(pageId: String): String {
+        val url = buildPageUrl(pageId)
+        val response = httpClient.get(url) {
+            header("Authorization", "Basic $token")
+            header("Accept", "application/json")
+        }.bodyAsText()
+        return runCatching {
+            val sanitized = response.replace(Regex("[\\p{Cntrl}&&[^\\r\\n]]"), " ")
+            val root = jsonParser.parseToJsonElement(sanitized).jsonObject
+            root["body"]?.jsonObject
+                ?.get("storage")?.jsonObject
+                ?.get("value")?.jsonPrimitive?.content
+                ?: root["body"]?.jsonObject
+                    ?.get("view")?.jsonObject
+                    ?.get("value")?.jsonPrimitive?.content
+                ?: ""
+        }.getOrElse { "" }
+    }
+
     private val jsonParser = Json { ignoreUnknownKeys = true; isLenient = true }
 
     fun parseSearchResults(json: String, baseUrlForLinks: String): List<ConfluencePageRef> {

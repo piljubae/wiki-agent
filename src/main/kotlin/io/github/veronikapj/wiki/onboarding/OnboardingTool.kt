@@ -13,7 +13,6 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
-import java.io.File
 
 class OnboardingTool(
     private val curriculumPath: String = ".wiki/onboarding/curriculum.yaml",
@@ -32,6 +31,114 @@ class OnboardingTool(
 
     private val curriculum: OnboardingCurriculum? by lazy {
         CurriculumLoader.load(curriculumPath)
+    }
+
+    /** 위키 페이지 ID (curriculum.yaml의 첫 confluence-page source에서 추출) */
+    private val wikiPageId: String? by lazy {
+        curriculum?.phases?.flatMap { it.sources }
+            ?.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.pageId
+    }
+
+    /**
+     * 위키 raw HTML을 H2 기준으로 파싱한 섹션 리스트. 캐시.
+     * 각 WikiSection은 (h2Title, htmlContent)를 담는다.
+     */
+    data class WikiSection(val title: String, val content: String)
+
+    @Volatile
+    private var wikiSectionsCache: List<WikiSection>? = null
+
+    private fun loadWikiSections(): List<WikiSection> {
+        wikiSectionsCache?.let { return it }
+
+        val client = confluenceClient ?: run {
+            log.warn("confluenceClient is null, cannot load wiki")
+            return emptyList()
+        }
+        val pageId = wikiPageId ?: run {
+            log.warn("wikiPageId is null, cannot load wiki")
+            return emptyList()
+        }
+
+        val html = runCatching {
+            runBlocking { client.fetchPageRawHtml(pageId) }
+        }.onFailure { log.error("Failed to fetch wiki page {}: {}", pageId, it.message) }
+            .getOrDefault("")
+
+        if (html.isBlank()) return emptyList()
+
+        val sections = parseHtmlToSections(html)
+        log.info("Loaded {} H2 sections from wiki page {}", sections.size, pageId)
+        wikiSectionsCache = sections
+        return sections
+    }
+
+    /**
+     * HTML을 H2 기준으로 분할한다. 각 H2 헤딩부터 다음 H1/H2까지가 하나의 섹션.
+     * HTML 태그를 제거하여 plain text로 변환.
+     */
+    private fun parseHtmlToSections(html: String): List<WikiSection> {
+        val h2Pattern = Regex("<h2[^>]*>(.*?)</h2>", RegexOption.DOT_MATCHES_ALL)
+        val h1h2Pattern = Regex("<h[12][^>]*>", RegexOption.DOT_MATCHES_ALL)
+        val h2Matches = h2Pattern.findAll(html).toList()
+
+        if (h2Matches.isEmpty()) {
+            log.warn("No H2 headings found in wiki HTML (length={})", html.length)
+            return emptyList()
+        }
+
+        return h2Matches.mapIndexed { index, match ->
+            val title = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+            val sectionStart = match.range.last + 1
+
+            // 다음 H1 또는 H2까지
+            val sectionEnd = h1h2Pattern.findAll(html)
+                .filter { it.range.first > match.range.last }
+                .firstOrNull()?.range?.first ?: html.length
+
+            val sectionHtml = html.substring(sectionStart, sectionEnd)
+            // HTML → plain text
+            val plainText = sectionHtml
+                .replace(Regex("<pre><code[^>]*>"), "\n```\n")
+                .replace(Regex("</code></pre>"), "\n```\n")
+                .replace(Regex("<code>"), "`").replace("</code>", "`")
+                .replace(Regex("<strong>"), "*").replace("</strong>", "*")
+                .replace(Regex("<h3[^>]*>"), "\n### ").replace(Regex("</h3>"), "\n")
+                .replace(Regex("<li[^>]*>"), "\n• ").replace("</li>", "")
+                .replace(Regex("<p[^>]*>"), "\n").replace("</p>", "\n")
+                .replace(Regex("<br[^>]*/?>"), "\n")
+                .replace(Regex("<tr>"), "\n").replace(Regex("<th[^>]*>"), "| ").replace(Regex("<td[^>]*>"), "| ")
+                .replace(Regex("</t[hd]>"), " ")
+                .replace(Regex("<a[^>]*href=\"([^\"]+)\"[^>]*>([^<]+)</a>")) { m -> "${m.groupValues[2]} (${m.groupValues[1]})" }
+                .replace(Regex("<[^>]+>"), "")
+                .replace(Regex("&amp;"), "&").replace(Regex("&lt;"), "<").replace(Regex("&gt;"), ">")
+                .replace(Regex("&#039;"), "'").replace(Regex("&quot;"), "\"")
+                .replace(Regex("\n{3,}"), "\n\n")
+                .trim()
+
+            WikiSection(title, plainText)
+        }
+    }
+
+    /** step ID로 위키 섹션의 내용을 가져온다. curriculum의 section 키워드로 매칭. */
+    private fun getWikiContentForStep(step: CurriculumStep): String {
+        val sections = loadWikiSections()
+        if (sections.isEmpty()) return ""
+
+        // curriculum의 section 키워드로 위키 H2 title 매칭
+        val sectionKeyword = step.sources
+            .firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.section
+
+        if (sectionKeyword != null) {
+            val matched = sections.firstOrNull { it.title.contains(sectionKeyword, ignoreCase = true) }
+            if (matched != null) {
+                log.info("Wiki section matched: '{}' → '{}' ({}chars)", sectionKeyword, matched.title, matched.content.length)
+                return "### ${matched.title}\n\n${matched.content}"
+            }
+            log.warn("Wiki section not found for keyword '{}', available: {}", sectionKeyword, sections.map { it.title })
+        }
+
+        return ""
     }
 
     // ── Intent classification ──
@@ -177,7 +284,7 @@ class OnboardingTool(
         val contextBlock = buildString {
             if (currentStep != null) {
                 appendLine("현재 온보딩 단계: ${currentStep.name} (Phase ${currentStep.phase}, ${currentStep.day})")
-                val content = collectContent(currentStep)
+                val content = getWikiContentForStep(currentStep)
                 if (content.isNotBlank()) {
                     appendLine()
                     appendLine("=== 현재 단계 참고 자료 ===")
@@ -252,7 +359,7 @@ class OnboardingTool(
     }
 
     private fun generateGuide(userId: String, step: CurriculumStep, session: OnboardingSession): String {
-        val content = collectContent(step)
+        val content = getWikiContentForStep(step)
 
         // Calculate step position within the phase
         val phaseSteps = session.steps.filter { it.phase == step.phase }
@@ -303,114 +410,7 @@ class OnboardingTool(
         return "$header\n\n$guideBody"
     }
 
-    private fun collectContent(step: CurriculumStep): String {
-        // Sort sources: CONFLUENCE_PAGE first (wiki single source), then GITHUB_FILE, STATIC, CODE, CONFLUENCE
-        val sorted = step.sources.sortedBy { source ->
-            when (source.type) {
-                SourceType.CONFLUENCE_PAGE -> 0
-                SourceType.GITHUB_FILE -> 1
-                SourceType.STATIC -> 2
-                SourceType.CODE -> 3
-                SourceType.CONFLUENCE -> 4
-            }
-        }
 
-        return buildString {
-            for (source in sorted) {
-                val content = when (source.type) {
-                    SourceType.CONFLUENCE_PAGE -> {
-                        val client = confluenceClient
-                        val pid = source.pageId
-                        if (client != null && pid != null) {
-                            runCatching {
-                                val page = runBlocking { client.fetchPageContent(pid) }
-                                val pageContent = page.content
-                                log.info("CONFLUENCE_PAGE: fetched pageId={}, title='{}', content length={}", pid, page.title, pageContent.length)
-                                if (source.section != null && pageContent.isNotBlank()) {
-                                    val extracted = extractSection(pageContent, source.section)
-                                    if (extracted == null) {
-                                        log.warn("CONFLUENCE_PAGE: section '{}' not found in page '{}'", source.section, page.title)
-                                    } else {
-                                        log.info("CONFLUENCE_PAGE: extracted section '{}', length={}", source.section, extracted.length)
-                                    }
-                                    extracted?.take(5000)
-                                } else {
-                                    pageContent.take(5000)
-                                }
-                            }
-                                .onFailure { log.warn("Confluence page fetch failed for pageId={}: {}", pid, it.message) }
-                                .getOrNull()
-                        } else {
-                            log.warn("CONFLUENCE_PAGE requires confluenceClient and pageId")
-                            null
-                        }
-                    }
-
-                    SourceType.STATIC -> {
-                        source.path?.let { path ->
-                            runCatching {
-                                val text = File(path).readText()
-                                // stub 파일은 건너뛰기 — LLM이 빈 콘텐츠에서 잘못 추론하는 것 방지
-                                if (text.contains("status: stub")) null
-                                else text.take(3000)
-                            }
-                                .onFailure { log.warn("Failed to read static file {}: {}", path, it.message) }
-                                .getOrNull()
-                        }
-                    }
-
-                    SourceType.CONFLUENCE -> {
-                        source.query?.let { query ->
-                            runCatching { confluenceTool.confluenceSearch(query) }
-                                .onFailure { log.warn("Confluence search failed for '{}': {}", query, it.message) }
-                                .getOrNull()
-                                ?.take(2000)
-                        }
-                    }
-
-                    SourceType.CODE -> {
-                        source.query?.let { query ->
-                            runCatching { codeSearchTool.codeSearch(query) }
-                                .onFailure { log.warn("Code search failed for '{}': {}", query, it.message) }
-                                .getOrNull()
-                                ?.take(2000)
-                        }
-                    }
-
-                    SourceType.GITHUB_FILE -> {
-                        val repo = source.repo ?: codeRepo
-                        val client = codeClient
-                        if (repo != null && client != null && source.path != null) {
-                            val fetched = try {
-                                kotlinx.coroutines.runBlocking {
-                                    client.fetchFileContent(repo, source.path, codeBranch)
-                                }
-                            } catch (e: Exception) {
-                                log.warn("GitHub file fetch failed for '{}': {}", source.path, e.message)
-                                null
-                            }
-                            fetched?.take(5000)
-                        } else {
-                            log.warn("GITHUB_FILE source requires codeClient+codeRepo, but not configured")
-                            null
-                        }
-                    }
-                }
-
-                if (!content.isNullOrBlank()) {
-                    // GITHUB_FILE은 repo 내 경로를 그대로 노출 (실제 프로젝트 파일이므로)
-                    // STATIC은 로컬 파일 경로를 숨김 (wiki-agent 내부 경로이므로)
-                    val label = when (source.type) {
-                        SourceType.GITHUB_FILE -> source.path ?: ""
-                        else -> source.query ?: source.path?.substringAfterLast("/")?.substringBeforeLast(".") ?: ""
-                    }
-                    appendLine("[${source.type.name}] $label")
-                    appendLine(content)
-                    appendLine()
-                }
-            }
-        }.trim()
-    }
 
     private fun formatProgress(session: OnboardingSession): String {
         return buildString {
@@ -446,44 +446,6 @@ class OnboardingTool(
             val pct = if (totalSteps > 0) ((totalCompleted + totalSkipped) * 100 / totalSteps) else 0
             appendLine("*전체 진행률: $pct%* ($totalCompleted 완료, $totalSkipped 건너뜀 / $totalSteps 전체)")
         }.trim()
-    }
-
-    /**
-     * Confluence 페이지 콘텐츠에서 섹션을 추출한다.
-     *
-     * ConfluenceClient.fetchPageContent()는 HTML을 Slack mrkdwn으로 변환하므로,
-     * 헤딩은 `*헤딩텍스트*` 형식 (줄 시작, 줄바꿈으로 끝남).
-     * sectionKeyword가 포함된 헤딩을 찾으면 다음 헤딩까지의 내용을 반환.
-     */
-    private fun extractSection(content: String, sectionKeyword: String): String? {
-        // mrkdwn에서 헤딩 패턴: 줄 시작에 *텍스트* (convertHtmlToSlackMrkdwn 결과)
-        val headingPattern = Regex("^\\*(.+?)\\*\\s*$", RegexOption.MULTILINE)
-        val allHeadings = headingPattern.findAll(content).toList()
-
-        if (allHeadings.isEmpty()) {
-            log.warn("extractSection: no mrkdwn headings found (content length={})", content.length)
-            return null
-        }
-
-        log.debug("extractSection: looking for '{}' in {} headings: {}",
-            sectionKeyword, allHeadings.size,
-            allHeadings.map { it.groupValues[1].trim().take(50) })
-
-        for ((index, match) in allHeadings.withIndex()) {
-            val headerText = match.groupValues[1].trim()
-
-            if (headerText.contains(sectionKeyword, ignoreCase = true)) {
-                val sectionStart = match.range.first
-                val sectionEnd = if (index + 1 < allHeadings.size) {
-                    allHeadings[index + 1].range.first
-                } else {
-                    content.length
-                }
-
-                return content.substring(sectionStart, sectionEnd).trim()
-            }
-        }
-        return null
     }
 
     private fun callLLM(prompt: String): String {
