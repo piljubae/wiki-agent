@@ -106,6 +106,31 @@ class SlackBotGateway(
     private fun isOnboarding(channel: String): Boolean =
         needsOnboarding || onboardingState.containsKey(channel)
 
+    private fun isOnboardingQuery(query: String): Boolean {
+        val q = query.lowercase()
+        return (q.contains("온보딩") || q.contains("onboarding")) &&
+            !isOnboarding("") // 온보딩 채널이 아닌 일반 채널에서만
+    }
+
+    private val ONBOARDING_DM_GUIDE = """:books: *온보딩 가이드 안내*
+
+온보딩은 DM(다이렉트 메시지)에서 진행할 수 있어요!
+
+*진행 방식:*
+• 저에게 DM을 보내고 `온보딩 시작`을 입력하면 시작됩니다
+• 경험 수준에 맞춰 커리큘럼이 자동 구성됩니다
+• 단계별로 `다음`을 입력하면 진행, `건너뛰기`로 스킵 가능
+• 중간에 궁금한 점은 자유롭게 질문할 수 있어요
+
+*커리큘럼 (Day 1~5):*
+• Phase 1: 환경 셋업 & 프로젝트 구조
+• Phase 2: 도메인 용어 & Compose 컨벤션
+• Phase 3: 브랜치 / QA / 배포 / 모니터링
+• Phase 4: 첫 PR과 코드 리뷰
+• Phase 5: Claude 스킬 & CI/CD
+
+:point_right: 저에게 DM을 보내서 시작해보세요!"""
+
     private fun postToThread(channel: String, threadTs: String?, msg: String) {
         slackClient.chatPostMessage { req ->
             req.channel(channel).text(msg).let { b -> if (threadTs != null) b.threadTs(threadTs) else b }
@@ -242,6 +267,8 @@ class SlackBotGateway(
             log.info("Mention received: '{}'", query)
             if (isHelpQuery(query)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(configHandler.helpMessage()) }
+            } else if (isOnboardingQuery(query)) {
+                slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text(ONBOARDING_DM_GUIDE) }
             } else if (isOnboarding(channel)) {
                 log.info("Onboarding step for channel={}", channel)
                 runCatching { handleOnboarding(channel, threadTs, query) }
