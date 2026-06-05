@@ -276,6 +276,7 @@ fun main() {
             executor = executor,
             model = routerModel,
             confluenceTool = confluenceTool,
+            confluenceClient = confluenceClient,
             codeSearchTool = codeSearchTool,
             codeClient = sharedGithubCodeClient,
             codeRepo = config.github.codeRepos.firstOrNull(),

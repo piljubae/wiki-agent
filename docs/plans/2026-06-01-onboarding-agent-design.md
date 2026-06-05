@@ -23,12 +23,18 @@ wiki-agent 프로젝트 안에 하이브리드 방식(OnboardingTool + Onboardin
 
 ## 커리큘럼
 
-### Phase 1 — 환경 & 기본기 (Day 1~2)
+### Phase 1 — 환경 & 기본기 (Day 1)
 1. 개발 환경 세팅
 2. 앱 빌드 & 실행 (Gradle 트러블슈팅, 빌드 시간 단축 팁)
-3. 프로젝트 구조 & 모듈 맵 (피처 코드 찾아가는 법, 개발자 모드 활용법 포함)
+3. 프로젝트 구조 & 모듈 맵 (피처 코드 찾아가는 법)
+4. 앱 개발자 모드 활용법
+   - 진입: 홈 로고 길게 탭 (Debug/Beta 빌드만, Store 빌드 비활성)
+   - 그 외 진입점: 마이컬리, 알림 설정
+   - 주요 기능: 호스트(서버 환경) 전환, 딥링크 테스트, JWT/계정 정보, 피처플래그(GrowthBook), Loupe(디자인 인스펙터), 버그 리포트 등 14개 섹션
+   - 코드 위치: `:features:developer` 모듈 (`DeveloperMenuData`, `DeveloperModeActivity`, `DeveloperModeNavHost`)
+   - 신규 입사자 추천: 네트워크 > 호스트 전환, 링크 > 딥링크 테스트 먼저 해보기
 
-### Phase 2 — 도메인 & 코드 이해 (Day 3~5)
+### Phase 2 — 도메인 & 코드 이해 (Day 2)
 4. 도메인 용어 사전 (코드 읽기 전 필수 선행)
 5. 아키텍처 패턴 (MVVM, UiState, UseCase 흐름)
 6. 주요 공통 모듈 (KPDS 디자인 시스템, ApiCaller, 네트워킹)
@@ -36,18 +42,18 @@ wiki-agent 프로젝트 안에 하이브리드 방식(OnboardingTool + Onboardin
 7. Compose 전환 현황 & 컨벤션
    - 트라이벌 놀리지: `Column + forEachIndexed` 의도적 패턴, `ImpressionCapturable` vs `AnalyticsEventProvider`
 
-### Phase 3 — 프로세스 (Week 2)
+### Phase 3 — 프로세스 (Day 3)
 8. 브랜치 전략 & PR 컨벤션
 9. QA / 배포 프로세스
 10. 모니터링 & 장애 대응
 
-### Phase 4 — 실전 (Week 2~3)
+### Phase 4 — 실전 (Day 4~5)
 11. 첫 PR 가이드
 12. 코드 리뷰 문화 & 체크포인트
 13. 테스트 작성 가이드 (L1 Unit / L2 Instrument / L3 E2E 분류 기준)
 14. 첫 피처 티켓 워크플로우 (티켓 분석 → 코드 탐색 → 구현 → PR까지 상세 안내, 실제 티켓 번호 입력 시 맞춤 가이드)
 
-### Phase 5 — 스킬 가이드 (Week 3~4)
+### Phase 5 — 스킬 가이드 (Day 5)
 15. Claude Code 프로젝트 스킬 활용 (프로젝트 레벨에서 공유된 스킬만 대상)
 16. CI/CD 자동화 도구 & 린트 룰
 
@@ -73,43 +79,60 @@ wiki-agent 프로젝트 안에 하이브리드 방식(OnboardingTool + Onboardin
 - **kurly 고유 항목은 레벨 무관 필수** (`skippable: false`): 모듈 구조, KPDS, 브랜치 컨벤션, 도메인 용어
 - 스킵된 단계도 "건너뛴 항목 보기"로 언제든 열람 가능
 
+## 콘텐츠 소스
+
+**Single Source of Truth: Confluence 위키 한 페이지**
+
+- URL: https://kurly0521.atlassian.net/wiki/spaces/ProductApp/pages/5912232879/Android
+- 페이지 ID: `5912232879`
+- 모든 Phase 콘텐츠가 이 한 페이지에 있음 (Phase별 H1 헤딩으로 구분)
+- 팀원 누구나 직접 편집 가능
+
+**OnboardingTool 콘텐츠 수집 방식:**
+1. 온보딩 시작 시 위키 페이지를 fetch
+2. 현재 Phase에 해당하는 H1 섹션을 추출
+3. 추출된 콘텐츠를 LLM에 전달하여 가이드 생성
+
+**static 파일(`.wiki/onboarding/steps/*.md`)은 제거** — 위키 한 곳에서만 관리하여 싱크 이슈 방지
+
 ## 커리큘럼 구조 파일
 
-`.wiki/onboarding/curriculum.yaml`에 단계를 정의한다.
+`.wiki/onboarding/curriculum.yaml`에 단계를 정의한다. sources는 위키 페이지의 섹션 매핑만 담당.
 
 ```yaml
-last_updated: 2026-06-01
+last_updated: 2026-06-05
+
+contentSource:
+  type: confluence
+  pageId: "5912232879"
+  url: "https://kurly0521.atlassian.net/wiki/spaces/ProductApp/pages/5912232879/Android"
 
 phases:
   - id: env-setup
     name: "개발 환경 세팅"
     phase: 1
-    day: "Day 1~2"
+    day: "Day 1"
     skippable: true
     levelFilter:
       skipWhen: { android: "C" }
-    sources:
-      - type: static        # 우선순위 1: 직접 작성한 가이드
-        path: ".wiki/onboarding/env-setup.md"
-      - type: confluence     # 우선순위 2: 보충 검색
-        query: "kurly android 개발환경 세팅"
+    wikiSection: "Phase 1"  # 위키 H1 헤딩과 매칭
 
   - id: project-structure
     name: "프로젝트 구조 & 모듈 맵"
     phase: 1
-    day: "Day 1~2"
-    skippable: false         # kurly 고유 — 레벨 무관 필수
-    sources:
-      - type: static
-        path: ".wiki/onboarding/project-structure.md"
-      - type: code
-        query: "settings.gradle 모듈 목록"
-```
+    day: "Day 1"
+    skippable: false
+    wikiSection: "Phase 1"
 
-**sources 우선순위**: `static > code > confluence`
-- 모든 단계에 static 소스 필수 (품질 보장의 기본선)
-- Confluence 검색 결과 0건이면 static만으로 가이드 제공 (깨지지 않음)
-- 각 static 파일에도 `last_updated` 명시
+  - id: compose-convention
+    name: "Compose 컨벤션"
+    phase: 2
+    day: "Day 2"
+    skippable: true
+    levelFilter:
+      skipWhen: { compose: "B" }
+    wikiSection: "Phase 2"
+```
 
 ## 온보딩 세션 상태 관리
 
@@ -174,7 +197,7 @@ phases:
 
 **가이드 메시지** (Block Kit):
 ```
-:books: *[Phase 1: 2/3] 프로젝트 구조 & 모듈 맵* (Day 1~2)
+:books: *[Phase 1: 2/3] 프로젝트 구조 & 모듈 맵* (Day 1)
 
 (LLM이 생성한 가이드 내용)
 

@@ -89,7 +89,7 @@ phases:
   - id: env-setup
     name: "개발 환경 세팅"
     phase: 1
-    day: "Day 1~2"
+    day: "Day 1"
     skippable: true
     levelFilter:
       skipWhen:
@@ -101,7 +101,7 @@ phases:
   - id: app-build
     name: "앱 빌드 & 실행"
     phase: 1
-    day: "Day 1~2"
+    day: "Day 1"
     skippable: true
     levelFilter:
       skipWhen:
@@ -113,7 +113,7 @@ phases:
   - id: project-structure
     name: "프로젝트 구조 & 모듈 맵"
     phase: 1
-    day: "Day 1~2"
+    day: "Day 1"
     skippable: false
     sources:
       - type: static
@@ -124,7 +124,7 @@ phases:
   - id: domain-terms
     name: "도메인 용어 사전"
     phase: 2
-    day: "Day 3~5"
+    day: "Day 2"
     skippable: false
     sources:
       - type: static
@@ -135,7 +135,7 @@ phases:
   - id: architecture
     name: "아키텍처 패턴"
     phase: 2
-    day: "Day 3~5"
+    day: "Day 2"
     skippable: true
     levelFilter:
       skipWhen:
@@ -150,7 +150,7 @@ phases:
   - id: common-modules
     name: "주요 공통 모듈"
     phase: 2
-    day: "Day 3~5"
+    day: "Day 2"
     skippable: false
     sources:
       - type: static
@@ -159,7 +159,7 @@ phases:
   - id: compose-convention
     name: "Compose 전환 현황 & 컨벤션"
     phase: 2
-    day: "Day 3~5"
+    day: "Day 2"
     skippable: true
     levelFilter:
       skipWhen:
@@ -173,7 +173,7 @@ phases:
   - id: branch-convention
     name: "브랜치 전략 & PR 컨벤션"
     phase: 3
-    day: "Week 2"
+    day: "Day 3"
     skippable: false
     sources:
       - type: static
@@ -184,7 +184,7 @@ phases:
   - id: qa-deploy
     name: "QA / 배포 프로세스"
     phase: 3
-    day: "Week 2"
+    day: "Day 3"
     skippable: false
     sources:
       - type: static
@@ -195,7 +195,7 @@ phases:
   - id: monitoring
     name: "모니터링 & 장애 대응"
     phase: 3
-    day: "Week 2"
+    day: "Day 3"
     skippable: true
     levelFilter:
       skipWhen:
@@ -207,7 +207,7 @@ phases:
   - id: first-pr
     name: "첫 PR 가이드"
     phase: 4
-    day: "Week 2~3"
+    day: "Day 4~5"
     skippable: false
     sources:
       - type: static
@@ -216,7 +216,7 @@ phases:
   - id: code-review
     name: "코드 리뷰 문화 & 체크포인트"
     phase: 4
-    day: "Week 2~3"
+    day: "Day 4~5"
     skippable: false
     sources:
       - type: static
@@ -225,7 +225,7 @@ phases:
   - id: testing-guide
     name: "테스트 작성 가이드"
     phase: 4
-    day: "Week 2~3"
+    day: "Day 4~5"
     skippable: false
     sources:
       - type: static
@@ -234,7 +234,7 @@ phases:
   - id: first-ticket
     name: "첫 피처 티켓 워크플로우"
     phase: 4
-    day: "Week 2~3"
+    day: "Day 4~5"
     skippable: false
     sources:
       - type: static
@@ -243,7 +243,7 @@ phases:
   - id: claude-skills
     name: "Claude Code 프로젝트 스킬 활용"
     phase: 5
-    day: "Week 3~4"
+    day: "Day 5"
     skippable: true
     sources:
       - type: static
@@ -252,7 +252,7 @@ phases:
   - id: ci-cd
     name: "CI/CD 자동화 도구 & 린트 룰"
     phase: 5
-    day: "Week 3~4"
+    day: "Day 5"
     skippable: true
     sources:
       - type: static

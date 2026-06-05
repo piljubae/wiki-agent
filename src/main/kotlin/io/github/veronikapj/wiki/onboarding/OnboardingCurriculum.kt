@@ -33,6 +33,7 @@ data class LevelFilter(
 enum class SourceType {
     @SerialName("static") STATIC,
     @SerialName("confluence") CONFLUENCE,
+    @SerialName("confluence-page") CONFLUENCE_PAGE,
     @SerialName("code") CODE,
     @SerialName("github-file") GITHUB_FILE,
 }
@@ -43,6 +44,8 @@ data class ContentSource(
     val path: String? = null,
     val query: String? = null,
     val repo: String? = null,  // github-file 전용: 특정 repo 지정 (미지정 시 기본 codeRepo 사용)
+    val pageId: String? = null,  // confluence-page 전용: 페이지 ID
+    val section: String? = null, // confluence-page 전용: H1 섹션 매칭 키워드
 )
 
 object CurriculumLoader {
