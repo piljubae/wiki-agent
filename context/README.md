@@ -1,72 +1,81 @@
 # :context
 
-Slack 대화 세션의 **대화 이력**과 프로젝트 단위 **메모리**를 파일로 영속화하는 모듈.
+> 한 줄 요약: 사용자와 봇이 주고받은 **대화 기록**과 프로젝트용 **메모**를 파일로 저장하고 다시 읽어오는 모듈.
 
-wiki-agent 모듈화 로드맵의 **Phase 1**으로 분리된 첫 독립 모듈이다. 내부 패키지 의존성이 0이고 네트워크·LLM에 의존하지 않아 순수 단위 테스트(L1)만으로 검증된다.
+## 이게 왜 필요한가
 
-전체 로드맵: [`docs/plans/2026-06-09-modularization-roadmap.md`](../docs/plans/2026-06-09-modularization-roadmap.md)
+wiki-agent는 슬랙 챗봇이라, 사용자가 이어서 질문하면 **앞서 무슨 얘기를 했는지** 기억해야 자연스럽게 답할 수 있다. 그런데 대화가 길어질수록 이전 내용을 전부 LLM에 넣을 수 없다(토큰 비용·한도). 그래서 이 모듈이 두 가지를 한다:
 
-## 책임
+1. **대화 이력 저장** — 질문/답변 한 쌍(`Turn`)을 세션별 파일에 차곡차곡 쌓는다.
+2. **오래되면 요약** — 대화가 일정 길이를 넘으면 옛날 대화는 한 덩어리로 요약하고, 최근 몇 개만 원본으로 남긴다(`compress`).
 
-- 세션별 대화 turn(질문·답변) 추가 / 조회
-- 대화 이력 요약(compress)과 오래된 turn 정리(trim)
-- 프로젝트 메모리(메모 누적·조회·초기화)
+여기에 더해, 프로젝트 단위로 기억해둘 메모를 관리하는 `ProjectMemory`도 들어 있다.
 
-LLM 호출은 이 모듈의 책임이 아니다. 요약은 `compress(summarizer: ...)`에 **함수를 주입**받아 수행하므로 모듈은 LLM 클라이언트를 모른다.
+> **중요:** 이 모듈은 **LLM을 직접 호출하지 않는다.** 요약이 필요할 때 "요약하는 함수"를 밖에서 받아 쓴다(아래 `compress` 참고). 덕분에 이 모듈만 떼어서 LLM·네트워크 없이 테스트할 수 있다.
 
-## 공개 API
+## 핵심 개념
 
-### `ConversationStore(sessionsDir: String = ".wiki/sessions")`
+- **세션(session)** — 대화 단위. 슬랙 채널/스레드/유저 ID 등이 세션 ID가 된다. 세션마다 별도 파일로 저장된다.
+- **Turn** — 질문 하나와 그에 대한 답변 하나의 쌍. `data class Turn(question, answer)`.
+- **요약 파일** — 압축된 옛 대화는 `<세션>.summary.md`에, 원본 대화는 `<세션>.jsonl`에 저장된다.
 
-세션별로 `<sessionId>.jsonl`(대화 turn)과 `<sessionId>.summary.md`(요약)를 디렉터리에 저장한다.
+## 무엇을 제공하나 (공개 API)
 
-| 메서드 | 설명 |
+### `ConversationStore(sessionsDir = ".wiki/sessions")`
+
+대화 이력을 다루는 메인 클래스. `sessionsDir` 아래에 세션별 파일을 만든다.
+
+| 하고 싶은 일 | 메서드 |
 |---|---|
-| `append(sessionId, question, answer)` | turn 1개(user/assistant 2줄)를 JSONL로 추가 |
-| `loadAll(sessionId): List<Turn>` | 전체 turn 조회 (파싱 불가 라인은 skip) |
-| `load(sessionId, maxTurns = 5): List<Turn>` | 최근 `maxTurns`개만 조회 |
-| `loadSummary(sessionId): String?` | 저장된 요약 조회 (없으면 null) |
-| `saveSummary(sessionId, summary)` | 요약 저장 |
-| `trimOldTurns(sessionId, keepRecent)` | 최근 `keepRecent`개만 남기고 정리 |
-| `suspend compress(sessionId, summarizer, compressThreshold = 10, keepRecent = 4)` | turn이 임계값을 **초과**하면 오래된 turn을 `summarizer`로 요약 후 trim |
+| 대화 한 턴 추가 | `append(sessionId, question, answer)` |
+| 전체 대화 읽기 | `loadAll(sessionId)` |
+| 최근 N턴만 읽기 | `load(sessionId, maxTurns = 5)` |
+| 저장된 요약 읽기 | `loadSummary(sessionId)` (없으면 null) |
+| 요약 저장 | `saveSummary(sessionId, summary)` |
+| 최근 N턴만 남기고 정리 | `trimOldTurns(sessionId, keepRecent)` |
+| 길어진 대화 압축 | `compress(sessionId, summarizer, ...)` |
 
-- `data class Turn(question: String, answer: String)`
-- 상수: `COMPRESS_THRESHOLD = 10`, `KEEP_RECENT = 4`
-
-`compress`는 `allTurns.size <= compressThreshold`이면 아무것도 하지 않는다(요약 호출 없음). 직전 요약이 있으면 새 요약 프롬프트에 포함한다.
-
-### `ProjectMemory(filePath: String = ".wiki/memory.md")`
-
-| 메서드 | 설명 |
-|---|---|
-| `load(): String?` | 메모리 내용 (없거나 비면 null) |
-| `add(content)` | 한 줄(`- content`) 추가, 부모 디렉터리 자동 생성 |
-| `show(): String` | 사람용 메시지 포맷 (비면 안내 문구) |
-| `clear()` | 메모리 파일 삭제 (없어도 안전) |
-
-## 의존성
-
-- `org.jetbrains.kotlinx:kotlinx-serialization-json` (JSONL 직렬화)
-- 내부 모듈 의존 **없음**
-
-## 사용 예
+**`compress`가 동작하는 방식** — 대화 턴 수가 `compressThreshold`(기본 10)를 넘을 때만 작동한다. 넘으면: 오래된 턴들을 모아 `summarizer` 함수에 넘겨 요약을 받고 → 그 요약을 저장하고 → 최근 `keepRecent`(기본 4)턴만 남긴다. 이전 요약이 있으면 새 요약 입력에 함께 넣어 맥락을 잇는다. 임계값 이하면 아무것도 하지 않는다(요약 함수도 호출 안 함).
 
 ```kotlin
 val store = ConversationStore()
-store.append("U123", "온보딩 어떻게 시작해?", "...")
 
-// 이력이 길어지면 LLM 요약기를 주입해 압축
-store.compress("U123", summarizer = { prompt -> llm.complete(prompt) })
+// 1. 대화가 오갈 때마다 기록
+store.append("U12345", "온보딩 어떻게 시작해?", "먼저 ...")
 
-val recent = store.load("U123")          // 최근 5 turn
+// 2. 이어지는 질문에 답할 때 최근 맥락을 읽어 프롬프트에 넣음
+val recent = store.load("U12345")   // 최근 5턴
+
+// 3. 대화가 길어지면 압축 — 요약은 LLM 호출 함수를 주입
+store.compress("U12345", summarizer = { prompt -> llm.complete(prompt) })
 ```
+
+### `ProjectMemory(filePath = ".wiki/memory.md")`
+
+프로젝트에 관해 기억해둘 메모를 한 줄씩 쌓는 간단한 저장소.
+
+| 하고 싶은 일 | 메서드 |
+|---|---|
+| 메모 내용 읽기 | `load()` (없거나 비면 null) |
+| 메모 한 줄 추가 | `add(content)` |
+| 사람이 읽을 형태로 보기 | `show()` |
+| 전부 지우기 | `clear()` |
+
+## 의존성
+
+- `kotlinx-serialization-json` — 대화를 JSON 한 줄(JSONL) 형식으로 안전하게 저장/파싱하기 위해 사용.
+- **다른 내부 모듈에는 의존하지 않는다.** (가장 바깥 leaf 모듈)
 
 ## 테스트
 
-순수 파일 I/O 기반 결정적 로직이라 `@TempDir`/임시 경로만으로 검증한다. 네트워크·LLM mock 불필요(요약기는 람다로 주입).
+파일 입출력 기반의 단순·결정적 로직이라, 임시 디렉터리만 있으면 네트워크나 LLM 없이 검증된다(요약 함수는 가짜 람다를 넣음).
 
 ```bash
 ./gradlew :context:test
 ```
 
-`ConversationStoreTest`(16), `ProjectMemoryTest`(7) — compress 임계값 경계, 특수문자 JSONL round-trip, malformed 라인 skip, trim no-op 등 커버.
+주요 검증: 추가/조회 순서, 최근 N턴 자르기, 요약 임계값 경계(딱 임계값이면 작동 안 함), 특수문자(줄바꿈·따옴표·이모지)가 깨지지 않는지, 깨진 줄 무시 등.
+
+---
+
+이 모듈은 wiki-agent 모듈화의 **1단계**로 분리됐다. 전체 그림은 [모듈화 로드맵](../docs/plans/2026-06-09-modularization-roadmap.md) 참고.

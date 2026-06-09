@@ -32,4 +32,18 @@ class SecretLoaderTest {
         assertEquals(1, map.size)
         assertEquals("value", map["KEY"])
     }
+
+    @Test
+    fun `parseDotEnv keeps equals signs inside value`() {
+        // base64/패딩처럼 값에 '='가 포함돼도 첫 '='만 구분자로 사용
+        val map = SecretLoader.parseDotEnv("TOKEN=ab=cd==")
+        assertEquals("ab=cd==", map["TOKEN"])
+    }
+
+    @Test
+    fun `parseDotEnv skips blank values`() {
+        val map = SecretLoader.parseDotEnv("EMPTY=\nFILLED=x")
+        assertEquals(null, map["EMPTY"])
+        assertEquals("x", map["FILLED"])
+    }
 }
