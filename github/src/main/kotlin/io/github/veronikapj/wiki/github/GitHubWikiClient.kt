@@ -127,7 +127,8 @@ class GitHubWikiClient(private val token: String = "") {
         }.getOrDefault("")
     }
 
-    internal fun buildRawUrl(repoFullName: String, path: String, isWiki: Boolean = false): String {
+    // 모듈 분리(:github) 후 다른 모듈의 GitHubWikiSearchAgent에서 raw URL 생성에 사용하므로 public.
+    fun buildRawUrl(repoFullName: String, path: String, isWiki: Boolean = false): String {
         return if (isWiki) {
             val cleanRepo = repoFullName.removeSuffix(".wiki")
             val (owner, repo) = cleanRepo.split("/")
