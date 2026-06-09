@@ -40,6 +40,7 @@ dependencies {
     implementation(project(":github"))
     implementation(project(":rag"))
     implementation(project(":confluence"))
+    implementation(project(":llm"))
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("io.mockk:mockk:1.13.16")
