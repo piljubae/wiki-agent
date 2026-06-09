@@ -11,12 +11,15 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":confluence"))
-    implementation(project(":github"))
-    implementation(project(":rag"))
-    implementation(project(":callgraph-plugin"))
+    // public API(생성자/반환 타입)에 노출되는 모듈은 api로 전파해야
+    // :search를 쓰는 소비자가 별도 의존 선언 없이 컴파일된다.
+    api(project(":confluence"))
+    api(project(":github"))
+    api(project(":rag"))
+    api("ai.koog:koog-agents-jvm:0.8.0")
 
-    implementation("ai.koog:koog-agents-jvm:0.8.0")
+    // CallGraphDb는 CodeFlowTool 내부에서만 쓰이고 public API에 노출되지 않음 → implementation
+    implementation(project(":callgraph-plugin"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")

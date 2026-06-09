@@ -1,8 +1,8 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
-import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import kotlinx.coroutines.runBlocking
 
 class ConfluenceTool(

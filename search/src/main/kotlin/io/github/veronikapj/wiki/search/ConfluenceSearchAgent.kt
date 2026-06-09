@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent
+package io.github.veronikapj.wiki.search
 
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.confluence.ConfluencePageRef

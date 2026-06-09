@@ -2,7 +2,7 @@ package io.github.veronikapj.wiki.knowledge
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
-import io.github.veronikapj.wiki.agent.tool.SourceTracker
+import io.github.veronikapj.wiki.search.tool.SourceTracker
 
 class KnowledgeTool(
     private val store: KnowledgeStore,

@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.knowledge
+package io.github.veronikapj.wiki.search
 
 import org.slf4j.LoggerFactory
 import java.io.File

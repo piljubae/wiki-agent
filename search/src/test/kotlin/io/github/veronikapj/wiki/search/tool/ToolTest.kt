@@ -1,7 +1,7 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
-import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
-import io.github.veronikapj.wiki.agent.GitHubWikiSearchAgent
+import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.GitHubWikiSearchAgent
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest

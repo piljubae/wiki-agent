@@ -1,6 +1,6 @@
 package io.github.veronikapj.wiki.eval
 
-import io.github.veronikapj.wiki.agent.SearchResult
+import io.github.veronikapj.wiki.search.SearchResult
 
 object EvalMetrics {
 

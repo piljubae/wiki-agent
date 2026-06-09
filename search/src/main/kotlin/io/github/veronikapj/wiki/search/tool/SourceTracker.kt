@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 class SourceTracker {
     private val _counts = mutableMapOf<String, Int>()

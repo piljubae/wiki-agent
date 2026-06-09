@@ -1,10 +1,10 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.github.GithubCodeResult
 import io.github.veronikapj.wiki.github.GitHubCodeClient
-import io.github.veronikapj.wiki.knowledge.BM25Index
+import io.github.veronikapj.wiki.search.BM25Index
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.github.veronikapj.wiki.rag.LlmExpandClient
 import kotlinx.coroutines.async

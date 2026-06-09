@@ -4,8 +4,8 @@ import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.ResponseMetaInfo
-import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
-import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.CodeSearchTool
+import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.mockk.coEvery
 import io.mockk.mockk
 import org.junit.jupiter.api.AfterEach
