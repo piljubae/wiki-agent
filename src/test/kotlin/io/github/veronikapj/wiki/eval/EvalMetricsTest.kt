@@ -1,7 +1,7 @@
 package io.github.veronikapj.wiki.eval
 
-import io.github.veronikapj.wiki.agent.SearchResult
-import io.github.veronikapj.wiki.agent.SearchStage
+import io.github.veronikapj.wiki.search.SearchResult
+import io.github.veronikapj.wiki.search.SearchStage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

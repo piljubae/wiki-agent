@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent
+package io.github.veronikapj.wiki.search
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -2,7 +2,7 @@ package io.github.veronikapj.wiki.eval
 
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
-import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient

@@ -1,6 +1,6 @@
 package io.github.veronikapj.wiki.eval
 
-import io.github.veronikapj.wiki.agent.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.config.ConfigLoader
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
@@ -61,7 +61,7 @@ class SearchQualityEvalTest {
             val elapsed = System.currentTimeMillis() - start
 
             // early return = 1 API call, parallel fallback = 3 calls
-            val estimatedApiCalls = if (results.size >= 3 && results.all { it.stage == io.github.veronikapj.wiki.agent.SearchStage.TITLE_MATCH }) 1 else 3
+            val estimatedApiCalls = if (results.size >= 3 && results.all { it.stage == io.github.veronikapj.wiki.search.SearchStage.TITLE_MATCH }) 1 else 3
 
             CaseResult(
                 case = case,

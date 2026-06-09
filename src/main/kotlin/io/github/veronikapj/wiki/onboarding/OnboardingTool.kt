@@ -6,9 +6,9 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
-import io.github.veronikapj.wiki.agent.tool.CodeSearchTool
-import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
-import io.github.veronikapj.wiki.agent.tool.SourceTracker
+import io.github.veronikapj.wiki.search.tool.CodeSearchTool
+import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.SourceTracker
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import kotlinx.coroutines.runBlocking

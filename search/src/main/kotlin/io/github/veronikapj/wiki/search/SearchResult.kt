@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent
+package io.github.veronikapj.wiki.search
 
 enum class SearchStage(val score: Double) {
     TITLE_MATCH(1.0),

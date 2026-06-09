@@ -1,8 +1,11 @@
 package io.github.veronikapj.wiki.agent
 
+import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.GitHubWikiSearchAgent
+
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
-import io.github.veronikapj.wiki.agent.tool.ConfluenceTool
-import io.github.veronikapj.wiki.agent.tool.GitHubWikiTool
+import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeStore
 import io.mockk.coEvery

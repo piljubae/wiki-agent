@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 import io.github.veronikapj.callgraph.CallGraphDb
 import org.junit.jupiter.api.AfterEach

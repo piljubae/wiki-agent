@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool

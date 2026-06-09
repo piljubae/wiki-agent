@@ -1,5 +1,7 @@
 package io.github.veronikapj.wiki.knowledge
 
+import io.github.veronikapj.wiki.search.BM25Index
+
 import io.github.veronikapj.wiki.rag.ChromaClient
 import io.mockk.coEvery
 import io.mockk.coVerify

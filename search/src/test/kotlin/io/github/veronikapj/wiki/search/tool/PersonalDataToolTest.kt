@@ -1,4 +1,4 @@
-package io.github.veronikapj.wiki.agent.tool
+package io.github.veronikapj.wiki.search.tool
 
 import java.io.File
 import kotlin.test.Test
