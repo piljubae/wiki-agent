@@ -53,4 +53,24 @@ class ProjectMemoryTest {
         memory.clear()
         assertNull(memory.load())
     }
+
+    @Test
+    fun `add creates parent directories when missing`() {
+        val nested = File(
+            System.getProperty("java.io.tmpdir"),
+            "wiki-test-memory-${System.nanoTime()}/nested/dir/memory.md",
+        )
+        val memory = ProjectMemory(nested.absolutePath)
+
+        memory.add("중첩 경로에 저장")
+
+        assertTrue(memory.load()!!.contains("중첩 경로에 저장"))
+    }
+
+    @Test
+    fun `clear on nonexistent file is safe`() {
+        val memory = createTempMemory()
+        memory.clear()
+        assertNull(memory.load())
+    }
 }
