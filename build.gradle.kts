@@ -38,6 +38,7 @@ dependencies {
     implementation(project(":context"))
     implementation(project(":config"))
     implementation(project(":github"))
+    implementation(project(":rag"))
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("io.mockk:mockk:1.13.16")
