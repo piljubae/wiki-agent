@@ -35,6 +35,7 @@ dependencies {
 
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")
     implementation(project(":callgraph-plugin"))
+    implementation(project(":context"))
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("io.mockk:mockk:1.13.16")
