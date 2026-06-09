@@ -129,4 +129,80 @@ class ConversationStoreTest {
         assertNotNull(summary)
         assertTrue(summary.contains("기존 요약 내용"))
     }
+
+    // --- 경계값: compress 임계값 (size <= threshold → no-op) ---
+
+    @Test
+    fun `compress does nothing at exactly threshold`() {
+        val store = createTempStore()
+        repeat(ConversationStore.COMPRESS_THRESHOLD) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        val summarizer: suspend (String) -> String = { error("threshold 경계에서 호출되면 안 됨") }
+        kotlinx.coroutines.runBlocking {
+            store.compress("session1", summarizer)
+        }
+
+        assertEquals(ConversationStore.COMPRESS_THRESHOLD, store.loadAll("session1").size)
+        assertEquals(null, store.loadSummary("session1"))
+    }
+
+    @Test
+    fun `compress triggers just above threshold`() {
+        val store = createTempStore()
+        repeat(ConversationStore.COMPRESS_THRESHOLD + 1) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        var called = false
+        val summarizer: suspend (String) -> String = { called = true; "요약" }
+        kotlinx.coroutines.runBlocking {
+            store.compress("session1", summarizer)
+        }
+
+        assertTrue(called)
+        assertEquals(ConversationStore.KEEP_RECENT, store.loadAll("session1").size)
+    }
+
+    // --- 도메인 불변성: JSONL 직렬화 round-trip ---
+
+    @Test
+    fun `append preserves special characters round-trip`() {
+        val store = createTempStore()
+        val q = "줄바꿈\n포함 \"따옴표\" 그리고 이모지 🎉"
+        val a = "백슬래시 \\ 와 탭\t문자, 콜론: 중괄호 {}"
+        store.append("session1", q, a)
+
+        val turns = store.load("session1")
+        assertEquals(1, turns.size)
+        assertEquals(q, turns[0].question)
+        assertEquals(a, turns[0].answer)
+    }
+
+    @Test
+    fun `loadAll skips malformed lines`() {
+        val dir = File(System.getProperty("java.io.tmpdir"), "wiki-test-sessions-${System.nanoTime()}")
+        dir.mkdirs()
+        val store = ConversationStore(dir.absolutePath)
+        File(dir, "session1.jsonl").writeText(
+            buildString {
+                appendLine("not json at all")
+                appendLine("""{"ts":"t","role":"user","content":"질문1"}""")
+                appendLine("""{"ts":"t","role":"assistant","content":"답변1"}""")
+                appendLine("{ broken json")
+            },
+        )
+
+        val turns = store.loadAll("session1")
+        assertEquals(1, turns.size)
+        assertEquals("질문1", turns[0].question)
+        assertEquals("답변1", turns[0].answer)
+    }
+
+    @Test
+    fun `trimOldTurns is no-op when at or below keepRecent`() {
+        val store = createTempStore()
+        repeat(3) { i -> store.append("session1", "질문$i", "답변$i") }
+
+        store.trimOldTurns("session1", keepRecent = 4)
+
+        assertEquals(3, store.loadAll("session1").size)
+    }
 }
