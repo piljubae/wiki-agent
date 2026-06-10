@@ -190,17 +190,29 @@ implementation(project(":context"))
 
 ---
 
-## 6. 추적 체크리스트
+## 6. 추적 체크리스트 — ✅ 완료 (2026-06-10)
 
-- [ ] Phase 0 — 멀티모듈 빌드 기반 세팅
-- [ ] Phase 1 — `:context` 추출 + L1 테스트
-- [ ] Phase 2 — `:config` 추출 + L1 테스트
-- [ ] Phase 3 — `:tool` 추출 (순환 해소)
-- [ ] Phase 4 — `:confluence` / `:github` / `:rag` 추출 + MockWebServer
-- [ ] Phase 5 — `:llm` 추출
-- [ ] Phase 6 — `:knowledge` 추출
-- [ ] Phase 7 — `:onboarding` 추출 + clean architecture 레이어링
-- [ ] Phase 8 — `:agent` 추출
-- [ ] Phase 9 — `:app` Composition Root 정리
+- [x] `:context` 추출 (PR #22)
+- [x] `:config` 추출 (PR #24)
+- [x] `:github` 추출 (PR #25)
+- [x] `:rag` 추출 (PR #26)
+- [x] `:confluence` 추출 (PR #27, `@Tag("eval")` 통합테스트 제외)
+- [x] `:llm` 추출 (PR #28)
+- [x] **`:search` 추출 — 순환 해소** (PR #29). 계획상 `:tool`이었으나 실제론 검색 에이전트·`BM25Index`까지 함께 내려야 순환이 끊겨 응집 `:search` 레이어로 확장. 전용 패키지 `wiki.search`/`wiki.search.tool`로 split 회피.
+- [x] `:onboarding` 추출 (PR #30)
+- [x] `:knowledge` 추출 (PR #31)
+- [x] `:app` 정리 — `agent`(OrchestratorAgent 등)·`slack`·`Main`은 Composition Root로 루트(앱)에 잔류
 
-각 Phase 완료 기준: ① 전체 빌드 통과 ② 신규 모듈 테스트 통과 ③ 단방향 의존성 유지(순환 0).
+각 Phase 완료 기준: ① 전체 빌드 통과 ② 신규 모듈 테스트 통과 ③ 단방향 의존성 유지(순환 0). 전부 충족.
+
+### 최종 결과
+
+- 단일 모듈 → **10개 모듈 + 앱(root)**. `./gradlew build` 전체 통과, 순환 0.
+- 핵심 원칙 적용: 패키지명 유지로 호출처 수정 최소화(검색 레이어만 전용 패키지로 분리), public API 노출 의존은 `api`·내부 전용은 `implementation`.
+- `:agent` 별도 분리는 보류 — 오케스트레이터는 모든 모듈을 엮는 조립부라 앱 모듈에 두는 것이 자연스러움.
+
+### 회고 (다음 모듈화 작업에 참고)
+
+- `git mv` 후 편집분 재스테이징 + 커밋 내용 검증 (워킹트리 테스트 통과만으론 누락 못 잡음).
+- 분리 전 점검: `internal` 멤버의 교차 패키지 사용(테스트 포함), `@Tag`/`@Serializable`, 외부 의존은 `veronikapj.*` 전체(예: `callgraph`)로 스캔.
+- 모듈 경계에서 `internal`은 모듈 한정 → 교차 사용 시 `public` 승격(예: `GitHubWikiClient.buildRawUrl`).
