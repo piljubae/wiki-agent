@@ -137,10 +137,10 @@ class PrIndexAgent(
      * 누락분(과거 임베딩 실패로 발생)을 복구한다. GitHub 재조회·LLM 재컴파일 없이 디스크 문서를
      * 그대로 임베딩·업서트하므로 임베딩 호출 외 비용이 없다.
      *
-     * @param maxPerRun 한 번 실행에서 백필할 최대 PR 수 (임베딩 API 과다 호출 방지). 초과분은 다음 호출에서 처리.
+     * @param maxPerRun 한 번 실행에서 백필할 최대 PR 수 (폭주 방지용 상한). 초과분은 다음 호출에서 처리.
      * @return 이번 실행에서 백필 성공한 PR 수
      */
-    suspend fun reconcileMissing(repos: List<String>, maxPerRun: Int = 100): Int {
+    suspend fun reconcileMissing(repos: List<String>, maxPerRun: Int = 1000): Int {
         val chroma = chromaClient
         val embed = embeddingFn
         if (chroma == null || embed == null) {

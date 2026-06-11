@@ -335,7 +335,7 @@ fun main() {
                 runCatching {
                     val count = finalPrIndexAgent.indexRecentPrs(config.github.codeRepos)
                     if (count > 0) log.info("Polling: indexed {} new PRs", count)
-                    // 매 폴링마다 누락분 백필 — 임베딩 실패 등으로 생긴 구멍을 점진적으로 메운다 (free tier 한도 내 자연 분산)
+                    // 매 폴링마다 누락분 백필 — 일시적 임베딩 실패 등으로 생긴 구멍을 메운다 (이미 인덱싱된 PR은 스킵)
                     val backfilled = finalPrIndexAgent.reconcileMissing(config.github.codeRepos)
                     if (backfilled > 0) log.info("Polling: backfilled {} missing PRs", backfilled)
                     gatewayRef.get()?.lastPrIndexedAt = Instant.now()
