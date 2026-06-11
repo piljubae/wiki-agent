@@ -8,6 +8,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 
 class LlmExpandClient(
@@ -60,24 +62,64 @@ class LlmExpandClient(
     }
 }
 
-class GoogleEmbeddingClient(private val apiKey: String) {
-    private val httpClient = HttpClient(CIO) {
+class GoogleEmbeddingClient(
+    private val apiKey: String,
+    // 테스트에서 MockEngine 주입용. 기본은 CIO + 15s 타임아웃.
+    private val httpClient: HttpClient = HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = 15_000 }
-    }
+    },
+    private val maxAttempts: Int = 3,
+    private val baseBackoffMs: Long = 500L,
+) {
     private val model = "gemini-embedding-001"
     private val endpoint =
         "https://generativelanguage.googleapis.com/v1beta/models/$model:embedContent?key=$apiKey"
 
+    /**
+     * 임베딩 생성. 일시적 실패(네트워크/타임아웃, HTTP 429·5xx)는 지수 백오프로 [maxAttempts]회까지 재시도.
+     * 2xx 응답인데 파싱 실패하면 재시도해도 무의미하므로 즉시 실패.
+     */
     suspend fun embed(text: String): List<Float> {
-        val response = httpClient.post(endpoint) {
-            contentType(ContentType.Application.Json)
-            setBody(buildEmbedRequest(text, model))
-        }.bodyAsText()
-        val result = parseEmbedResponse(response)
-        if (result == null) {
-            log.warn("Embedding API response parse failed. response={}", response.take(500))
+        var lastError: Throwable? = null
+        repeat(maxAttempts) { attempt ->
+            val body: String? = try {
+                val response = httpClient.post(endpoint) {
+                    contentType(ContentType.Application.Json)
+                    setBody(buildEmbedRequest(text, model))
+                }
+                val status = response.status.value
+                val text = response.bodyAsText()
+                if (status == 429 || status >= 500) {
+                    lastError = IllegalStateException("Embedding API HTTP $status: ${text.take(200)}")
+                    null // 재시도 대상
+                } else {
+                    text
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e // 네트워크/타임아웃 등 → 재시도
+                null
+            }
+
+            if (body != null) {
+                // 성공 응답: 파싱 실패는 재시도 무의미하므로 즉시 throw
+                return parseEmbedResponse(body) ?: run {
+                    log.warn("Embedding API response parse failed. response={}", body.take(500))
+                    error("Failed to parse embedding response")
+                }
+            }
+
+            if (attempt < maxAttempts - 1) {
+                val backoffMs = baseBackoffMs shl attempt // 500, 1000, 2000...
+                log.warn(
+                    "Embedding 재시도 {}/{} (사유: {}), {}ms 후",
+                    attempt + 1, maxAttempts, lastError?.message?.take(120), backoffMs,
+                )
+                delay(backoffMs)
+            }
         }
-        return result ?: error("Failed to parse embedding response")
+        throw lastError ?: IllegalStateException("Embedding ${maxAttempts}회 시도 모두 실패")
     }
 
     internal fun buildEmbedRequest(text: String, modelName: String): String =

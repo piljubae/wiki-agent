@@ -14,6 +14,7 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+    testImplementation("io.ktor:ktor-client-mock:3.1.2")
     testImplementation(kotlin("test"))
 }
 
