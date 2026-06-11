@@ -320,6 +320,13 @@ fun main() {
     // Polling 코루틴 시작
     val finalPrIndexAgent = prIndexAgent
     if (finalPrIndexAgent != null && config.github.codeSearch.pollIntervalMinutes > 0) {
+        // 시작 시 1회: 디스크엔 있으나 ChromaDB에 누락된 PR 백필.
+        // poll state high-water mark에 가려 indexRecentPrs가 재시도 못 하는 구멍을 복구한다.
+        backgroundScope.launch {
+            runCatching { finalPrIndexAgent.reconcileMissing(config.github.codeRepos) }
+                .onSuccess { if (it > 0) log.info("Startup reconcile: backfilled {} missing PRs", it) }
+                .onFailure { log.warn("Startup reconcile failed: {}", it.message) }
+        }
         backgroundScope.launch {
             val intervalMs = config.github.codeSearch.pollIntervalMinutes * 60_000L
             log.info("PR polling started: interval={}min, repos={}", config.github.codeSearch.pollIntervalMinutes, config.github.codeRepos)
@@ -328,6 +335,9 @@ fun main() {
                 runCatching {
                     val count = finalPrIndexAgent.indexRecentPrs(config.github.codeRepos)
                     if (count > 0) log.info("Polling: indexed {} new PRs", count)
+                    // 매 폴링마다 누락분 백필 — 임베딩 실패 등으로 생긴 구멍을 점진적으로 메운다 (free tier 한도 내 자연 분산)
+                    val backfilled = finalPrIndexAgent.reconcileMissing(config.github.codeRepos)
+                    if (backfilled > 0) log.info("Polling: backfilled {} missing PRs", backfilled)
                     gatewayRef.get()?.lastPrIndexedAt = Instant.now()
                 }.onFailure { log.warn("Polling failed: {}", it.message) }
             }

@@ -46,6 +46,15 @@ class KnowledgeStore(private val baseDir: String = ".wiki/knowledge") {
             }.toList()
     }
 
+    /** prs/ 하위의 모든 PR 문서를 (파일명(확장자 제외), 내용) 쌍으로 반환. reconcile 백필에 사용. */
+    fun loadPrDocs(): List<Pair<String, String>> = lock.withLock {
+        val dir = File("$baseDir/prs")
+        if (!dir.exists()) return@withLock emptyList()
+        (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && it.extension == "md" }
+            .map { it.nameWithoutExtension to it.readText() }
+    }
+
     fun pageExists(relativePath: String): Boolean = lock.withLock {
         val file = File("$baseDir/$relativePath")
         val root = File(baseDir).canonicalFile
