@@ -56,24 +56,26 @@ class PrIndexAgent(
                     .getOrNull()
             }
             
-            if (embeddings == null && embeddingFn != null) {
-                log.warn("Skipping ChromaDB indexing for PR #{} due to embedding failure", prNumber)
-            } else {
-                chromaClient.upsertDocuments(
-                    collectionId = collectionId,
-                    ids = listOf(prId),
-                    documents = listOf(document),
-                    embeddings = embeddings,
-                    metadatas = listOf(mapOf(
-                        "repo" to repo,
-                        "pr_number" to prNumber.toString(),
-                        "state" to pr.state,
-                        "ticket" to (codeClient.extractTicket(pr.title, pr.branch) ?: ""),
-                        "author" to pr.author,
-                        "merged_at" to (pr.mergedAt ?: ""),
-                    )),
-                )
+            // 임베딩 실패 시 silent skip 금지: 디스크 문서는 이미 저장됐으므로 호출자가 실패로 인지하게 throw.
+            // poll state가 전진하지 않아 다음 폴링/reconcile에서 재시도 대상으로 남는다.
+            // (과거엔 여기서 skip + 성공 반환 → poll state 전진 → ChromaDB 누락분이 영구 미인덱싱됐음)
+            if (embeddingFn != null && embeddings == null) {
+                error("PR #$prNumber 임베딩 생성 실패 — ChromaDB 인덱싱 보류 (reconcile/재시도 대상)")
             }
+            chromaClient.upsertDocuments(
+                collectionId = collectionId,
+                ids = listOf(prId),
+                documents = listOf(document),
+                embeddings = embeddings,
+                metadatas = listOf(mapOf(
+                    "repo" to repo,
+                    "pr_number" to prNumber.toString(),
+                    "state" to pr.state,
+                    "ticket" to (codeClient.extractTicket(pr.title, pr.branch) ?: ""),
+                    "author" to pr.author,
+                    "merged_at" to (pr.mergedAt ?: ""),
+                )),
+            )
         }
 
         log.info("Indexed PR #{} from {}", prNumber, repo)
@@ -127,6 +129,82 @@ class PrIndexAgent(
 
         savePollState(stateMap)
         return total
+    }
+
+    /**
+     * 디스크에 PR 문서는 있으나 ChromaDB(벡터DB)에 없는 PR을 백필한다.
+     * poll state의 high-water mark(lastPrNumber)에 가려 [indexRecentPrs]가 영구히 재시도하지 못하는
+     * 누락분(과거 임베딩 실패로 발생)을 복구한다. GitHub 재조회·LLM 재컴파일 없이 디스크 문서를
+     * 그대로 임베딩·업서트하므로 임베딩 호출 외 비용이 없다.
+     *
+     * @param maxPerRun 한 번 실행에서 백필할 최대 PR 수 (폭주 방지용 상한). 초과분은 다음 호출에서 처리.
+     * @return 이번 실행에서 백필 성공한 PR 수
+     */
+    suspend fun reconcileMissing(repos: List<String>, maxPerRun: Int = 1000): Int {
+        val chroma = chromaClient
+        val embed = embeddingFn
+        if (chroma == null || embed == null) {
+            log.warn("reconcileMissing 생략: chromaClient 또는 embeddingFn 미설정")
+            return 0
+        }
+        val collectionId = chroma.getOrCreateCollection(collectionName)
+        val allDocs = knowledgeStore.loadPrDocs()
+        var total = 0
+        var budget = maxPerRun
+        for (repo in repos) {
+            if (budget <= 0) break
+            val prefix = "${repo.replace("/", "-")}-pr-"
+            val repoDocs = allDocs.filter { it.first.startsWith(prefix) }
+            if (repoDocs.isEmpty()) continue
+            val existing = chroma.getExistingIds(collectionId, repoDocs.map { it.first })
+            val missing = repoDocs.filter { it.first !in existing }
+            log.info("reconcileMissing {}: disk={}, ChromaDB 누락={}", repo, repoDocs.size, missing.size)
+            for ((prId, document) in missing) {
+                if (budget <= 0) {
+                    log.warn("reconcileMissing: maxPerRun({}) 도달 — 남은 누락분은 다음 실행에서 처리", maxPerRun)
+                    break
+                }
+                val meta = parsePrMetadata(prId, document)
+                if (meta == null) {
+                    log.warn("reconcileMissing: 메타데이터 파싱 실패, 건너뜀 — {}", prId)
+                    continue
+                }
+                val embedding = runCatching { embed(document) }
+                    .onFailure { log.warn("reconcileMissing 임베딩 실패 {}: {}", prId, it.message) }
+                    .getOrNull() ?: continue
+                budget--
+                runCatching {
+                    chroma.upsertDocuments(
+                        collectionId = collectionId,
+                        ids = listOf(prId),
+                        documents = listOf(document),
+                        embeddings = listOf(embedding),
+                        metadatas = listOf(meta),
+                    )
+                }.onSuccess { total++; log.info("reconciled {}", prId) }
+                    .onFailure { log.warn("reconcileMissing upsert 실패 {}: {}", prId, it.message) }
+            }
+        }
+        log.info("reconcileMissing 완료: {} PR 백필", total)
+        return total
+    }
+
+    /** [compilePrDocument]가 생성한 PR 마크다운에서 ChromaDB 메타데이터를 역파싱한다. */
+    internal fun parsePrMetadata(prId: String, document: String): Map<String, String>? {
+        val prNumber = prId.substringAfterLast("-pr-").toIntOrNull()?.toString() ?: return null
+        fun field(label: String): String? =
+            Regex("^- \\*$label\\*:\\s*(.+)$", RegexOption.MULTILINE)
+                .find(document)?.groupValues?.get(1)?.trim()
+        val repo = field("레포") ?: return null
+        val stateRaw = field("상태") ?: ""
+        return mapOf(
+            "repo" to repo,
+            "pr_number" to prNumber,
+            "state" to stateRaw.substringBefore(" (merged)").trim(),
+            "ticket" to (field("티켓") ?: ""),
+            "author" to (field("작성자") ?: ""),
+            "merged_at" to (field("머지") ?: ""),
+        )
     }
 
     internal fun compilePrDocument(pr: GithubPrInfo, llmOutput: String): String = buildString {
