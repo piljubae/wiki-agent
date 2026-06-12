@@ -65,6 +65,70 @@ class SlackConfigHandlerTest {
     }
 
     @Test
+    fun `restart denied when no admins configured`() {
+        var called = false
+        val handler = SlackConfigHandler(
+            config = makeConfig(), supervised = true,
+            onRestart = { called = true },
+        )
+        val result = handler.handle("/wiki restart", userId = "U01ADMIN")
+        assertTrue(result.contains("관리자가 설정되지"))
+        assertEquals(false, called)
+    }
+
+    @Test
+    fun `restart denied for non-admin user`() {
+        var called = false
+        val handler = SlackConfigHandler(
+            config = makeConfig(), supervised = true,
+            adminUsers = setOf("U01ADMIN"),
+            onRestart = { called = true },
+        )
+        val result = handler.handle("/wiki restart", userId = "U99OTHER")
+        assertTrue(result.contains("권한이 없습니다"))
+        assertEquals(false, called)
+    }
+
+    @Test
+    fun `restart by admin without supervisor warns and does not exit`() {
+        var called = false
+        val handler = SlackConfigHandler(
+            config = makeConfig(), supervised = false,
+            adminUsers = setOf("U01ADMIN"),
+            onRestart = { called = true },
+        )
+        val result = handler.handle("/wiki restart", userId = "U01ADMIN")
+        assertTrue(result.contains("supervisor"))
+        assertEquals(false, called)
+    }
+
+    @Test
+    fun `restart by admin under supervisor triggers onRestart`() {
+        var called = false
+        val handler = SlackConfigHandler(
+            config = makeConfig(), supervised = true,
+            adminUsers = setOf("U01ADMIN"),
+            onRestart = { called = true },
+        )
+        val result = handler.handle("/wiki restart", userId = "U01ADMIN")
+        assertTrue(result.contains("재시작"))
+        assertTrue(called)
+    }
+
+    @Test
+    fun `stop by admin triggers onStop regardless of supervisor`() {
+        var called = false
+        val handler = SlackConfigHandler(
+            config = makeConfig(), supervised = false,
+            adminUsers = setOf("U01ADMIN"),
+            onStop = { called = true },
+        )
+        val result = handler.handle("/wiki stop", userId = "U01ADMIN")
+        assertTrue(result.contains("종료"))
+        assertTrue(called)
+    }
+
+    @Test
     fun `memory clear removes content`() {
         val memory = ProjectMemory(
             java.io.File(System.getProperty("java.io.tmpdir"), "wiki-test-mem-${System.nanoTime()}.md").absolutePath

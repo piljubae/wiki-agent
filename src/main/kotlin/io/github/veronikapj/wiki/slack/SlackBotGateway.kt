@@ -455,7 +455,7 @@ class SlackBotGateway(
     private fun registerSlashCommand() {
         app.command("/askpj") { req, ctx ->
             val fullCommand = "/wiki ${req.payload.text}"
-            val result = configHandler.handle(fullCommand)
+            val result = configHandler.handle(fullCommand, userId = req.payload.userId)
             ctx.ack(result)
         }
     }
