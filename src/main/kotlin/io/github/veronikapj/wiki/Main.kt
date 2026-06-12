@@ -69,9 +69,11 @@ fun main() {
     val slackBotToken = SecretLoader.resolve("SLACK_BOT_TOKEN", config.slack.botToken)
     val slackAppToken = SecretLoader.resolve("SLACK_APP_TOKEN", config.slack.appToken)
 
-    // 서버 제어(restart/stop) 권한자 — 쉼표 구분 Slack user ID. 비어 있으면 누구도 실행 불가.
+    // 서버 제어(restart/stop) 권한자 — WIKI_ADMIN_USERS(쉼표 구분) 우선,
+    // 미설정 시 config의 personalData.allowedUsers 참조. 둘 다 비면 누구도 실행 불가.
     val adminUsers = SecretLoader.resolveNullable("WIKI_ADMIN_USERS", null)
-        ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }?.toSet()
+        ?: config.personalData.allowedUsers.toSet()
     // run.sh supervisor 하에서 실행 중인지 (WIKI_SUPERVISED=1)
     val supervised = System.getenv("WIKI_SUPERVISED") == "1"
     if (adminUsers.isNotEmpty()) log.info("Server control admins: {} user(s), supervised={}", adminUsers.size, supervised)
