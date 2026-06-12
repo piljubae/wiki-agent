@@ -68,6 +68,13 @@ fun main() {
     val confluenceToken = SecretLoader.resolve("CONFLUENCE_TOKEN", config.confluence.token)
     val slackBotToken = SecretLoader.resolve("SLACK_BOT_TOKEN", config.slack.botToken)
     val slackAppToken = SecretLoader.resolve("SLACK_APP_TOKEN", config.slack.appToken)
+
+    // 서버 제어(restart/stop) 권한자 — 쉼표 구분 Slack user ID. 비어 있으면 누구도 실행 불가.
+    val adminUsers = SecretLoader.resolveNullable("WIKI_ADMIN_USERS", null)
+        ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }?.toSet().orEmpty()
+    // run.sh supervisor 하에서 실행 중인지 (WIKI_SUPERVISED=1)
+    val supervised = System.getenv("WIKI_SUPERVISED") == "1"
+    if (adminUsers.isNotEmpty()) log.info("Server control admins: {} user(s), supervised={}", adminUsers.size, supervised)
     val resolvedModelApiKey = when (config.model.provider) {
         io.github.veronikapj.wiki.config.ModelProvider.ANTHROPIC ->
             SecretLoader.resolveNullable("ANTHROPIC_API_KEY", config.model.apiKey)
@@ -412,6 +419,25 @@ fun main() {
     val slackReady = slackBotToken.isNotBlank() && !slackBotToken.startsWith("xoxb-...") &&
             slackAppToken.isNotBlank() && !slackAppToken.startsWith("xapp-...")
 
+    // 서버 종료/재시작 트리거. Slack ack 응답이 flush될 시간을 준 뒤(1.5s) 종료한다.
+    // restart: marker 기록 → supervisor(run.sh)가 감지해 재실행. stop: marker 삭제 → 재실행 없음.
+    val restartMarker = java.io.File(".wiki/.restart-signal")
+    val scheduleExit: (Boolean) -> Unit = { restart ->
+        Thread {
+            Thread.sleep(1500)
+            runCatching {
+                if (restart) {
+                    restartMarker.parentFile?.mkdirs()
+                    restartMarker.writeText(Instant.now().toString())
+                } else {
+                    restartMarker.delete()
+                }
+            }.onFailure { log.warn("Exit marker handling failed: {}", it.message) }
+            log.warn("Exiting process for {} (supervised={})", if (restart) "restart" else "stop", supervised)
+            kotlin.system.exitProcess(0)
+        }.start()
+    }
+
     if (slackReady) {
         val configHandler = SlackConfigHandler(
             config = config,
@@ -427,6 +453,10 @@ fun main() {
                 agent.indexPrsBulk(config.github.codeRepos, limit = 1000).also { gatewayRef.get()?.lastPrIndexedAt = Instant.now() }
             } },
             onGetIndexCount = null,
+            adminUsers = adminUsers,
+            supervised = supervised,
+            onRestart = { scheduleExit(true) },
+            onStop = { scheduleExit(false) },
         )
         // QueryRewriter: 기존 executor 재사용 (Haiku 모델로 비용 절감)
         val queryRewriter = QueryRewriter { prompt ->
