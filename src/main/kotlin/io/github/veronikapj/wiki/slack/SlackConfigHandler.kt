@@ -56,7 +56,7 @@ class SlackConfigHandler(
 
     private fun requireAdmin(userId: String?): String? {
         if (adminUsers.isEmpty())
-            return "관리자가 설정되지 않았습니다. config의 `personalData.allowedUsers` 또는 `WIKI_ADMIN_USERS` 환경변수(쉼표 구분 Slack user ID)를 설정하세요."
+            return "관리자가 설정되지 않았습니다. `WIKI_ADMIN_USERS` 환경변수(쉼표 구분 Slack user ID)를 설정하세요."
         if (userId == null || userId !in adminUsers)
             return ":no_entry: 권한이 없습니다. 관리자만 실행할 수 있습니다."
         return null
