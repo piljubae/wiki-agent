@@ -43,13 +43,29 @@ class PrHistoryTool(
                 return@runBlocking "PR 이력 검색을 위한 임베딩 기능이 비활성화 상태입니다."
             }
 
-            val results = chromaClient.query(
+            // 넓게 뽑아 dedup·재정렬 여지를 둔다 (표현 차이에 따른 결과 흔들림 완화).
+            val rawResults = chromaClient.query(
                 collectionId = collectionId,
                 queryEmbeddings = queryEmbeddings,
-                nResults = 5
+                nResults = 15
             )
 
-            if (results.isEmpty()) return@runBlocking "관련 PR 이력을 찾을 수 없습니다."
+            if (rawResults.isEmpty()) return@runBlocking "관련 PR 이력을 찾을 수 없습니다."
+
+            // 1) pr_number 기준 중복 제거 (유사도 높은 첫 청크 유지)
+            val deduped = rawResults.distinctBy { it.metadata["pr_number"] ?: it.document }
+
+            // 2) 질문에 포함된 코드 식별자를 실제 언급한 PR을 우선 — 같은 대상이면 표현이 달라도 상위 고정
+            val identifiers = extractIdentifiers(query)
+            val results = if (identifiers.isNotEmpty()) {
+                val (matched, rest) = deduped.partition { r ->
+                    val hay = (r.document + " " + r.metadata.values.joinToString(" ")).lowercase()
+                    identifiers.any { hay.contains(it.lowercase()) }
+                }
+                (matched + rest).take(5)
+            } else {
+                deduped.take(5)
+            }
 
             buildString {
                 appendLine("*\"$query\"* 관련 PR 이력 (${results.size}건):\n")
@@ -69,6 +85,18 @@ class PrHistoryTool(
             }.trim()
         }.getOrElse { "PR 이력 검색 중 오류: ${it.message}" }
     }
+
+    /**
+     * 질문에서 코드 식별자 후보를 추출 — camelCase/PascalCase, snake_case,
+     * 또는 4자 이상 영숫자 토큰. 일반 영어 단어(관련/PR 등 불용어)는 안 잡히도록
+     * "대문자 포함 또는 _ 포함" 형태만 식별자로 인정한다.
+     */
+    private fun extractIdentifiers(query: String): List<String> =
+        Regex("[A-Za-z_][A-Za-z0-9_]{3,}").findAll(query)
+            .map { it.value }
+            .filter { tok -> tok.any { it.isUpperCase() } || tok.contains('_') }
+            .distinct()
+            .toList()
 
     companion object {
         private val log = LoggerFactory.getLogger(PrHistoryTool::class.java)

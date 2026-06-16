@@ -183,10 +183,15 @@ class OrchestratorAgent(
                 appendLine("  예: '유닛테스트 파일 몇 개야?' → QUERY: Test | '뷰모델 목록' → QUERY: ViewModel")
                 appendLine("- prHistory: PR 변경 이력, KMA-XXXX 티켓 작업 내용, 누가 언제 변경했는지.")
                 appendLine("  티켓 번호 + 코드 질문이 동시에 있으면 TOOL: prHistory+codeSearch (병렬 실행).")
-                appendLine("- confluenceSearch+codeSearch: 문서·코드 양쪽에 답이 있을 질문 (병렬 실행).")
+                appendLine("- prHistory+codeSearch: 특정 함수/클래스/메서드의 로직·구현·동작을 묻는 질문 (병렬 실행).")
+                appendLine("  ★ 이름이 명시된 코드 심볼의 '로직 알려줘', '구현 설명', '어떻게 동작해', '뭐 하는 함수야'는 여기로.")
+                appendLine("     코드 본문과 그 변경 PR 이력을 함께 제공해 한 번에 종합 답변하기 위함.")
+                appendLine("  예: 'updateAlarmInfo 함수 로직 알려줘', 'XxxViewModel.load 동작 설명', 'OrderRepository 구현 어떻게 돼?'.")
+                appendLine("  QUERY는 함수/클래스명 중심으로. 예: updateAlarmInfo, KurlyNotificationViewModel")
+                appendLine("- confluenceSearch+codeSearch: 기능·개념 차원에서 문서·코드 양쪽에 답이 있을 질문 (병렬 실행).")
                 appendLine("  예: 'XXX 사용법', 'XXX 흐름 알려줘', 'XXX 설계 문서', 'XXX 설명해줘', 기능명+개념 조합.")
                 appendLine("  예: '컬리페이 결제 흐름', '딥링크 스킴 목록', 'BaseFragment 어떻게 써?', '코드 리뷰 기준'.")
-                appendLine("  판단 기준: 코드 위치도 알고 싶고 관련 Confluence 문서도 보고 싶을 때.")
+                appendLine("  판단 기준: 특정 코드 심볼 1개가 아니라, 기능/개념 차원이고 Confluence 문서도 보고 싶을 때.")
             }
             if (codeFlowTool != null) {
                 appendLine("- findCallers: 함수를 호출하는 곳 추적. '어디서 불려?', '누가 호출해?', '역방향 참조' 질문.")
