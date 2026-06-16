@@ -387,8 +387,8 @@ class CodeIndexAgent(
                 val afterSigOffset = lines.take(j + 1).sumOf { it.length + 1 }.coerceAtMost(content.length)
                 val afterSig = content.substring(afterSigOffset).trimStart(' ', '\t', '\n', '\r')
                 val rawBody = when {
-                    afterSig.startsWith("{") -> extractBraceBlock(afterSig, maxChars = 500)
-                    afterSig.startsWith("=") -> "= " + afterSig.removePrefix("=").trim().lines().first().take(498)
+                    afterSig.startsWith("{") -> extractBraceBlock(afterSig, maxChars = BODY_MAX_CHARS)
+                    afterSig.startsWith("=") -> "= " + afterSig.removePrefix("=").trim().take(BODY_MAX_CHARS - 2)
                     else -> ""
                 }
                 // KDoc 주석이 있으면 body 앞에 첨부 (스킴, 파라미터 설명 등 포함)
@@ -753,6 +753,11 @@ class CodeIndexAgent(
     companion object {
         private val log = LoggerFactory.getLogger(CodeIndexAgent::class.java)
         private val json = Json { ignoreUnknownKeys = true }
+
+        // 인덱싱 시 청크에 저장할 함수 본문 최대 글자 수.
+        // CodeSearchTool.TOP_BODY_LIMIT(노출 상한)과 맞춰 본문이 잘리지 않게 한다.
+        // 변경 시 전체 재인덱싱 필요(기존 청크는 옛 상한으로 저장돼 있음).
+        internal const val BODY_MAX_CHARS = 3000
         private val embeddingSemaphore = Semaphore(15) // Gemini 무료 1500RPM 기준: 15 × ~70req/s 이내
 
         /**

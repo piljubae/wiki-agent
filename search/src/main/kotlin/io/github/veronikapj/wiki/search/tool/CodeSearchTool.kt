@@ -123,7 +123,19 @@ class CodeSearchTool(
                         if (repo.isNotBlank() && filePath.isNotBlank()) {
                             appendLine("   <https://github.com/$repo/blob/$branch/$filePath|소스 보기>")
                         }
-                        r?.let { appendLine("   > ${it.document.lines().take(8).joinToString(" ").take(500)}") }
+                        r?.let {
+                            // 1위 결과는 함수 본문 전체를 그대로 노출(로직 질문 대응),
+                            // 2위 이하는 앞부분 스니펫만(토큰 절약).
+                            if (i == 0) {
+                                val body = it.document.trim().take(TOP_BODY_LIMIT)
+                                appendLine("```")
+                                appendLine(body)
+                                if (it.document.trim().length > TOP_BODY_LIMIT) appendLine("...(이하 생략)")
+                                appendLine("```")
+                            } else {
+                                appendLine("   > ${it.document.lines().take(8).joinToString(" ").take(500)}")
+                            }
+                        }
                         appendLine()
                     }
                 }.trim()
@@ -150,7 +162,16 @@ class CodeSearchTool(
                             val isTest = path.contains("/test/")
                             val label = if (isTest) "$path:$lineNo _(테스트)_" else "$path:$lineNo"
                             appendLine("${i + 1}. `$label`")
-                            appendLine("   > `${content.take(200)}`")
+                            // 1위 히트는 파일에서 매칭 지점 본문 윈도우를 읽어 노출(로직 질문 대응),
+                            // 2위 이하는 매칭 라인만(토큰 절약).
+                            val window = if (i == 0) readLineWindow(repoPath, path, lineNo) else null
+                            if (window != null) {
+                                appendLine("```")
+                                appendLine(window)
+                                appendLine("```")
+                            } else {
+                                appendLine("   > `${content.take(200)}`")
+                            }
                             appendLine()
                         }
                     }.trim() else null
@@ -193,6 +214,12 @@ class CodeSearchTool(
 
     companion object {
         private val log = LoggerFactory.getLogger(CodeSearchTool::class.java)
+
+        // 1위 코드 청크 본문 노출 상한(자). 함수 로직 질문에 본문 전체를 보여주되 토큰 폭증은 방지.
+        private const val TOP_BODY_LIMIT = 3000
+
+        // grep 1위 히트의 본문 윈도우 최대 줄 수(중괄호 균형이 안 맞을 때의 안전장치).
+        private const val GREP_WINDOW_MAX_LINES = 80
 
         private val GITHUB_SEARCH_STOPWORDS = setOf(
             "query", "search", "find", "where", "what", "how", "list", "show",
@@ -314,6 +341,29 @@ class CodeSearchTool(
             .filter { it.length > 2 }
             .filterNot { schemeKeywords.contains(it.lowercase()) }
     }
+
+    /**
+     * grep 매칭 지점 주변 본문 윈도우를 파일에서 읽어 반환.
+     * lineNo부터 시작해 중괄호 균형이 맞을 때까지(또는 상한까지) 함수 본문을 담는다.
+     * 읽기 실패 시 null → 호출부가 매칭 라인만 노출하도록 폴백.
+     */
+    private fun readLineWindow(repoPath: String, relPath: String, lineNo: Int): String? = runCatching {
+        val lines = File(repoPath, relPath).readLines()
+        if (lineNo < 1 || lineNo > lines.size) return null
+        val start = lineNo - 1
+        val sb = StringBuilder()
+        var depth = 0
+        var seenBrace = false
+        for (idx in start until minOf(lines.size, start + GREP_WINDOW_MAX_LINES)) {
+            val l = lines[idx]
+            sb.appendLine(l)
+            depth += l.count { it == '{' } - l.count { it == '}' }
+            if (l.contains('{')) seenBrace = true
+            if (seenBrace && depth <= 0) break
+            if (sb.length >= TOP_BODY_LIMIT) { sb.appendLine("...(이하 생략)"); break }
+        }
+        sb.toString().trimEnd().takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     /**
      * 로컬 repo에서 정규식 패턴 grep — (relativePath, lineNo, content) 리스트 반환.
