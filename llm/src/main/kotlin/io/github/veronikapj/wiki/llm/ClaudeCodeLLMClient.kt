@@ -126,11 +126,18 @@ class ClaudeCodeLLMClient(
     }
 
     private suspend fun runProcess(prompt: String, modelId: String): String = withContext(Dispatchers.IO) {
-        val args = mutableListOf(claudePath, "-p", prompt, "--output-format", "text")
+        // claude CLI를 순수 텍스트 LLM으로만 사용 — 파일시스템 탐색 툴을 비활성화한다.
+        // 비활성화하지 않으면 agent가 cwd(= wiki-agent 작업 트리)를 직접 grep해서
+        // 주어진 검색 결과 대신 wiki-agent 자체 코드를 근거로 답해버린다.
+        val args = mutableListOf(
+            claudePath, "-p", prompt, "--output-format", "text",
+            "--disallowedTools", "Read", "Grep", "Glob", "Bash", "Edit", "Write", "WebFetch", "WebSearch",
+        )
         if (modelId.isNotBlank()) args += listOf("--model", modelId)
 
         val process = try {
             ProcessBuilder(args)
+                .directory(SANDBOX_DIR)  // 중립 작업 디렉토리 — 설령 탐색해도 wiki-agent 코드가 없는 곳
                 .redirectInput(File("/dev/null"))  // subprocess가 stdin 읽지 못하게
                 .start()
         } catch (e: java.io.IOException) {
@@ -158,5 +165,8 @@ class ClaudeCodeLLMClient(
         private const val TIMEOUT_SECONDS = 120L
         private val SEARCH_REGEX = Regex("^SEARCH:\\s*(.+)$", RegexOption.MULTILINE)
         private val log = LoggerFactory.getLogger(ClaudeCodeLLMClient::class.java)
+
+        /** claude 서브프로세스를 실행할 중립 작업 디렉토리 (wiki-agent 작업 트리 밖). */
+        private val SANDBOX_DIR: File = File(System.getProperty("java.io.tmpdir"))
     }
 }
