@@ -383,9 +383,28 @@ class CodeIndexAgent(
                 val qualifiedName = if (packageName.isNotBlank()) "$packageName.${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$functionName"
                     else "${className.takeIf { it.isNotBlank() }?.let { "$it." }.orEmpty()}$functionName"
 
-                // 바디 추출 — j 이후 줄에서 시작
-                val afterSigOffset = lines.take(j + 1).sumOf { it.length + 1 }.coerceAtMost(content.length)
-                val afterSig = content.substring(afterSigOffset).trimStart(' ', '\t', '\n', '\r')
+                // 바디 추출 — 파라미터 ')' 다음의 본문 구분자('{' 또는 '=')부터 시작.
+                // 코틀린 표준 스타일 `fun foo() {` 은 여는 '{' 가 시그니처와 같은 줄에 있으므로
+                // 단순히 j+1 줄부터 보면 '{' 를 건너뛰어 본문을 통째로 놓친다.
+                // 실제 파라미터 ')' 위치를 paren-depth 로 추적한 뒤 반환타입을 건너뛰고 구분자를 찾는다.
+                val sigStartOffset = lines.take(i).sumOf { it.length + 1 }.coerceAtMost(content.length)
+                var scan = sigStartOffset
+                var parenScanDepth = 0
+                var sawParen = false
+                while (scan < content.length) {
+                    when (content[scan]) {
+                        '(' -> { parenScanDepth++; sawParen = true }
+                        ')' -> parenScanDepth--
+                    }
+                    scan++
+                    if (sawParen && parenScanDepth <= 0) break
+                }
+                var afterSig = content.substring(scan.coerceAtMost(content.length))
+                    .trimStart(' ', '\t', '\n', '\r')
+                // 반환타입(': Type')은 한 줄 내에서 '{'·'='·개행 전까지 스킵
+                Regex("""^:\s*[^={\n]+""").find(afterSig)?.let {
+                    afterSig = afterSig.substring(it.value.length).trimStart(' ', '\t', '\n', '\r')
+                }
                 val rawBody = when {
                     afterSig.startsWith("{") -> extractBraceBlock(afterSig, maxChars = BODY_MAX_CHARS)
                     afterSig.startsWith("=") -> "= " + afterSig.removePrefix("=").trim().take(BODY_MAX_CHARS - 2)

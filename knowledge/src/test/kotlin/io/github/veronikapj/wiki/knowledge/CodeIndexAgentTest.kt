@@ -152,6 +152,99 @@ class CodeIndexAgentTest {
     }
 
     @Test
+    fun `extractFunctionChunks — 표준 스타일 fun () { } 본문 캡처`() {
+        // 여는 '{' 가 시그니처와 같은 줄에 있는 코틀린 표준 스타일
+        val content = """
+            package com.example
+
+            class Foo {
+                fun enterPipMode() {
+                    viewModel.onEnter()
+                    updatePipParams()
+                }
+            }
+        """.trimIndent()
+
+        val chunks = agent.extractFunctionChunks(content, "Foo.kt")
+        val fn = chunks.first { it.functionName == "enterPipMode" }
+        assertTrue(fn.body.contains("viewModel.onEnter()"), "본문이 캡처되어야 함: ${fn.body}")
+        assertTrue(fn.body.contains("updatePipParams()"), "본문 전체가 캡처되어야 함")
+    }
+
+    @Test
+    fun `extractFunctionChunks — 멀티라인 파라미터 후 본문 캡처`() {
+        val content = """
+            package com.example
+
+            class Foo {
+                fun createIntent(
+                    context: Context,
+                    url: String,
+                    startWithPip: Boolean = false,
+                ): Intent {
+                    return Intent(context, Foo::class.java)
+                }
+            }
+        """.trimIndent()
+
+        val chunks = agent.extractFunctionChunks(content, "Foo.kt")
+        val fn = chunks.first { it.functionName == "createIntent" }
+        assertTrue(fn.signature.contains("createIntent"), "시그니처 포함")
+        assertTrue(fn.body.contains("return Intent(context"), "반환타입 뒤 본문 캡처: ${fn.body}")
+    }
+
+    @Test
+    fun `extractFunctionChunks — 표현식 바디(= expr) 캡처`() {
+        val content = """
+            package com.example
+
+            class Foo {
+                fun sum(a: Int, b: Int): Int = a + b
+            }
+        """.trimIndent()
+
+        val chunks = agent.extractFunctionChunks(content, "Foo.kt")
+        val fn = chunks.first { it.functionName == "sum" }
+        assertTrue(fn.body.startsWith("="), "표현식 바디는 '=' 로 시작: ${fn.body}")
+        assertTrue(fn.body.contains("a + b"), "표현식 본문 캡처")
+    }
+
+    @Test
+    fun `extractFunctionChunks — 본문 없는 추상 함수는 빈 바디`() {
+        val content = """
+            package com.example
+
+            interface Foo {
+                fun doThing(): String
+                fun other()
+            }
+        """.trimIndent()
+
+        val chunks = agent.extractFunctionChunks(content, "Foo.kt")
+        val fn = chunks.first { it.functionName == "doThing" }
+        // 다음 선언의 본문을 잘못 끌어오지 않아야 함
+        assertEquals("", fn.body, "추상 함수는 빈 본문이어야 함: '${fn.body}'")
+    }
+
+    @Test
+    fun `extractFunctionChunks — 기본값 람다 파라미터가 본문으로 오인되지 않음`() {
+        val content = """
+            package com.example
+
+            class Foo {
+                fun run(block: () -> Unit = {}) {
+                    block()
+                }
+            }
+        """.trimIndent()
+
+        val chunks = agent.extractFunctionChunks(content, "Foo.kt")
+        val fn = chunks.first { it.functionName == "run" }
+        assertTrue(fn.body.contains("block()"), "실제 본문이 캡처되어야 함: ${fn.body}")
+        assertFalse(fn.body.trimStart().removePrefix("{").trim().startsWith("}"), "기본값 '{}' 을 본문으로 오인하면 안 됨")
+    }
+
+    @Test
     fun `BM25Index deleteByFilePath removes all chunks for given file`() {
         val index = BM25Index(":memory:")
         index.upsert("repo:FileA.kt:Foo:bar:abc", "fun bar()", "FileA.kt")
