@@ -655,7 +655,7 @@ class OrchestratorAgent(
         val fallbackModels = if (isAnthropic) {
             listOf(AnthropicModels.Haiku_4_5, AnthropicModels.Sonnet_4)
         } else {
-            listOf(GoogleModels.Gemini2_5Flash)
+            listOf(GoogleModels.Gemini3_Flash_Preview)
         }
 
         val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description

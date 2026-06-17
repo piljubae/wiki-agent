@@ -33,18 +33,18 @@ object LLMExecutorBuilder {
     fun defaultModel(config: ModelConfig): LLModel =
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> AnthropicModels.Sonnet_4
-            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
-            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini3_Flash_Preview
+            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini3_Flash_Preview
             ModelProvider.ANTHROPIC -> AnthropicModels.Sonnet_4
-            ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.GOOGLE -> GoogleModels.Gemini3_Flash_Preview
         }
 
     fun lowCostModel(config: ModelConfig): LLModel =
         when (config.provider) {
             ModelProvider.CLAUDE_CODE -> AnthropicModels.Haiku_4_5
-            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini2_5Flash
-            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.GEMINI_CODE -> GoogleModels.Gemini3_Flash_Preview
+            ModelProvider.ANTIGRAVITY_CODE -> GoogleModels.Gemini3_Flash_Preview
             ModelProvider.ANTHROPIC -> AnthropicModels.Haiku_4_5
-            ModelProvider.GOOGLE -> GoogleModels.Gemini2_5Flash
+            ModelProvider.GOOGLE -> GoogleModels.Gemini3_Flash_Preview
         }
 }
