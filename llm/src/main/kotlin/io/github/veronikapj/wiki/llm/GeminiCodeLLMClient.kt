@@ -24,7 +24,7 @@ class GeminiCodeLLMClient(
     private val timeoutSeconds: Long = TIMEOUT_SECONDS,
 ) : LLMClient() {
 
-    override fun llmProvider(): LLMProvider = GoogleModels.Gemini2_5Flash.provider
+    override fun llmProvider(): LLMProvider = GoogleModels.Gemini3_Flash_Preview.provider
 
     override fun close() {}
 
