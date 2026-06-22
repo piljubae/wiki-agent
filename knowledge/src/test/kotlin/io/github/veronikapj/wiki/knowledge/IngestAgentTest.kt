@@ -47,6 +47,24 @@ class IngestAgentTest {
         assertTrue(result.contains("이미 등록") || result.contains("duplicate"))
     }
 
+    @Test fun `ingest uses confluence fetch fn content for confluence urls`() = runBlocking {
+        var capturedPrompt = ""
+        val confluenceFetchFn: suspend (String) -> String? = { "BigQuery 위키 본문 내용입니다." }
+        val capturingLlmFn: suspend (String) -> String = { p ->
+            capturedPrompt = p
+            "PAGES:\nconcepts/빅쿼리.md:\n# BigQuery\n내용\n---"
+        }
+        val agentWithConfluence = IngestAgent(store, capturingLlmFn, null, confluenceFetchFn)
+
+        agentWithConfluence.ingestUrl("https://kurly0521.atlassian.net/wiki/spaces/knS/pages/4607150022/BigQuery")
+
+        assertTrue(
+            capturedPrompt.contains("BigQuery 위키 본문 내용입니다."),
+            "authenticated Confluence content should reach the compile prompt",
+        )
+        agentWithConfluence.close()
+    }
+
     @Test fun `ingest empty LLM response saves to sources only`() = runBlocking {
         coEvery { llmFn(any()) } returns ""
 

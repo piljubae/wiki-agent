@@ -455,8 +455,26 @@ class SlackBotGateway(
     private fun registerSlashCommand() {
         app.command("/askpj") { req, ctx ->
             val fullCommand = "/wiki ${req.payload.text}"
-            val result = configHandler.handle(fullCommand, userId = req.payload.userId)
-            ctx.ack(result)
+            val userId = req.payload.userId
+            // ingest 등 일부 명령은 HTTP fetch + LLM 컴파일로 Slack 3초 ack 한도를 초과한다.
+            // executor에 넘겨 즉시 ack하고, 결과는 response_url(ctx.respond)로 지연 전송한다.
+            val submitted = runCatching {
+                messageExecutor.submit {
+                    runCatching {
+                        val result = configHandler.handle(fullCommand, userId = userId)
+                        ctx.respond(result)
+                    }.onFailure { e ->
+                        log.error("Slash command '{}' failed: {}", fullCommand, e.message, e)
+                        runCatching { ctx.respond("처리 중 오류가 발생했어요: ${e.message}") }
+                    }
+                }
+            }.isSuccess
+            if (!submitted) {
+                log.warn("Request queue full — slash command rejected: {}", fullCommand)
+                ctx.ack("요청이 많아 잠시 후 다시 시도해주세요.")
+            } else {
+                ctx.ack()
+            }
         }
     }
 

@@ -11,6 +11,8 @@ class IngestAgent(
     private val store: KnowledgeStore,
     private val llmFn: suspend (String) -> String,
     private val chromaIndexFn: (suspend (String, String, String) -> Unit)? = null,
+    // Confluence 페이지 URL이면 인증된 API로 본문을 가져온다. 인식 못 하면 null 반환.
+    private val confluenceFetchFn: (suspend (String) -> String?)? = null,
 ) {
     private val httpClient = HttpClient(CIO) {
         install(HttpTimeout) {
@@ -31,8 +33,15 @@ class IngestAgent(
 
         log.info("Fetching URL: {}", url)
         val rawText = runCatching {
-            val html = httpClient.get(url).bodyAsText()
-            extractText(html)
+            // Confluence 페이지는 인증 API로 본문을 가져온다. raw HTTP는 로그인/SPA HTML만 반환하기 때문.
+            val confluenceText = confluenceFetchFn?.invoke(url)
+            if (!confluenceText.isNullOrBlank()) {
+                log.info("Fetched via authenticated Confluence API: {}", url)
+                confluenceText
+            } else {
+                val html = httpClient.get(url).bodyAsText()
+                extractText(html)
+            }
         }.getOrElse { e ->
             store.appendLog("ingest-error", "URL fetch 실패: $url — ${e.message}")
             return "URL 가져오기 실패: ${e.message}"
