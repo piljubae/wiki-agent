@@ -108,6 +108,18 @@ fun main() {
     val conversationStore = ConversationStore()
     val projectMemory = ProjectMemory()
 
+    // Confluence 클라이언트 생성 (IngestAgent보다 먼저 — ingest 시 인증 fetch에 사용)
+    var confluenceClient: ConfluenceClient? = null
+    if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
+        confluenceClient = ConfluenceClient(
+            baseUrl = config.confluence.baseUrl,
+            token = confluenceToken,
+        )
+        log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
+    } else {
+        log.info("Confluence disabled (baseUrl or token not set)")
+    }
+
     // Knowledge Base 초기화
     val knowledgeStore = KnowledgeStore()
     val knowledgeLlmFn: suspend (String) -> String = { userPrompt ->
@@ -121,23 +133,21 @@ fun main() {
         }
         fn
     } else null
-    val ingestAgent = IngestAgent(knowledgeStore, knowledgeLlmFn, knowledgeChromaFn)
+    // Confluence 페이지 URL이면 인증 API로 본문을 가져온다 (raw HTTP는 로그인 페이지만 반환).
+    val confluenceFetchFn: (suspend (String) -> String?)? = confluenceClient?.let { client ->
+        val base = config.confluence.baseUrl
+        val fn: suspend (String) -> String? = fn@{ url ->
+            if (!url.startsWith(base)) return@fn null
+            val pageId = ConfluenceClient.extractPageId(url) ?: return@fn null
+            runCatching { client.fetchPageContent(pageId).content.ifBlank { null } }.getOrNull()
+        }
+        fn
+    }
+    val ingestAgent = IngestAgent(knowledgeStore, knowledgeLlmFn, knowledgeChromaFn, confluenceFetchFn)
     val lintAgent = LintAgent(knowledgeStore, knowledgeLlmFn)
     val knowledgeTool = KnowledgeTool(knowledgeStore, sourceTracker)
     log.info("Knowledge base initialized: chromaFn={}", if (knowledgeChromaFn != null) "enabled" else "disabled")
     Runtime.getRuntime().addShutdownHook(Thread { ingestAgent.close() })
-
-    // Confluence 클라이언트 생성
-    var confluenceClient: ConfluenceClient? = null
-    if (config.confluence.baseUrl.isNotBlank() && confluenceToken.isNotBlank()) {
-        confluenceClient = ConfluenceClient(
-            baseUrl = config.confluence.baseUrl,
-            token = confluenceToken,
-        )
-        log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
-    } else {
-        log.info("Confluence disabled (baseUrl or token not set)")
-    }
 
     // Confluence 검색 에이전트
     var confluenceTool: ConfluenceTool? = null

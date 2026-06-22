@@ -62,6 +62,14 @@ class KnowledgeStore(private val baseDir: String = ".wiki/knowledge") {
         file.exists()
     }
 
+    /** 페이지 내용을 반환. 존재하지 않으면 null. */
+    fun readPage(relativePath: String): String? = lock.withLock {
+        val file = File("$baseDir/$relativePath")
+        val root = File(baseDir).canonicalFile
+        if (!file.canonicalFile.startsWith(root) || !file.exists()) return@withLock null
+        file.readText()
+    }
+
     fun incrementAndGetIngestCount(): Int = ingestCount.incrementAndGet()
 
     fun loadIndex(): String? = lock.withLock {

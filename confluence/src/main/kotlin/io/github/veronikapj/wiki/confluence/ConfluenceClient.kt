@@ -351,6 +351,11 @@ class ConfluenceClient(
 
     companion object {
         private val log = LoggerFactory.getLogger(ConfluenceClient::class.java)
+
+        /** Atlassian/Confluence 페이지 URL에서 숫자 페이지 ID 추출. 매칭 실패 시 null. */
+        fun extractPageId(url: String): String? =
+            Regex("/pages/(\\d+)").find(url)?.groupValues?.get(1)
+
         private const val MAX_TEXT_CLAUSES = 7
         private const val MAX_BODY_LENGTH = 200_000  // ~200KB: 이 이상은 regex StackOverflow 방지용 trim
     }
