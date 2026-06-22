@@ -65,6 +65,45 @@ class IngestAgentTest {
         agentWithConfluence.close()
     }
 
+    @Test fun `incomplete source stub does not block re-ingest`() = runBlocking {
+        val url = "https://kurly0521.atlassian.net/wiki/spaces/X/pages/123/Doc"
+        val confluenceFetchFn: suspend (String) -> String? = { "문서 본문 내용입니다." }
+        val a = IngestAgent(
+            store,
+            { "PAGES:\nconcepts/예시-개념.md:\n# 예시 개념\n내용\n---" },
+            null,
+            confluenceFetchFn,
+        )
+        // 이전 실패로 남은 미완료 스텁
+        val key = a.urlToSourceKey(url)
+        store.savePage("sources/$key.md", "url: $url\n날짜: 2026-01-01\n요약: (컴파일 중)\n")
+
+        val result = a.ingestUrl(url)
+
+        assertFalse(result.contains("이미 등록"), "incomplete stub must not block re-ingest")
+        assertTrue(store.pageExists("concepts/예시-개념.md"))
+        a.close()
+    }
+
+    @Test fun `completed source blocks re-ingest`() = runBlocking {
+        val url = "https://kurly0521.atlassian.net/wiki/spaces/X/pages/124/Doc2"
+        val confluenceFetchFn: suspend (String) -> String? = { "문서 본문 내용입니다." }
+        val a = IngestAgent(
+            store,
+            { "PAGES:\nconcepts/문서둘.md:\n# 문서둘\n내용\n---" },
+            null,
+            confluenceFetchFn,
+        )
+
+        val first = a.ingestUrl(url)
+        assertFalse(first.contains("이미 등록"))
+
+        // 성공적으로 컴파일됐으므로 재시도는 차단되어야 함 (스텁 요약이 실제 내용으로 갱신됨)
+        val second = a.ingestUrl(url)
+        assertTrue(second.contains("이미 등록"), "completed source must block re-ingest")
+        a.close()
+    }
+
     @Test fun `ingest empty LLM response saves to sources only`() = runBlocking {
         coEvery { llmFn(any()) } returns ""
 

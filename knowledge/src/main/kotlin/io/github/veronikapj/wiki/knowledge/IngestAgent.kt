@@ -25,9 +25,10 @@ class IngestAgent(
     fun close() = httpClient.close()
 
     suspend fun ingestUrl(url: String): String {
-        // 중복 감지: sources/ 디렉터리의 url: 필드 확인
+        // 중복 감지: 컴파일까지 완료된 소스만 차단. 미완료 스텁(컴파일 중)은 재시도 허용.
         val sourceKey = urlToSourceKey(url)
-        if (store.pageExists("sources/$sourceKey.md")) {
+        val existingSource = store.readPage("sources/$sourceKey.md")
+        if (existingSource != null && !existingSource.contains(COMPILING_MARKER)) {
             return "이미 등록된 소스입니다: $url"
         }
 
@@ -47,10 +48,10 @@ class IngestAgent(
             return "URL 가져오기 실패: ${e.message}"
         }
 
-        // sources/ 메타데이터 저장
+        // sources/ 메타데이터 저장 (요약은 컴파일 성공 후 갱신)
         store.savePage(
             "sources/$sourceKey.md",
-            "url: $url\n날짜: ${java.time.LocalDate.now()}\n요약: (컴파일 중)\n"
+            "url: $url\n날짜: ${java.time.LocalDate.now()}\n요약: $COMPILING_MARKER\n"
         )
 
         return compileAndSave(rawText, "sources/$sourceKey.md")
@@ -109,6 +110,14 @@ class IngestAgent(
             chromaIndexFn?.invoke(path, content, path)
             val firstLine = content.lines().firstOrNull { it.startsWith("#") }?.removePrefix("#")?.trim() ?: path
             store.updateIndex(path, firstLine)
+        }
+
+        // 컴파일 성공 → 소스 요약을 실제 페이지 목록으로 갱신 (스텁 해제 → 중복 차단 활성화)
+        if (sourcePath != null) {
+            store.readPage(sourcePath)?.let { src ->
+                val summary = savedPages.joinToString(", ") { it.first }
+                store.savePage(sourcePath, src.replace("요약: $COMPILING_MARKER", "요약: $summary"))
+            }
         }
 
         val count = store.incrementAndGetIngestCount()
@@ -172,5 +181,7 @@ class IngestAgent(
 
     companion object {
         private val log = LoggerFactory.getLogger(IngestAgent::class.java)
+        // 미완료(컴파일 진행 중/실패) 소스 표식. 중복 차단에서 제외되어 재시도 가능.
+        private const val COMPILING_MARKER = "(컴파일 중)"
     }
 }
