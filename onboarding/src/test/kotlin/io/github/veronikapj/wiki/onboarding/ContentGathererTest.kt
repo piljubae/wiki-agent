@@ -11,7 +11,6 @@ import io.mockk.verify
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.test.assertFalse
 
 class ContentGathererTest {
 
@@ -105,7 +104,7 @@ class ContentGathererTest {
 
         val result = g.gather(step(ContentSource(type = SourceType.CODE, query = "q")))
 
-        assertTrue(result[0].text.length < 10_000)
+        assertTrue(result[0].text.length <= 4000 + "\n…(이하 생략)".length)
         assertTrue(result[0].text.contains("생략"))
     }
 
@@ -122,6 +121,20 @@ class ContentGathererTest {
         assertEquals(2, result.size)
         verify { codeSearchTool.codeSearch("UseCase 어디있어") }
         verify { confluenceTool.confluenceSearch("UseCase 어디있어") }
+    }
+
+    @Test
+    fun `gatherForQuestion에서 한 도구가 예외를 던져도 나머지는 수집된다`() {
+        val codeSearchTool = mockk<CodeSearchTool>()
+        val confluenceTool = mockk<ConfluenceTool>()
+        every { codeSearchTool.codeSearch(any()) } throws RuntimeException("fail")
+        every { confluenceTool.confluenceSearch(any()) } returns "위키 결과"
+        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool)
+
+        val result = g.gatherForQuestion("q", step = null)
+
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.CONFLUENCE, result[0].provenance)
     }
 
     @Test

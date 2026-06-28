@@ -64,8 +64,8 @@ internal class ContentGatherer(
                 runCatching { wikiSection(src) }.getOrNull()?.let { out += it }
             }
         }
-        codeContent(question)?.let { out += it }
-        confluenceContent(question)?.let { out += it }
+        runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()?.let { out += it }
+        runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()?.let { out += it }
         return out
     }
 
@@ -112,6 +112,7 @@ internal class ContentGatherer(
         return GatheredContent(matched.title, Provenance.WIKI, matched.content.truncated())
     }
 
+    @Synchronized
     private fun loadWikiSections(): List<WikiSection> {
         wikiSectionsCache?.let { return it }
         val client = confluenceClient ?: run { log.warn("confluenceClient null"); return emptyList() }
@@ -136,11 +137,11 @@ internal class ContentGatherer(
             log.warn("No H2 headings in wiki HTML (length={})", html.length)
             return emptyList()
         }
+        val h1h2Starts = h1h2Pattern.findAll(html).map { it.range.first }.toList()
         return h2Matches.map { match ->
             val title = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
             val sectionStart = match.range.last + 1
-            val sectionEnd = h1h2Pattern.findAll(html)
-                .firstOrNull { it.range.first > match.range.last }?.range?.first ?: html.length
+            val sectionEnd = h1h2Starts.firstOrNull { it > match.range.last } ?: html.length
             val sectionHtml = html.substring(sectionStart, sectionEnd)
             val plainText = sectionHtml
                 .replace(Regex("<pre><code[^>]*>"), "\n```\n")
