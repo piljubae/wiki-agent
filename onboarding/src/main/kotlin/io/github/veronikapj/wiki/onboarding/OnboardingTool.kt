@@ -39,106 +39,16 @@ class OnboardingTool(
             ?.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.pageId
     }
 
-    /**
-     * 위키 raw HTML을 H2 기준으로 파싱한 섹션 리스트. 캐시.
-     * 각 WikiSection은 (h2Title, htmlContent)를 담는다.
-     */
-    data class WikiSection(val title: String, val content: String)
-
-    @Volatile
-    private var wikiSectionsCache: List<WikiSection>? = null
-
-    private fun loadWikiSections(): List<WikiSection> {
-        wikiSectionsCache?.let { return it }
-
-        val client = confluenceClient ?: run {
-            log.warn("confluenceClient is null, cannot load wiki")
-            return emptyList()
-        }
-        val pageId = wikiPageId ?: run {
-            log.warn("wikiPageId is null, cannot load wiki")
-            return emptyList()
-        }
-
-        val html = runCatching {
-            runBlocking { client.fetchPageRawHtml(pageId) }
-        }.onFailure { log.error("Failed to fetch wiki page {}: {}", pageId, it.message) }
-            .getOrDefault("")
-
-        if (html.isBlank()) return emptyList()
-
-        val sections = parseHtmlToSections(html)
-        log.info("Loaded {} H2 sections from wiki page {}", sections.size, pageId)
-        wikiSectionsCache = sections
-        return sections
-    }
-
-    /**
-     * HTML을 H2 기준으로 분할한다. 각 H2 헤딩부터 다음 H1/H2까지가 하나의 섹션.
-     * HTML 태그를 제거하여 plain text로 변환.
-     */
-    private fun parseHtmlToSections(html: String): List<WikiSection> {
-        val h2Pattern = Regex("<h2[^>]*>(.*?)</h2>", RegexOption.DOT_MATCHES_ALL)
-        val h1h2Pattern = Regex("<h[12][^>]*>", RegexOption.DOT_MATCHES_ALL)
-        val h2Matches = h2Pattern.findAll(html).toList()
-
-        if (h2Matches.isEmpty()) {
-            log.warn("No H2 headings found in wiki HTML (length={})", html.length)
-            return emptyList()
-        }
-
-        return h2Matches.mapIndexed { index, match ->
-            val title = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
-            val sectionStart = match.range.last + 1
-
-            // 다음 H1 또는 H2까지
-            val sectionEnd = h1h2Pattern.findAll(html)
-                .filter { it.range.first > match.range.last }
-                .firstOrNull()?.range?.first ?: html.length
-
-            val sectionHtml = html.substring(sectionStart, sectionEnd)
-            // HTML → plain text
-            val plainText = sectionHtml
-                .replace(Regex("<pre><code[^>]*>"), "\n```\n")
-                .replace(Regex("</code></pre>"), "\n```\n")
-                .replace(Regex("<code>"), "`").replace("</code>", "`")
-                .replace(Regex("<strong>"), "*").replace("</strong>", "*")
-                .replace(Regex("<h3[^>]*>"), "\n### ").replace(Regex("</h3>"), "\n")
-                .replace(Regex("<li[^>]*>"), "\n• ").replace("</li>", "")
-                .replace(Regex("<p[^>]*>"), "\n").replace("</p>", "\n")
-                .replace(Regex("<br[^>]*/?>"), "\n")
-                .replace(Regex("<tr>"), "\n").replace(Regex("<th[^>]*>"), "| ").replace(Regex("<td[^>]*>"), "| ")
-                .replace(Regex("</t[hd]>"), " ")
-                .replace(Regex("<a[^>]*href=\"([^\"]+)\"[^>]*>([^<]+)</a>")) { m -> "${m.groupValues[2]} (${m.groupValues[1]})" }
-                .replace(Regex("<[^>]+>"), "")
-                .replace(Regex("&amp;"), "&").replace(Regex("&lt;"), "<").replace(Regex("&gt;"), ">")
-                .replace(Regex("&#039;"), "'").replace(Regex("&quot;"), "\"")
-                .replace(Regex("\n{3,}"), "\n\n")
-                .trim()
-
-            WikiSection(title, plainText)
-        }
-    }
-
-    /** step ID로 위키 섹션의 내용을 가져온다. curriculum의 section 키워드로 매칭. */
-    private fun getWikiContentForStep(step: CurriculumStep): String {
-        val sections = loadWikiSections()
-        if (sections.isEmpty()) return ""
-
-        // curriculum의 section 키워드로 위키 H2 title 매칭
-        val sectionKeyword = step.sources
-            .firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.section
-
-        if (sectionKeyword != null) {
-            val matched = sections.firstOrNull { it.title.contains(sectionKeyword, ignoreCase = true) }
-            if (matched != null) {
-                log.info("Wiki section matched: '{}' → '{}' ({}chars)", sectionKeyword, matched.title, matched.content.length)
-                return "### ${matched.title}\n\n${matched.content}"
-            }
-            log.warn("Wiki section not found for keyword '{}', available: {}", sectionKeyword, sections.map { it.title })
-        }
-
-        return ""
+    private val gatherer: ContentGatherer by lazy {
+        ContentGatherer(
+            confluenceClient = confluenceClient,
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+            codeClient = codeClient,
+            codeRepo = codeRepo,
+            codeBranch = codeBranch,
+            wikiPageId = wikiPageId,
+        )
     }
 
     // ── Intent classification ──
@@ -305,7 +215,7 @@ class OnboardingTool(
         val contextBlock = buildString {
             if (currentStep != null) {
                 appendLine("현재 온보딩 단계: ${currentStep.name} (Phase ${currentStep.phase}, ${currentStep.day})")
-                val content = getWikiContentForStep(currentStep)
+                val content = ContentGatherer.formatBlocks(gatherer.gather(currentStep))
                 if (content.isNotBlank()) {
                     appendLine()
                     appendLine("=== 현재 단계 참고 자료 ===")
@@ -380,16 +290,15 @@ class OnboardingTool(
     }
 
     private fun generateGuide(userId: String, step: CurriculumStep, session: OnboardingSession): String {
-        val content = getWikiContentForStep(step)
+        val gathered = gatherer.gather(step)
+        val contentBlock = ContentGatherer.formatBlocks(gathered)
 
-        // Calculate step position within the phase
         val phaseSteps = session.steps.filter { it.phase == step.phase }
         val stepIndex = phaseSteps.indexOfFirst { it.id == step.id } + 1
         val phaseTotal = phaseSteps.size
-
         val header = ":books: *[Phase ${step.phase}: $stepIndex/$phaseTotal] ${step.name}* (${step.day})"
 
-        log.info("Generating guide for step={}, content length={}", step.id, content.length)
+        log.info("Generating guide for step={}, sources={}", step.id, gathered.size)
 
         val guidePrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
@@ -403,14 +312,16 @@ class OnboardingTool(
             appendLine("- Phase: ${step.phase}")
             appendLine("- 예상 소요 기간: ${step.day}")
             appendLine()
-            if (content.isNotBlank()) {
-                appendLine("=== 참고 자료 (Confluence 위키에서 가져온 내용) ===")
-                appendLine(content)
+            appendLine(depthInstruction(session.level))
+            appendLine()
+            if (gathered.isNotEmpty()) {
+                appendLine("=== 참고 자료 (출처별로 구분됨) ===")
+                appendLine(contentBlock)
                 appendLine("=== 끝 ===")
                 appendLine()
                 appendLine("절대 규칙:")
-                appendLine("- 위 참고 자료에 있는 내용만 안내하세요. 참고 자료에 없는 내용을 추가하거나 추측하지 마세요.")
-                appendLine("- 파일 경로, 클래스명, 모듈명 등은 참고 자료에 명시된 것만 사용하세요.")
+                appendLine("- 위 참고 자료에 있는 내용만 안내하세요. 자료에 없는 내용을 추가하거나 추측하지 마세요.")
+                appendLine("- 파일 경로, 클래스명, 모듈명은 참고 자료(💻 코드 / 📁 소스파일 포함)에 명시된 것만 사용하세요.")
                 appendLine("- 참고 자료의 테이블/목록은 그대로 Slack mrkdwn 형식으로 변환하세요.")
             } else {
                 appendLine("참고 자료를 수집하지 못했습니다.")
@@ -418,17 +329,22 @@ class OnboardingTool(
                 appendLine("절대로 자체적으로 내용을 생성하지 마세요.")
             }
             appendLine()
-            appendLine("가이드 작성 규칙:")
-            appendLine("1. 참고 자료의 핵심 내용을 불릿으로 정리하세요.")
-            appendLine("2. 실습이 필요한 경우 참고 자료에 있는 액션 아이템을 제시하세요.")
-            appendLine("3. 참고 자료에 링크가 있으면 포함하세요.")
-            appendLine("4. 다음 단계로 넘어갈 준비가 되면 `다음`을 입력하라고 안내하세요.")
-            appendLine("5. 모르는 부분은 질문하라고 안내하세요.")
-            appendLine("6. 컨벤션/규칙 관련 단계는 :white_check_mark: DO / :x: DON'T 형식으로 정리하세요.")
+            appendLine("가이드 작성 규칙 (이 구조로 작성):")
+            appendLine("1. *핵심 요약* — 이 단계에서 알아야 할 것을 2~3줄로.")
+            appendLine("2. *상세* — 참고 자료의 핵심을 불릿으로 정리. 코드 출처가 있으면 실제 클래스/경로를 인용.")
+            appendLine("3. *실습 액션* — 참고 자료에 있는 액션 아이템이 있으면 제시.")
+            appendLine("4. 컨벤션/규칙 단계는 :white_check_mark: DO / :x: DON'T 형식으로 정리.")
+            appendLine("5. 마지막에 `다음`을 입력하면 다음 단계로, 궁금하면 질문하라고 안내.")
         }
 
         val guideBody = callLLM(guidePrompt)
         return "$header\n\n$guideBody"
+    }
+
+    private fun depthInstruction(level: UserLevel?): String = when (level?.android) {
+        "A" -> "설명 깊이: 입문자 대상. 배경·용어를 풀어서 상세히 설명하고, 왜 필요한지부터 알려주세요."
+        "C" -> "설명 깊이: 숙련자 대상. 요점과 kurly 고유 컨벤션 위주로 간결하게. 일반적인 Android 개념 설명은 생략하세요."
+        else -> "설명 깊이: 중급자 대상. 핵심 위주로 설명하고 익숙한 개념은 생략하세요."
     }
 
 
