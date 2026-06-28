@@ -207,21 +207,22 @@ class OnboardingTool(
     private fun handleQuestion(userId: String, message: String, conversationContext: String): String {
         val session = OnboardingSessionStore.load(userId)
         val cur = curriculum
-
         val currentStep = if (session?.currentStepId != null && cur != null) {
             cur.phases.firstOrNull { it.id == session.currentStepId }
         } else null
 
+        val gathered = gatherer.gatherForQuestion(message, currentStep)
+        val contentBlock = ContentGatherer.formatBlocks(gathered)
+
         val contextBlock = buildString {
             if (currentStep != null) {
                 appendLine("현재 온보딩 단계: ${currentStep.name} (Phase ${currentStep.phase}, ${currentStep.day})")
-                val content = ContentGatherer.formatBlocks(gatherer.gather(currentStep))
-                if (content.isNotBlank()) {
-                    appendLine()
-                    appendLine("=== 현재 단계 참고 자료 ===")
-                    appendLine(content)
-                    appendLine("=== 끝 ===")
-                }
+            }
+            if (contentBlock.isNotBlank()) {
+                appendLine()
+                appendLine("=== 질문 관련 자료 (출처별) ===")
+                appendLine(contentBlock)
+                appendLine("=== 끝 ===")
             }
             if (conversationContext.isNotBlank()) {
                 appendLine()
@@ -237,7 +238,7 @@ class OnboardingTool(
             appendLine("당신은 컬리(Kurly) $projectName 프로젝트의 신규 입사자 온보딩을 도와주는 멘토입니다.")
             appendLine("컬리는 한국의 신선식품 이커머스 플랫폼이며, 프로젝트명은 '$projectName'입니다.")
             appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
-            appendLine("아래 컨텍스트와 참고 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요.")
+            appendLine("아래 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요. 자료에 없는 파일 경로·클래스명은 추측하지 마세요.")
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
             if (contextBlock.isNotBlank()) {
                 appendLine()
@@ -247,7 +248,9 @@ class OnboardingTool(
             appendLine("사용자 질문: $message")
         }
 
-        return callLLM(questionPrompt)
+        val answer = callLLM(questionPrompt)
+        OnboardingSessionStore.addMemo(userId, "질문: ${message.take(80)}")
+        return answer
     }
 
     // ── Helper methods ──

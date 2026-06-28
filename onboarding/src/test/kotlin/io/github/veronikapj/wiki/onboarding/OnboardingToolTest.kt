@@ -7,7 +7,9 @@ import ai.koog.prompt.message.ResponseMetaInfo
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import java.io.File
@@ -233,5 +235,31 @@ phases:
         val result = tool.handle(userId, "온보딩 시작")
 
         assertTrue(result.contains("완료"), "이미 완료된 세션 안내가 표시되어야 합니다. 실제: $result")
+    }
+
+    @Test
+    fun `질문 시 codeSearch 라이브 검색이 호출되고 메모가 기록된다`() {
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        every { codeSearchTool.codeSearch(any()) } returns "ProductViewModel 위치: feature/product"
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
+        every { confluenceTool.confluenceSearch(any()) } returns ""
+
+        val tool = OnboardingTool(
+            curriculumPath = curriculumPath,
+            executor = createMockExecutor("코드는 feature/product 모듈에 있습니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A")
+
+        val result = tool.handle(userId, "ProductViewModel 어디있어?")
+
+        assertTrue(result.contains("feature/product"), "LLM 답변이 반환되어야 합니다. 실제: $result")
+        verify { codeSearchTool.codeSearch("ProductViewModel 어디있어?") }
+
+        val session = OnboardingSessionStore.load(userId)!!
+        assertTrue(session.memos.any { it.contains("ProductViewModel") }, "질문이 메모로 기록되어야 합니다. 실제: ${session.memos}")
     }
 }
