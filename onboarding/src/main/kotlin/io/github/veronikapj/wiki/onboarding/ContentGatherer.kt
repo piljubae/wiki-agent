@@ -4,6 +4,8 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
@@ -64,8 +66,16 @@ internal class ContentGatherer(
                 runCatching { wikiSection(src) }.getOrNull()?.let { out += it }
             }
         }
-        runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()?.let { out += it }
-        runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()?.let { out += it }
+        runBlocking {
+            val codeDeferred = async(Dispatchers.IO) {
+                runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
+            }
+            val confDeferred = async(Dispatchers.IO) {
+                runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()
+            }
+            codeDeferred.await()?.let { out += it }
+            confDeferred.await()?.let { out += it }
+        }
         return out
     }
 
@@ -98,7 +108,7 @@ internal class ContentGatherer(
 
     private data class WikiSection(val title: String, val content: String)
 
-    @Volatile
+    // All access is via @Synchronized loadWikiSections(); @Volatile is redundant here.
     private var wikiSectionsCache: List<WikiSection>? = null
 
     private fun wikiSection(source: ContentSource): GatheredContent? {
@@ -121,6 +131,7 @@ internal class ContentGatherer(
         val html = runCatching { runBlocking { client.fetchPageRawHtml(pageId) } }
             .onFailure { log.error("Failed to fetch wiki page {}: {}", pageId, it.message) }
             .getOrDefault("")
+        // Intentionally not cached: transient fetch failure self-heals on the next call.
         if (html.isBlank()) return emptyList()
 
         val sections = parseHtmlToSections(html)

@@ -249,7 +249,9 @@ class OnboardingTool(
         }
 
         val answer = callLLM(questionPrompt)
-        OnboardingSessionStore.addMemo(userId, "질문: ${message.take(80)}")
+        if (!answer.startsWith("가이드 생성 중 오류")) {
+            OnboardingSessionStore.addMemo(userId, "질문: ${message.take(80)}")
+        }
         return answer
     }
 
@@ -301,7 +303,7 @@ class OnboardingTool(
         val phaseTotal = phaseSteps.size
         val header = ":books: *[Phase ${step.phase}: $stepIndex/$phaseTotal] ${step.name}* (${step.day})"
 
-        log.info("Generating guide for step={}, sources={}", step.id, gathered.size)
+        log.info("Generating guide for step={}, sourceCount={}", step.id, gathered.size)
 
         val guidePrompt = buildString {
             appendLine(SLACK_FORMAT_RULE)
@@ -317,7 +319,7 @@ class OnboardingTool(
             appendLine()
             appendLine(depthInstruction(session.level))
             appendLine()
-            if (gathered.isNotEmpty()) {
+            if (contentBlock.isNotBlank()) {
                 appendLine("=== 참고 자료 (출처별로 구분됨) ===")
                 appendLine(contentBlock)
                 appendLine("=== 끝 ===")
@@ -349,8 +351,6 @@ class OnboardingTool(
         "C" -> "설명 깊이: 숙련자 대상. 요점과 kurly 고유 컨벤션 위주로 간결하게. 일반적인 Android 개념 설명은 생략하세요."
         else -> "설명 깊이: 중급자 대상. 핵심 위주로 설명하고 익숙한 개념은 생략하세요."
     }
-
-
 
     private fun formatProgress(session: OnboardingSession): String {
         return buildString {
