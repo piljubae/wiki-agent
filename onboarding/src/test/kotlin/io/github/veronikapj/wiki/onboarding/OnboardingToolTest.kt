@@ -7,7 +7,10 @@ import ai.koog.prompt.message.ResponseMetaInfo
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import java.io.File
@@ -34,34 +37,30 @@ phases:
       skipWhen:
         android: "C"
     sources:
-      - type: static
-        path: "$testDir/steps/step-1.md"
+      - type: code
+        query: "step1 환경 세팅"
   - id: step-2
     name: "테스트 단계 2"
     phase: 1
     day: "Day 1"
     skippable: false
     sources:
-      - type: static
-        path: "$testDir/steps/step-2.md"
+      - type: code
+        query: "step2 Compose"
   - id: step-3
     name: "테스트 단계 3"
     phase: 2
     day: "Day 2"
     skippable: false
     sources:
-      - type: static
-        path: "$testDir/steps/step-3.md"
+      - type: code
+        query: "step3 도메인"
     """.trimIndent()
 
     @BeforeEach
     fun setup() {
         File(testDir).mkdirs()
-        File("$testDir/steps").mkdirs()
         File(curriculumPath).writeText(curriculumYaml)
-        File("$testDir/steps/step-1.md").writeText("# Step 1\nAndroid 기초 환경 세팅 가이드")
-        File("$testDir/steps/step-2.md").writeText("# Step 2\nCompose 기본 학습 자료")
-        File("$testDir/steps/step-3.md").writeText("# Step 3\n도메인 이해 자료")
     }
 
     @AfterEach
@@ -81,13 +80,16 @@ phases:
 
     private fun createTool(
         executor: MultiLLMPromptExecutor = createMockExecutor("LLM 가이드 응답입니다."),
+        codeSearchTool: CodeSearchTool = mockk<CodeSearchTool>(relaxed = true).also {
+            every { it.codeSearch(any()) } returns "테스트 코드 자료"
+        },
     ): OnboardingTool {
         return OnboardingTool(
             curriculumPath = curriculumPath,
             executor = executor,
             model = mockk<LLModel>(relaxed = true),
             confluenceTool = mockk<ConfluenceTool>(relaxed = true),
-            codeSearchTool = mockk<CodeSearchTool>(relaxed = true),
+            codeSearchTool = codeSearchTool,
         )
     }
 
@@ -233,5 +235,49 @@ phases:
         val result = tool.handle(userId, "온보딩 시작")
 
         assertTrue(result.contains("완료"), "이미 완료된 세션 안내가 표시되어야 합니다. 실제: $result")
+    }
+
+    @Test
+    fun `숙련자(C) 레벨이면 간결 깊이 지시가 프롬프트에 포함된다`() {
+        val promptSlot = slot<ai.koog.prompt.dsl.Prompt>()
+        val executor = mockk<MultiLLMPromptExecutor>()
+        coEvery { executor.execute(capture(promptSlot), any()) } returns listOf(
+            Message.Assistant(content = "응답", metaInfo = ResponseMetaInfo.Empty)
+        )
+        val tool = createTool(executor = executor)
+        val userId = uniqueUserId()
+
+        // C 레벨 → step-1 스킵, step-2부터. 가이드 생성 시 깊이 지시 포함
+        tool.handle(userId, "C, A, A")
+
+        assertTrue(promptSlot.isCaptured, "executor.execute()가 한 번도 호출되지 않았습니다 — 가이드 생성이 이 handle() 호출에서 발생하지 않습니다")
+        val sentText = promptSlot.captured.messages.joinToString(" ") { it.content }
+        assertTrue(sentText.contains("숙련자"), "C 레벨이면 숙련자 깊이 지시가 포함되어야 합니다. 실제: $sentText")
+    }
+
+    @Test
+    fun `질문 시 codeSearch 라이브 검색이 호출되고 메모가 기록된다`() {
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        every { codeSearchTool.codeSearch(any()) } returns "ProductViewModel 위치: feature/product"
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
+        every { confluenceTool.confluenceSearch(any()) } returns ""
+
+        val tool = OnboardingTool(
+            curriculumPath = curriculumPath,
+            executor = createMockExecutor("코드는 feature/product 모듈에 있습니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A")
+
+        val result = tool.handle(userId, "ProductViewModel 어디있어?")
+
+        assertTrue(result.contains("feature/product"), "LLM 답변이 반환되어야 합니다. 실제: $result")
+        verify { codeSearchTool.codeSearch("ProductViewModel 어디있어?") }
+
+        val session = OnboardingSessionStore.load(userId)!!
+        assertTrue(session.memos.any { it.contains("ProductViewModel") }, "질문이 메모로 기록되어야 합니다. 실제: ${session.memos}")
     }
 }
