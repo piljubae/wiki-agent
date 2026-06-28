@@ -21,6 +21,7 @@ internal class ContentGatherer(
     private val codeRepo: String?,
     private val codeBranch: String,
     private val wikiPageId: String?,
+    private val onboardingSpace: String? = null,
 ) {
     private val log = LoggerFactory.getLogger(ContentGatherer::class.java)
 
@@ -74,12 +75,30 @@ internal class ContentGatherer(
                 runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
             }
             val confDeferred = async(Dispatchers.IO) {
-                runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()
+                runCatching { confluenceQuestionContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrDefault(emptyList())
             }
             codeDeferred.await()?.let { out += it }
-            confDeferred.await()?.let { out += it }
+            out += confDeferred.await()
         }
         return out
+    }
+
+    /** 질문 경로 전용: onboardingSpace가 있으면 스코프 검색 + 플랫폼 라벨링, 없으면 기존 전체 검색 */
+    private fun confluenceQuestionContent(query: String): List<GatheredContent> {
+        val q = query.takeIf { it.isNotBlank() } ?: return emptyList()
+        val space = onboardingSpace
+            ?: return confluenceContent(q)?.let { listOf(it) } ?: emptyList()
+        return confluenceTool.searchScopedStructured(q, listOf(space)).map { r ->
+            GatheredContent(
+                label = r.title,
+                provenance = Provenance.CONFLUENCE,
+                text = buildString {
+                    if (r.snippet.isNotBlank()) appendLine(r.snippet)
+                    append("(${r.url})")
+                }.truncated(),
+                platform = classifyPlatform(r.title, r.snippet),
+            )
+        }
     }
 
     // ── 소스별 수집 ──

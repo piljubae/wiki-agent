@@ -2,6 +2,8 @@ package io.github.veronikapj.wiki.onboarding
 
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.search.SearchResult
+import io.github.veronikapj.wiki.search.SearchStage
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.mockk.coEvery
@@ -21,6 +23,7 @@ class ContentGathererTest {
         codeClient: GitHubCodeClient? = mockk(relaxed = true),
         codeRepo: String? = "kurly/kurly-android",
         wikiPageId: String? = "5912232879",
+        onboardingSpace: String? = null,
     ) = ContentGatherer(
         confluenceClient = confluenceClient,
         confluenceTool = confluenceTool,
@@ -29,6 +32,7 @@ class ContentGathererTest {
         codeRepo = codeRepo,
         codeBranch = "develop",
         wikiPageId = wikiPageId,
+        onboardingSpace = onboardingSpace,
     )
 
     private fun step(vararg sources: ContentSource) = CurriculumStep(
@@ -143,6 +147,42 @@ class ContentGathererTest {
         assertEquals(2, result.size)
         verify { codeSearchTool.codeSearch("UseCase 어디있어") }
         verify { confluenceTool.confluenceSearch("UseCase 어디있어") }
+    }
+
+    @Test
+    fun `gatherForQuestion은 onboardingSpace가 있으면 스코프 검색 후 플랫폼 라벨을 붙인다`() {
+        val confluenceTool = mockk<ConfluenceTool>()
+        val codeSearchTool = mockk<CodeSearchTool>()
+        every { codeSearchTool.codeSearch(any()) } returns ""  // 코드 결과 없음 → confluence만 검증
+        every { confluenceTool.searchScopedStructured("배포 절차", listOf("ProductApp")) } returns listOf(
+            SearchResult("1", "QA 및 배포 프로세스", "url1", "develop 머지 후 QA", SearchStage.TITLE_MATCH),
+            SearchResult("2", "v3.78 Release Note Android/iOS", "url2", "정기 배포", SearchStage.TITLE_MATCH),
+            SearchResult("3", "컬리앱(iOS) 장애 보고서", "url3", "상품상세 스크롤", SearchStage.TEXT_MATCH),
+        )
+        val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = "ProductApp")
+
+        val result = g.gatherForQuestion("배포 절차", step = null)
+
+        verify { confluenceTool.searchScopedStructured("배포 절차", listOf("ProductApp")) }
+        val byLabel = result.associateBy { it.label }
+        assertEquals(ContentGatherer.Platform.ANDROID, byLabel["QA 및 배포 프로세스"]!!.platform)
+        assertEquals(ContentGatherer.Platform.SHARED, byLabel["v3.78 Release Note Android/iOS"]!!.platform)
+        assertEquals(ContentGatherer.Platform.IOS, byLabel["컬리앱(iOS) 장애 보고서"]!!.platform)
+    }
+
+    @Test
+    fun `gatherForQuestion은 onboardingSpace가 null이면 기존 confluenceSearch 경로를 쓴다`() {
+        val confluenceTool = mockk<ConfluenceTool>()
+        val codeSearchTool = mockk<CodeSearchTool>()
+        every { codeSearchTool.codeSearch(any()) } returns ""
+        every { confluenceTool.confluenceSearch("질문") } returns "위키 결과"
+        val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = null)
+
+        val result = g.gatherForQuestion("질문", step = null)
+
+        verify { confluenceTool.confluenceSearch("질문") }
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.CONFLUENCE, result[0].provenance)
     }
 
     @Test
