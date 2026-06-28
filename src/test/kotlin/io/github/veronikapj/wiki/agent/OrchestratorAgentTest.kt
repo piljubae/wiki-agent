@@ -3,7 +3,10 @@ package io.github.veronikapj.wiki.agent
 import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.search.GitHubWikiSearchAgent
 
+import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.message.Message
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.github.veronikapj.wiki.search.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
@@ -11,6 +14,7 @@ import io.github.veronikapj.wiki.knowledge.KnowledgeStore
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -220,5 +224,72 @@ class OrchestratorAgentTest {
 
         assertNotNull(result)
         assertEquals(1, listener.startedCount.get(), "단순 질문은 단일 검색만 라우팅해야 한다")
+    }
+
+    /**
+     * Fix 1 regression: 단일 질문 요약 프롬프트에 "[1. <sub-question>]" 섹션 라벨이 없어야 하고,
+     * 복합 질문(분해기→2개) 요약 프롬프트에는 섹션 라벨이 있어야 한다.
+     */
+    @Test
+    fun `single question summary prompt does not contain section label`() = runTest {
+        val capturedPrompts = mutableListOf<Prompt>()
+        val capturingExecutor = mockk<MultiLLMPromptExecutor>(relaxed = true)
+        coEvery { capturingExecutor.execute(capture(capturedPrompts), any(), any()) } returns emptyList()
+
+        val confluenceTool = mockk<ConfluenceTool>()
+        coEvery { confluenceTool.confluenceSearchSuspend(any(), any(), any(), any(), any()) } returns "단일 검색 결과"
+
+        // 분해기가 1개 반환 → 단일 경로
+        val decomposer = QueryDecomposer(LLMCaller { "배포 절차 질문" })
+
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = capturingExecutor,
+            useManualLoop = true,
+            queryDecomposer = decomposer,
+        )
+
+        agent.answer("배포 절차 알려줘")
+
+        // "summary" ID를 가진 프롬프트를 찾아 검증
+        val summaryPrompt = capturedPrompts.firstOrNull { it.id == "summary" }
+        assertNotNull(summaryPrompt, "summary 프롬프트가 executor에 전달되어야 한다")
+
+        val promptText = summaryPrompt.messages.joinToString("") { it.content }
+        assertFalse(
+            promptText.contains("[1. "),
+            "단일 질문 요약 프롬프트에 '[1. ' 섹션 라벨이 없어야 한다. 실제 프롬프트:\n${promptText.take(500)}"
+        )
+    }
+
+    @Test
+    fun `compound question summary prompt contains section labels`() = runTest {
+        val capturedPrompts = mutableListOf<Prompt>()
+        val capturingExecutor = mockk<MultiLLMPromptExecutor>(relaxed = true)
+        coEvery { capturingExecutor.execute(capture(capturedPrompts), any(), any()) } returns emptyList()
+
+        val confluenceTool = mockk<ConfluenceTool>()
+        coEvery { confluenceTool.confluenceSearchSuspend(any(), any(), any(), any(), any()) } returns "복합 검색 결과"
+
+        // 분해기가 2개 반환 → 복합 경로
+        val decomposer = QueryDecomposer(LLMCaller { "배포 절차가 무엇인가요\n온보딩 가이드는 어디있나요" })
+
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            executor = capturingExecutor,
+            useManualLoop = true,
+            queryDecomposer = decomposer,
+        )
+
+        agent.answer("배포랑 온보딩 알려줘")
+
+        val summaryPrompt = capturedPrompts.firstOrNull { it.id == "summary" }
+        assertNotNull(summaryPrompt, "summary 프롬프트가 executor에 전달되어야 한다")
+
+        val promptText = summaryPrompt.messages.joinToString("") { it.content }
+        assertTrue(
+            promptText.contains("[1. "),
+            "복합 질문 요약 프롬프트에 '[1. ' 섹션 라벨이 있어야 한다. 실제 프롬프트:\n${promptText.take(500)}"
+        )
     }
 }

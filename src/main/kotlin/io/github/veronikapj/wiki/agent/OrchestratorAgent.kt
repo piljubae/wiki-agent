@@ -170,7 +170,11 @@ class OrchestratorAgent(
         // 단일 질문일 때만 특수 tool(none/progressAdvisor/onboarding) 위임이 가능.
         // 복합일 때 특수 tool step은 searchResult=null인 "못 찾음" 섹션으로 흡수된다.
         val toolName: String? = if (isCompound) "confluenceSearch" else steps.first().toolName
-        val searchResult: String? = run {
+        // 단일 질문: 피처 도입 전과 동일하게 bare searchResult 그대로 사용 (섹션 라벨 없음).
+        // 복합 질문: sub-question 라벨 섹션으로 묶어 요약 프롬프트에 전달.
+        val searchResult: String? = if (!isCompound) {
+            steps.first().searchResult
+        } else {
             val block = buildSectionedResultBlock(steps)
             block.takeIf { steps.any { s -> s.searchResult != null } }
         }

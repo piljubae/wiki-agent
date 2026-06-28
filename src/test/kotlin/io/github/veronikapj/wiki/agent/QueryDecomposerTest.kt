@@ -57,4 +57,18 @@ class QueryDecomposerTest {
         val result = QueryDecomposer(llm).decompose("많은 질문")
         assertEquals(listOf("a", "b", "c"), result)
     }
+
+    @Test
+    fun `strips numbered dot prefixes`() = runTest {
+        val llm = LLMCaller { "1. A 질문\n2. B 질문" }
+        val result = QueryDecomposer(llm).decompose("A랑 B")
+        assertEquals(listOf("A 질문", "B 질문"), result)
+    }
+
+    @Test
+    fun `strips numbered paren prefixes`() = runTest {
+        val llm = LLMCaller { "1) A 질문\n2) B 질문" }
+        val result = QueryDecomposer(llm).decompose("A랑 B")
+        assertEquals(listOf("A 질문", "B 질문"), result)
+    }
 }

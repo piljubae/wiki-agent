@@ -12,7 +12,7 @@ class QueryDecomposer(private val llm: LLMCaller) {
         return runCatching {
             val raw = llm.call(buildPrompt(question, context))
             val parsed = raw.lines()
-                .map { it.trim().removePrefix("- ").removePrefix("* ").trim() }
+                .map { it.trim().removePrefix("- ").removePrefix("* ").replace(Regex("^\\d+[.)]\\s*"), "").trim() }
                 .filter { it.isNotBlank() }
                 .distinct()
                 .take(MAX_SUB_QUESTIONS)
