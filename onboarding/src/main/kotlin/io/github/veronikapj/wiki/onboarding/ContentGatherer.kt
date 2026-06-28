@@ -150,7 +150,7 @@ internal class ContentGatherer(
         }
         val h1h2Starts = h1h2Pattern.findAll(html).map { it.range.first }.toList()
         return h2Matches.map { match ->
-            val title = match.groupValues[1].replace(Regex("<[^>]+>"), "").trim()
+            val title = match.groupValues[1].replace(Regex("<[^>]+>"), "").decodeHtmlEntities().trim()
             val sectionStart = match.range.last + 1
             val sectionEnd = h1h2Starts.firstOrNull { it > match.range.last } ?: html.length
             val sectionHtml = html.substring(sectionStart, sectionEnd)
@@ -167,13 +167,19 @@ internal class ContentGatherer(
                 .replace(Regex("</t[hd]>"), " ")
                 .replace(Regex("<a[^>]*href=\"([^\"]+)\"[^>]*>([^<]+)</a>")) { m -> "${m.groupValues[2]} (${m.groupValues[1]})" }
                 .replace(Regex("<[^>]+>"), "")
-                .replace(Regex("&amp;"), "&").replace(Regex("&lt;"), "<").replace(Regex("&gt;"), ">")
-                .replace(Regex("&#039;"), "'").replace(Regex("&quot;"), "\"")
+                .decodeHtmlEntities()
                 .replace(Regex("\n{3,}"), "\n\n")
                 .trim()
             WikiSection(title, plainText)
         }
     }
+
+    /** 위키 HTML 엔티티를 plain text로 디코딩. 제목·본문 공통. (&amp;는 마지막에 처리해 이중 디코딩 방지) */
+    private fun String.decodeHtmlEntities(): String = this
+        .replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#039;", "'").replace("&#39;", "'")
+        .replace("&mdash;", "—").replace("&ndash;", "–").replace("&nbsp;", " ")
+        .replace("&amp;", "&")
 
     private fun String.truncated(): String =
         if (length <= MAX_CHARS) this else take(MAX_CHARS) + "\n…(이하 생략)"

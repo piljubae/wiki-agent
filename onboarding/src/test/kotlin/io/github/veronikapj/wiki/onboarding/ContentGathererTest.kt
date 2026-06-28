@@ -50,6 +50,28 @@ class ContentGathererTest {
     }
 
     @Test
+    fun `CONFLUENCE_PAGE 위키 섹션의 제목과 본문 HTML 엔티티가 디코딩된다`() {
+        val confluenceClient = mockk<ConfluenceClient>()
+        coEvery { confluenceClient.fetchPageRawHtml("5912232879") } returns
+            "<h2>프로젝트 구조 &amp; 모듈 맵 &mdash; 개요</h2><p>data &amp; domain 모듈은 &lt;independent&gt;.</p>"
+        val g = gatherer(confluenceClient = confluenceClient)
+
+        val result = g.gather(step(
+            ContentSource(type = SourceType.CONFLUENCE_PAGE, pageId = "5912232879", section = "프로젝트 구조"),
+        ))
+
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.WIKI, result[0].provenance)
+        // 제목: 엔티티 디코딩 + 잔여 엔티티 없음
+        assertEquals("프로젝트 구조 & 모듈 맵 — 개요", result[0].label)
+        // 본문: 엔티티 디코딩
+        assertTrue(result[0].text.contains("data & domain"), "본문 &amp; 디코딩. 실제: ${result[0].text}")
+        assertTrue(result[0].text.contains("<independent>"), "본문 &lt;&gt; 디코딩. 실제: ${result[0].text}")
+        assertTrue(!result[0].label.contains("&") || result[0].label.contains("& 모듈"),
+            "라벨에 미디코딩 엔티티(&amp; 등)가 없어야 함. 실제: ${result[0].label}")
+    }
+
+    @Test
     fun `CONFLUENCE 소스는 confluenceSearch를 호출한다`() {
         val confluenceTool = mockk<ConfluenceTool>()
         every { confluenceTool.confluenceSearch("브랜치 전략") } returns "git flow 기반..."
