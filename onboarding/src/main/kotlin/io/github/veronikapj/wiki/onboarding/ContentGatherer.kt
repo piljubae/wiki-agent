@@ -31,10 +31,13 @@ internal class ContentGatherer(
         GITHUB_FILE("📁", "소스파일"),
     }
 
+    enum class Platform { ANDROID, IOS, SHARED }
+
     data class GatheredContent(
         val label: String,
         val provenance: Provenance,
         val text: String,
+        val platform: Platform = Platform.ANDROID,
     )
 
     // ── 단계 콘텐츠 ──
@@ -188,9 +191,33 @@ internal class ContentGatherer(
         private const val MAX_SOURCES = 6
         private const val MAX_CHARS = 4000
 
+        // 라벨이 없어 제목+스니펫 토큰으로 플랫폼 분류. ANDROID가 기본값(android 토큰 불필요).
+        private val IOS_TOKENS = Regex(
+            """\b(ios|swift|swiftui|uikit|xcode|cocoapods|testflight|kurly-ios)\b|아이폰""",
+            RegexOption.IGNORE_CASE)
+        private val ANDROID_TOKENS = Regex(
+            """\b(android|kotlin|compose|gradle|hilt|jetpack|kurly-android)\b|안드로이드""",
+            RegexOption.IGNORE_CASE)
+
+        fun classifyPlatform(title: String, snippet: String): Platform {
+            val text = "$title\n$snippet"
+            val ios = IOS_TOKENS.containsMatchIn(text)
+            val android = ANDROID_TOKENS.containsMatchIn(text)
+            return when {
+                ios && android -> Platform.SHARED
+                ios -> Platform.IOS
+                else -> Platform.ANDROID
+            }
+        }
+
         fun formatBlocks(items: List<GatheredContent>): String =
             items.joinToString("\n\n") { gc ->
-                "=== ${gc.provenance.emoji} ${gc.provenance.display}: ${gc.label} ===\n${gc.text}"
+                val marker = when (gc.platform) {
+                    Platform.IOS -> " [🍎 iOS 참조]"
+                    Platform.SHARED -> " [🔀 Android·iOS 공통]"
+                    Platform.ANDROID -> ""
+                }
+                "=== ${gc.provenance.emoji} ${gc.provenance.display}$marker: ${gc.label} ===\n${gc.text}"
             }
     }
 }

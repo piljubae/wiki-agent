@@ -160,6 +160,51 @@ class ContentGathererTest {
     }
 
     @Test
+    fun `classifyPlatform - 제목에 iOS만 있으면 IOS`() {
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("[iOS] App Intent 기술검토", ""))
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("2026.06.22 (iOS)", ""))
+    }
+
+    @Test
+    fun `classifyPlatform - Android와 iOS 둘 다면 SHARED`() {
+        assertEquals(ContentGatherer.Platform.SHARED,
+            ContentGatherer.classifyPlatform("v3.78.0 Release Note Android/iOS", ""))
+    }
+
+    @Test
+    fun `classifyPlatform - 토큰 없으면 기본 ANDROID`() {
+        assertEquals(ContentGatherer.Platform.ANDROID,
+            ContentGatherer.classifyPlatform("프로젝트 온보딩 가이드", "환경 셋업과 모듈 맵"))
+    }
+
+    @Test
+    fun `classifyPlatform - 제목엔 없고 스니펫에 iOS 토큰이면 IOS`() {
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("상품상세 장애 보고서", "원인은 kurly-ios 아이폰 빌드의 UICollectionView 조정"))
+    }
+
+    @Test
+    fun `classifyPlatform - kiosk는 ios 단어경계 오탐이 아니다`() {
+        assertEquals(ContentGatherer.Platform.ANDROID,
+            ContentGatherer.classifyPlatform("kiosk 결제 플로우", ""))
+    }
+
+    @Test
+    fun `formatBlocks는 플랫폼 마커를 붙인다`() {
+        val block = ContentGatherer.formatBlocks(listOf(
+            ContentGatherer.GatheredContent("Android 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.ANDROID),
+            ContentGatherer.GatheredContent("iOS 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.IOS),
+            ContentGatherer.GatheredContent("공용 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.SHARED),
+        ))
+        assertTrue(block.contains("[🍎 iOS 참조]"))
+        assertTrue(block.contains("[🔀 Android·iOS 공통]"))
+        // ANDROID 항목 헤더엔 마커 없음
+        assertTrue(block.contains("연관문서: Android 문서"))
+    }
+
+    @Test
     fun `formatBlocks는 provenance 헤더를 붙인다`() {
         val block = ContentGatherer.formatBlocks(listOf(
             ContentGatherer.GatheredContent("ProductViewModel", ContentGatherer.Provenance.CODE, "class P"),
