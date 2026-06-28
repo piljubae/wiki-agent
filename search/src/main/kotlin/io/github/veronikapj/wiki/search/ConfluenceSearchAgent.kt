@@ -41,10 +41,13 @@ class ConfluenceSearchAgent(
         query: String, synonyms: List<String> = emptyList(), topK: Int = 5,
         dateAfter: String? = null, dateBefore: String? = null,
         originalQuestion: String = "",
+        strictSpaces: List<String>? = null,
     ): List<SearchResult> {
         val cleaned = cleanQuery(query)
+        val effectiveSpaces = strictSpaces ?: spaces
         // originalQuestion은 re-ranking에만 사용 → 캐시 키에서 제외해 동일 검색 쿼리 캐시 공유
-        val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore"
+        // strictSpaces 분리: 스코프 검색 결과가 일반 검색 캐시와 섞이지 않도록 키에 포함
+        val cacheKey = "$cleaned|${synonyms.sorted().joinToString(",")}|$topK|$dateAfter|$dateBefore|${strictSpaces?.joinToString(",") ?: "-"}"
         getCached(cacheKey)?.let {
             log.info("Cache hit: query='{}'", cleaned)
             return reRankByOriginalQuestion(it, originalQuestion, synonyms)
@@ -55,7 +58,7 @@ class ConfluenceSearchAgent(
 
         // 1단계: 설정 스페이스에서 제목 검색 (re-rank 여유분을 위해 topK*2 fetch)
         val titleFetchLimit = topK * 2
-        val titleResults = confluenceClient.searchByTitle(cleaned, spaces, synonyms, titleFetchLimit, dateAfter, dateBefore)
+        val titleResults = confluenceClient.searchByTitle(cleaned, effectiveSpaces, synonyms, titleFetchLimit, dateAfter, dateBefore)
         log.info("Title search: {} results", titleResults.size)
 
         // Early return: 제목 매칭 충분하면 추가 검색 안 함
@@ -72,10 +75,11 @@ class ConfluenceSearchAgent(
         log.info("Insufficient title matches ({}<{}), parallel fallback", titleResults.size, sufficientThreshold)
         val (textResults, expandedResults) = coroutineScope {
             val textDeferred = async {
-                runCatching { confluenceClient.searchByText(cleaned, spaces, synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
+                runCatching { confluenceClient.searchByText(cleaned, effectiveSpaces, synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
             }
             val expandedDeferred = async {
-                if (spaces.isNotEmpty()) {
+                // strictSpaces 지정 시 전체 스페이스 확장 금지
+                if (strictSpaces == null && spaces.isNotEmpty()) {
                     runCatching { confluenceClient.searchByTitle(cleaned, emptyList(), synonyms, topK, dateAfter, dateBefore) }.getOrElse { emptyList() }
                 } else emptyList()
             }
@@ -88,14 +92,14 @@ class ConfluenceSearchAgent(
             if (keywords.size >= 2) {
                 log.info("Text search empty, trying keyword AND fallback: {}", keywords)
                 val andResults = runCatching {
-                    confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = false)
+                    confluenceClient.searchByKeywords(keywords, effectiveSpaces, topK, dateAfter, dateBefore, useOr = false)
                 }.getOrElse { emptyList() }
                 if (andResults.isNotEmpty()) {
                     andResults
                 } else {
                     log.info("AND fallback empty, retrying with OR: {}", keywords)
                     runCatching {
-                        confluenceClient.searchByKeywords(keywords, spaces, topK, dateAfter, dateBefore, useOr = true)
+                        confluenceClient.searchByKeywords(keywords, effectiveSpaces, topK, dateAfter, dateBefore, useOr = true)
                     }.getOrElse { emptyList() }
                 }
             } else emptyList()
@@ -106,7 +110,7 @@ class ConfluenceSearchAgent(
         val combined = combineAndRank(titleResults, textResults, expandedResults, keywordResults, topK)
 
         // 4단계: 결과가 없거나 관련성 없는 결과만 있으면 space 제한 없이 CQL 텍스트 검색 fallback
-        val needsGlobalFallback = spaces.isNotEmpty() &&
+        val needsGlobalFallback = strictSpaces == null && spaces.isNotEmpty() &&
             (combined.isEmpty() || !anyResultRelevant(combined, originalQuestion, synonyms))
         val finalCombined = if (needsGlobalFallback) {
             log.info("No relevant results in configured spaces (combined={}, relevant=false), falling back to global CQL search", combined.size)
