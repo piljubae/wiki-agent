@@ -86,9 +86,9 @@ internal class ContentGatherer(
     /** 질문 경로 전용: onboardingSpace가 있으면 스코프 검색 + 플랫폼 라벨링, 없으면 기존 전체 검색 */
     private fun confluenceQuestionContent(query: String): List<GatheredContent> {
         val q = query.takeIf { it.isNotBlank() } ?: return emptyList()
-        val space = onboardingSpace
+        val space = onboardingSpace?.takeIf { it.isNotBlank() }
             ?: return confluenceContent(q)?.let { listOf(it) } ?: emptyList()
-        return confluenceTool.searchScopedStructured(q, listOf(space)).map { r ->
+        return confluenceTool.searchScopedStructured(q, listOf(space)).take(QUESTION_CONFLUENCE_LIMIT).map { r ->
             GatheredContent(
                 label = r.title,
                 provenance = Provenance.CONFLUENCE,
@@ -209,6 +209,8 @@ internal class ContentGatherer(
     companion object {
         private const val MAX_SOURCES = 6
         private const val MAX_CHARS = 4000
+        // 질문 경로 Confluence 결과 상한 — 프롬프트 비대화 방지 (각 블록은 MAX_CHARS로 별도 절단)
+        private const val QUESTION_CONFLUENCE_LIMIT = 4
 
         // 라벨이 없어 제목+스니펫 토큰으로 플랫폼 분류. ANDROID가 기본값(android 토큰 불필요).
         private val IOS_TOKENS = Regex(

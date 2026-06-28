@@ -54,7 +54,7 @@ class ConfluenceSearchAgent(
         }
 
         log.info("Searching: query='{}' → cleaned='{}', synonyms={}, spaces={}, dateAfter={}, dateBefore={}",
-            query, cleaned, synonyms, spaces, dateAfter, dateBefore)
+            query, cleaned, synonyms, effectiveSpaces, dateAfter, dateBefore)
 
         // 1단계: 설정 스페이스에서 제목 검색 (re-rank 여유분을 위해 topK*2 fetch)
         val titleFetchLimit = topK * 2

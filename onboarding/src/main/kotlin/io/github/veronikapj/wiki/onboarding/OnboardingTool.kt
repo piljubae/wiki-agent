@@ -39,8 +39,8 @@ class OnboardingTool(
             ?.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.pageId
     }
 
-    /** 온보딩 SSOT 스페이스 (curriculum.yaml의 최상위 space 필드) */
-    private val onboardingSpace: String? by lazy { curriculum?.space }
+    /** 온보딩 SSOT 스페이스 (curriculum.yaml의 최상위 space 필드). 빈 문자열은 미설정으로 취급. */
+    private val onboardingSpace: String? by lazy { curriculum?.space?.takeIf { it.isNotBlank() } }
 
     private val gatherer: ContentGatherer by lazy {
         ContentGatherer(
