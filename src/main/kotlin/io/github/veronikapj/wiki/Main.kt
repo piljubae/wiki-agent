@@ -330,6 +330,11 @@ fun main() {
         projectMemory = projectMemory,
         userPersonaStore = userPersonaStore,
         defaultPersona = config.persona,
+        queryDecomposer = io.github.veronikapj.wiki.agent.QueryDecomposer(
+            io.github.veronikapj.wiki.agent.LLMCaller { p ->
+                routerExecutor.execute(prompt("decompose") { user(p) }, routerModel).joinToString("") { it.content }
+            }
+        ),
     )
 
     // 공유 백그라운드 스코프 (polling + webhook 공용)

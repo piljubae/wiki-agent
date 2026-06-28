@@ -52,6 +52,7 @@ class OrchestratorAgent(
     private val projectMemory: ProjectMemory? = null,
     private val userPersonaStore: io.github.veronikapj.wiki.slack.UserPersonaStore? = null,
     private val defaultPersona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
+    private val queryDecomposer: QueryDecomposer? = null,
 ) {
     init {
         require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || prHistoryTool != null || codeSearchTool != null || codeFlowTool != null) {
@@ -122,19 +123,57 @@ class OrchestratorAgent(
 
         val memory = projectMemory?.load()
 
-        // 1~2단계: 라우팅 + 검색 (routeAndRetrieve로 추출)
-        val result = routeAndRetrieve(
-            subQuestion = question,
-            contextHistory = contextHistory,
-            memory = memory,
-            availableTools = availableTools,
-            listener = listener,
-            forceTool = forceTool,
-            forceAllTools = forceAllTools,
-            userId = userId,
-        )
-        val toolName: String? = result.toolName
-        val searchResult: String? = result.searchResult
+        // 0단계: 복합 질문 분해 (분해기 미주입 시 원본 1개 → 기존 단일 경로와 동일)
+        val contextText = contextHistory.takeLast(3)
+            .joinToString("\n") { "Q: ${it.question} A: ${it.answer.take(120)}" }
+        val subQuestions = queryDecomposer
+            ?.decompose(question, contextText)
+            ?.distinct()
+            ?: listOf(question)
+
+        // 1~2단계: 라우팅 + 검색 (routeAndRetrieve로 추출). 복합이면 sub-question별 병렬 실행.
+        val steps: List<StepResult> = if (subQuestions.size <= 1) {
+            listOf(
+                routeAndRetrieve(
+                    subQuestion = subQuestions.firstOrNull() ?: question,
+                    contextHistory = contextHistory,
+                    memory = memory,
+                    availableTools = availableTools,
+                    listener = listener,
+                    forceTool = forceTool,
+                    forceAllTools = forceAllTools,
+                    userId = userId,
+                )
+            )
+        } else {
+            coroutineScope {
+                subQuestions.map { sq ->
+                    async {
+                        runCatching {
+                            routeAndRetrieve(
+                                subQuestion = sq,
+                                contextHistory = contextHistory,
+                                memory = memory,
+                                availableTools = availableTools,
+                                listener = listener,
+                                forceTool = forceTool,
+                                forceAllTools = forceAllTools,
+                                userId = userId,
+                            )
+                        }.getOrElse { StepResult(sq, "error", null) }
+                    }
+                }.map { it.await() }
+            }
+        }
+
+        val isCompound = steps.size > 1
+        // 단일 질문일 때만 특수 tool(none/progressAdvisor/onboarding) 위임이 가능.
+        // 복합일 때 특수 tool step은 searchResult=null인 "못 찾음" 섹션으로 흡수된다.
+        val toolName: String? = if (isCompound) "confluenceSearch" else steps.first().toolName
+        val searchResult: String? = run {
+            val block = buildSectionedResultBlock(steps)
+            block.takeIf { steps.any { s -> s.searchResult != null } }
+        }
 
         // none: 인사·잡담·소프트챗 → LLM이 자유롭게 대화 (검색 없이)
         if (toolName == "none") {
@@ -247,6 +286,10 @@ class OrchestratorAgent(
                 appendLine(searchResult)
                 appendLine()
                 appendLine("위 검색 결과만을 바탕으로 답변하세요.")
+                if (isCompound) {
+                    appendLine("위 결과는 질문을 여러 하위 항목으로 나눠 검색한 것입니다.")
+                    appendLine("각 하위 항목을 소제목으로 구분해 답하고, 같은 문서가 여러 항목에 나오면 한 번만 인용하세요.")
+                }
                 appendLine()
                 appendLine(buildAnswerGuidelines(verbose = true))
             } else {
