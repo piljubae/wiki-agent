@@ -250,6 +250,7 @@ phases:
         // C 레벨 → step-1 스킵, step-2부터. 가이드 생성 시 깊이 지시 포함
         tool.handle(userId, "C, A, A")
 
+        assertTrue(promptSlot.isCaptured, "executor.execute()가 한 번도 호출되지 않았습니다 — 가이드 생성이 이 handle() 호출에서 발생하지 않습니다")
         val sentText = promptSlot.captured.messages.joinToString(" ") { it.content }
         assertTrue(sentText.contains("숙련자"), "C 레벨이면 숙련자 깊이 지시가 포함되어야 합니다. 실제: $sentText")
     }
