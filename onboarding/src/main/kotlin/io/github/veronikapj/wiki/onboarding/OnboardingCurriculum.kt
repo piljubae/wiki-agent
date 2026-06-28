@@ -10,6 +10,7 @@ import java.io.File
 @Serializable
 data class OnboardingCurriculum(
     val lastUpdated: String,
+    val space: String? = null,
     val phases: List<CurriculumStep>,
 )
 
