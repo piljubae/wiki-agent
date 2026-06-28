@@ -3,12 +3,14 @@ package io.github.veronikapj.wiki.search.tool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
+import io.github.veronikapj.wiki.search.QueryUnderstanding
 import io.github.veronikapj.wiki.search.SearchResult
 import kotlinx.coroutines.runBlocking
 
 class ConfluenceTool(
     private val searchAgent: ConfluenceSearchAgent,
     private val tracker: SourceTracker? = null,
+    private val queryUnderstanding: QueryUnderstanding? = null,
 ) {
 
     @Tool("confluenceSearch")
@@ -18,7 +20,20 @@ class ConfluenceTool(
         query: String,
     ): String = runBlocking {
         tracker?.record("Confluence")
-        searchAgent.search(query)
+        val u = queryUnderstanding
+        if (u == null) {
+            searchAgent.search(query)
+        } else {
+            val understood = u.understand(query)
+            searchAgent.search(
+                understood.cleanedQuery,
+                understood.synonyms,
+                5,
+                understood.dateAfter,
+                understood.dateBefore,
+                query,
+            )
+        }
     }
 
     /** 온보딩 등 스페이스 한정이 필요한 호출용 — 확장·global fallback 없이 구조화 결과 반환.
