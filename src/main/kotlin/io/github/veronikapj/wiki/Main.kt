@@ -9,6 +9,7 @@ import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.search.GitHubWikiSearchAgent
 import io.github.veronikapj.wiki.agent.OrchestratorAgent
 import io.github.veronikapj.wiki.github.GitHubWikiClient
+import io.github.veronikapj.wiki.search.QueryUnderstanding
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.github.veronikapj.wiki.search.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.search.tool.SourceTracker
@@ -156,7 +157,10 @@ fun main() {
             confluenceClient = confluenceClient,
             spaces = config.confluence.spaces,
         )
-        confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker)
+        val queryUnderstanding = QueryUnderstanding { p ->
+            routerExecutor.execute(prompt("qu") { user(p) }, routerModel).joinToString("") { it.content }
+        }
+        confluenceTool = ConfluenceTool(confluenceSearchAgent, sourceTracker, queryUnderstanding)
     }
 
     // GitHub
@@ -326,6 +330,11 @@ fun main() {
         projectMemory = projectMemory,
         userPersonaStore = userPersonaStore,
         defaultPersona = config.persona,
+        queryDecomposer = io.github.veronikapj.wiki.agent.QueryDecomposer(
+            io.github.veronikapj.wiki.agent.LLMCaller { p ->
+                routerExecutor.execute(prompt("decompose") { user(p) }, routerModel).joinToString("") { it.content }
+            }
+        ),
     )
 
     // 공유 백그라운드 스코프 (polling + webhook 공용)

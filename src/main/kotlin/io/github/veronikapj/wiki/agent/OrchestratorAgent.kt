@@ -52,6 +52,7 @@ class OrchestratorAgent(
     private val projectMemory: ProjectMemory? = null,
     private val userPersonaStore: io.github.veronikapj.wiki.slack.UserPersonaStore? = null,
     private val defaultPersona: io.github.veronikapj.wiki.config.PersonaType = io.github.veronikapj.wiki.config.PersonaType.DEFAULT,
+    private val queryDecomposer: QueryDecomposer? = null,
 ) {
     init {
         require(knowledgeTool != null || confluenceTool != null || githubWikiTool != null || prHistoryTool != null || codeSearchTool != null || codeFlowTool != null) {
@@ -118,10 +119,226 @@ class OrchestratorAgent(
             personalDataTool?.let { "personalGoalQuery" },
             progressAdvisorTool?.let { "progressAdvisor" },
         )
-        val routerModel = this.routerModel      // for routing call
         val model = this.routerModel           // for answer generation calls (use routerModel for cost)
 
         val memory = projectMemory?.load()
+
+        // 0단계: 복합 질문 분해 (분해기 미주입 시 원본 1개 → 기존 단일 경로와 동일)
+        val contextText = contextHistory.takeLast(3)
+            .joinToString("\n") { "Q: ${it.question} A: ${it.answer.take(120)}" }
+        val subQuestions = queryDecomposer
+            ?.decompose(question, contextText)
+            ?.distinct()
+            ?: listOf(question)
+
+        // 1~2단계: 라우팅 + 검색 (routeAndRetrieve로 추출). 복합이면 sub-question별 병렬 실행.
+        val steps: List<StepResult> = if (subQuestions.size <= 1) {
+            listOf(
+                routeAndRetrieve(
+                    subQuestion = subQuestions.firstOrNull() ?: question,
+                    contextHistory = contextHistory,
+                    memory = memory,
+                    availableTools = availableTools,
+                    listener = listener,
+                    forceTool = forceTool,
+                    forceAllTools = forceAllTools,
+                    userId = userId,
+                )
+            )
+        } else {
+            coroutineScope {
+                subQuestions.map { sq ->
+                    async {
+                        runCatching {
+                            routeAndRetrieve(
+                                subQuestion = sq,
+                                contextHistory = contextHistory,
+                                memory = memory,
+                                availableTools = availableTools,
+                                listener = listener,
+                                forceTool = forceTool,
+                                forceAllTools = forceAllTools,
+                                userId = userId,
+                            )
+                        }.getOrElse { StepResult(sq, "error", null) }
+                    }
+                }.map { it.await() }
+            }
+        }
+
+        val isCompound = steps.size > 1
+        // 단일 질문일 때만 특수 tool(none/progressAdvisor/onboarding) 위임이 가능.
+        // 복합일 때 특수 tool step은 searchResult=null인 "못 찾음" 섹션으로 흡수된다.
+        val toolName: String? = if (isCompound) "confluenceSearch" else steps.first().toolName
+        // 단일 질문: 피처 도입 전과 동일하게 bare searchResult 그대로 사용 (섹션 라벨 없음).
+        // 복합 질문: sub-question 라벨 섹션으로 묶어 요약 프롬프트에 전달.
+        val searchResult: String? = if (!isCompound) {
+            steps.first().searchResult
+        } else {
+            val block = buildSectionedResultBlock(steps)
+            block.takeIf { steps.any { s -> s.searchResult != null } }
+        }
+
+        // none: 인사·잡담·소프트챗 → LLM이 자유롭게 대화 (검색 없이)
+        if (toolName == "none") {
+            val chatPrompt = buildString {
+                if (basePersona.isNotBlank()) appendLine(basePersona)
+                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다. 짧고 친근하게 답변하세요.")
+                appendLine("단, 내부 코드·문서·시스템 정보는 모르는 척하세요 (검색 없이는 알 수 없습니다).")
+                appendLine()
+                if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
+                appendLine()
+                if (contextHistory.isNotEmpty()) {
+                    appendLine("이전 대화:")
+                    contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(150)}") }
+                    appendLine()
+                }
+                appendLine("사용자: $question")
+            }
+            val noneAnswer = executor.execute(
+                prompt("chat") { user(chatPrompt) }, model
+            ).joinToString("") { it.content }.trim()
+
+            if (sessionId != null && conversationStore != null) {
+                conversationStore.append(sessionId, question, noneAnswer)
+            } else {
+                history.addLast(question to noneAnswer)
+                if (history.size > 5) history.removeFirst()
+            }
+            return AnswerResult(noneAnswer, "MANUAL", false)
+        }
+
+        // progressAdvisor: LLM 코칭 결과를 직접 반환 (summaryPrompt 경유 안 함)
+        if (toolName == "progressAdvisor" && progressAdvisorTool != null) {
+            listener?.onSearchStarted("progressAdvisor")
+            val advisorAnswer = runCatching { progressAdvisorTool!!.advise(userId ?: "", question) }
+                .getOrElse { e ->
+                    log.error("ProgressAdvisor failed: {}", e.message)
+                    "코칭 피드백 생성 중 오류가 발생했습니다: ${e.message}"
+                }
+            listener?.onSearchCompleted("progressAdvisor")
+
+            if (sessionId != null && conversationStore != null) {
+                conversationStore.append(sessionId, question, advisorAnswer)
+            } else {
+                history.addLast(question to advisorAnswer)
+                if (history.size > 5) history.removeFirst()
+            }
+            return AnswerResult(advisorAnswer, "MANUAL", false)
+        }
+
+        // onboarding: 온보딩 가이드 결과를 직접 반환 (summaryPrompt 경유 안 함)
+        if (toolName == "onboarding" && onboardingTool == null) {
+            log.warn("forceTool=onboarding but onboardingTool is null")
+            return AnswerResult("온보딩 기능이 현재 비활성화되어 있습니다.", "MANUAL", false)
+        }
+        if (toolName == "onboarding" && onboardingTool != null) {
+            listener?.onSearchStarted("onboarding")
+            val conversationContext = if (sessionId != null && conversationStore != null) {
+                conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
+            } else ""
+
+            val onboardingAnswer = runCatching {
+                onboardingTool!!.handle(userId ?: "", question, conversationContext)
+            }.getOrElse { e ->
+                log.error("Onboarding failed: {}", e.message)
+                "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"
+            }
+            listener?.onSearchCompleted("onboarding")
+
+            if (sessionId != null && conversationStore != null) {
+                conversationStore.append(sessionId, question, onboardingAnswer)
+            } else {
+                history.addLast(question to onboardingAnswer)
+                if (history.size > 5) history.removeFirst()
+            }
+            return AnswerResult(onboardingAnswer, "MANUAL", false)
+        }
+
+        // 3단계: 검색 결과 + 히스토리로 최종 답변
+        val summaryPrompt = buildString {
+            val (roleDesc, notFoundMsg) = when {
+                toolName in setOf("codeSearch", "codeStats", "findCallers", "traceChain", "findImpact") ->
+                    "소스코드 검색 봇입니다. 아래 코드 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 코드를 찾지 못했습니다"
+                toolName in setOf("prHistory", "prHistory+codeSearch") ->
+                    "PR 이력 검색 봇입니다. 아래 PR/코드 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 PR 이력을 찾지 못했습니다"
+                else ->
+                    "회사 내부 위키 검색 봇입니다. 아래 검색 결과만을 바탕으로 질문에 답변하세요." to
+                    "관련 문서를 찾지 못했습니다"
+            }
+            appendLine(roleDesc)
+            appendLine("검색 결과와 무관한 내용은 '$notFoundMsg'로 안내하세요.")
+            appendLine()
+            if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
+            appendLine()
+            memory?.let {
+                appendLine("프로젝트 정보:")
+                appendLine(it)
+                appendLine()
+            }
+            if (contextHistory.isNotEmpty()) {
+                appendLine("이전 대화:")
+                contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(200)}...") }
+                appendLine()
+            }
+            appendLine("질문: $question")
+            appendLine()
+            if (searchResult != null) {
+                appendLine("검색 결과:")
+                appendLine(searchResult)
+                appendLine()
+                appendLine("위 검색 결과만을 바탕으로 답변하세요.")
+                if (isCompound) {
+                    appendLine("위 결과는 질문을 여러 하위 항목으로 나눠 검색한 것입니다.")
+                    appendLine("각 하위 항목을 소제목으로 구분해 답하고, 같은 문서가 여러 항목에 나오면 한 번만 인용하세요.")
+                }
+                appendLine()
+                appendLine(buildAnswerGuidelines(verbose = true))
+            } else {
+                appendLine("검색 결과가 없습니다. 아래 형식으로 안내하세요:")
+                appendLine("1. '$notFoundMsg'로 시작")
+                appendLine("2. 질문 유형별 재시도 팁 제공:")
+                appendLine("   - 코드 위치: '함수명/클래스명 어디있어?' 형태로 질문")
+                appendLine("   - PR 이력: 'KMA-XXXX 무슨 작업이야?' 형태로 질문")
+                appendLine("   - Confluence 문서: 수식어 빼고 핵심 주제어만 간결하게 질문")
+            }
+        }
+
+        val answer = executor.execute(
+            prompt("summary") { user(summaryPrompt) }, model
+        ).joinToString("") { it.content }
+
+        if (sessionId != null && conversationStore != null) {
+            conversationStore.append(sessionId, question, answer)
+            val summarizer: suspend (String) -> String = { p ->
+                executor.execute(prompt("compress") { user(p) }, model).joinToString("") { it.content }
+            }
+            conversationStore.compress(sessionId, summarizer)
+        } else {
+            history.addLast(question to answer)
+            if (history.size > 5) history.removeFirst()
+        }
+
+        return AnswerResult(answer, "MANUAL", searchResult != null)
+    }
+
+    /**
+     * 질문 1개 → 라우팅 + 검색결과 문자열. 동작 불변 추출 (W2 준비).
+     * 특수 tool(none/progressAdvisor/onboarding)이면 검색 없이 StepResult(_, toolName, null) 반환.
+     */
+    private suspend fun routeAndRetrieve(
+        subQuestion: String,
+        contextHistory: List<Turn>,
+        memory: String?,
+        availableTools: List<String>,
+        listener: SearchProgressListener?,
+        forceTool: String?,
+        forceAllTools: Boolean,
+        userId: String?,
+    ): StepResult {
+        val routerModel = this.routerModel      // for routing call
 
         // 1단계: 검색어 결정 (항상 검색 — 예외 없음)
         val decisionPrompt = buildString {
@@ -246,12 +463,12 @@ class OrchestratorAgent(
             appendLine("- 최신/최근 의도 (예: \"최근 변경된\", \"지난주 업데이트된\"): DATE_AFTER 사용")
             appendLine("- 기간 범위 (예: \"3월~4월 사이\"): DATE_AFTER + DATE_BEFORE 모두 사용")
             appendLine()
-            appendLine("질문: $question")
+            appendLine("질문: $subQuestion")
         }
 
         // 키워드 프리라우팅: LLM 라우터 호출 없이 빠르게 매칭
         val preRoutedTool = if (forceTool == null) {
-            val q = question.trim()
+            val q = subQuestion.trim()
             val ql = q.lowercase()
             when {
                 // 코칭 키워드
@@ -271,7 +488,7 @@ class OrchestratorAgent(
         val effectiveForceTool = forceTool ?: preRoutedTool
         val decision = if (effectiveForceTool != null) {
             log.info("Forced tool: {} — skipping router", effectiveForceTool)
-            "TOOL: $effectiveForceTool\nQUERY: $question\nSYNONYMS:"
+            "TOOL: $effectiveForceTool\nQUERY: $subQuestion\nSYNONYMS:"
         } else try {
             routerExecutor.execute(
                 prompt("decision") { user(decisionPrompt) }, routerModel
@@ -308,7 +525,7 @@ class OrchestratorAgent(
             log.info("Refusal pattern detected, treating as none")
         }
 
-        val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: question
+        val query = Regex("QUERY:\\s*(.+)").find(decision)?.groupValues?.get(1)?.trim() ?: subQuestion
         val parsedSynonyms = Regex("SYNONYMS:\\s*(.+)").find(decision)?.groupValues?.get(1)
             ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
         // 라우터가 SYNONYMS를 비워서 반환한 경우 → query 단어에서 자동 생성 (개별 키워드가 CQL OR 절로 추가됨)
@@ -322,80 +539,9 @@ class OrchestratorAgent(
 
         log.info("Parsed: tool={} query={}", toolName ?: "null→fallback", query.take(60))
 
-        // none: 인사·잡담·소프트챗 → LLM이 자유롭게 대화 (검색 없이)
-        if (toolName == "none") {
-            val chatPrompt = buildString {
-                if (basePersona.isNotBlank()) appendLine(basePersona)
-                appendLine("지금은 업무와 무관한 가벼운 대화 상황입니다. 짧고 친근하게 답변하세요.")
-                appendLine("단, 내부 코드·문서·시스템 정보는 모르는 척하세요 (검색 없이는 알 수 없습니다).")
-                appendLine()
-                if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
-                appendLine()
-                if (contextHistory.isNotEmpty()) {
-                    appendLine("이전 대화:")
-                    contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(150)}") }
-                    appendLine()
-                }
-                appendLine("사용자: $question")
-            }
-            val noneAnswer = executor.execute(
-                prompt("chat") { user(chatPrompt) }, model
-            ).joinToString("") { it.content }.trim()
-
-            if (sessionId != null && conversationStore != null) {
-                conversationStore.append(sessionId, question, noneAnswer)
-            } else {
-                history.addLast(question to noneAnswer)
-                if (history.size > 5) history.removeFirst()
-            }
-            return AnswerResult(noneAnswer, "MANUAL", false)
-        }
-
-        // progressAdvisor: LLM 코칭 결과를 직접 반환 (summaryPrompt 경유 안 함)
-        if (toolName == "progressAdvisor" && progressAdvisorTool != null) {
-            listener?.onSearchStarted("progressAdvisor")
-            val advisorAnswer = runCatching { progressAdvisorTool!!.advise(userId ?: "", question) }
-                .getOrElse { e ->
-                    log.error("ProgressAdvisor failed: {}", e.message)
-                    "코칭 피드백 생성 중 오류가 발생했습니다: ${e.message}"
-                }
-            listener?.onSearchCompleted("progressAdvisor")
-
-            if (sessionId != null && conversationStore != null) {
-                conversationStore.append(sessionId, question, advisorAnswer)
-            } else {
-                history.addLast(question to advisorAnswer)
-                if (history.size > 5) history.removeFirst()
-            }
-            return AnswerResult(advisorAnswer, "MANUAL", false)
-        }
-
-        // onboarding: 온보딩 가이드 결과를 직접 반환 (summaryPrompt 경유 안 함)
-        if (toolName == "onboarding" && onboardingTool == null) {
-            log.warn("forceTool=onboarding but onboardingTool is null")
-            return AnswerResult("온보딩 기능이 현재 비활성화되어 있습니다.", "MANUAL", false)
-        }
-        if (toolName == "onboarding" && onboardingTool != null) {
-            listener?.onSearchStarted("onboarding")
-            val conversationContext = if (sessionId != null && conversationStore != null) {
-                conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
-            } else ""
-
-            val onboardingAnswer = runCatching {
-                onboardingTool!!.handle(userId ?: "", question, conversationContext)
-            }.getOrElse { e ->
-                log.error("Onboarding failed: {}", e.message)
-                "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"
-            }
-            listener?.onSearchCompleted("onboarding")
-
-            if (sessionId != null && conversationStore != null) {
-                conversationStore.append(sessionId, question, onboardingAnswer)
-            } else {
-                history.addLast(question to onboardingAnswer)
-                if (history.size > 5) history.removeFirst()
-            }
-            return AnswerResult(onboardingAnswer, "MANUAL", false)
+        // 특수 tool(none/progressAdvisor/onboarding)은 검색 없이 호출자가 직접 처리 → 검색 생략
+        if (toolName in setOf("none", "progressAdvisor", "onboarding")) {
+            return StepResult(subQuestion, toolName ?: "none", null)
         }
 
         val searchLabel = if (toolName == "githubWikiSearch") "githubWikiSearch" else "combinedSearch"
@@ -409,7 +555,7 @@ class OrchestratorAgent(
             toolName == "prHistory+codeSearch" ->
                 runCatching { executeCodeParallel(query) }.getOrNull()
             toolName == "confluenceSearch+codeSearch" ->
-                runCatching { executeConfluenceCodeParallel(query, synonyms, dateAfter, dateBefore, question) }.getOrNull()
+                runCatching { executeConfluenceCodeParallel(query, synonyms, dateAfter, dateBefore, subQuestion) }.getOrNull()
             toolName == "prHistory" && prHistoryTool != null -> {
                 val tool = prHistoryTool
                 runCatching { tool.prHistory(query) }.getOrNull()
@@ -439,7 +585,7 @@ class OrchestratorAgent(
             toolName == "personalGoalQuery" && personalDataTool != null ->
                 runCatching { personalDataTool!!.queryGoal(query, userId ?: "") }.getOrNull()
             else ->
-                runCatching { executeParallel(query, synonyms, dateAfter, dateBefore, question) }.getOrNull()
+                runCatching { executeParallel(query, synonyms, dateAfter, dateBefore, subQuestion) }.getOrNull()
         }
 
         listener?.onSearchCompleted(searchLabel)
@@ -448,74 +594,12 @@ class OrchestratorAgent(
 
         // Final fallback: 모든 도구로 원본 질문 검색
         if (searchResult == null) {
-            searchResult = runCatching { executeDefault(question, availableTools) }.getOrNull()
+            searchResult = runCatching { executeDefault(subQuestion, availableTools) }.getOrNull()
         }
 
         log.info("Search result: {}", searchResult?.take(100) ?: "none")
 
-        // 3단계: 검색 결과 + 히스토리로 최종 답변
-        val summaryPrompt = buildString {
-            val (roleDesc, notFoundMsg) = when {
-                toolName in setOf("codeSearch", "codeStats", "findCallers", "traceChain", "findImpact") ->
-                    "소스코드 검색 봇입니다. 아래 코드 검색 결과만을 바탕으로 질문에 답변하세요." to
-                    "관련 코드를 찾지 못했습니다"
-                toolName in setOf("prHistory", "prHistory+codeSearch") ->
-                    "PR 이력 검색 봇입니다. 아래 PR/코드 검색 결과만을 바탕으로 질문에 답변하세요." to
-                    "관련 PR 이력을 찾지 못했습니다"
-                else ->
-                    "회사 내부 위키 검색 봇입니다. 아래 검색 결과만을 바탕으로 질문에 답변하세요." to
-                    "관련 문서를 찾지 못했습니다"
-            }
-            appendLine(roleDesc)
-            appendLine("검색 결과와 무관한 내용은 '$notFoundMsg'로 안내하세요.")
-            appendLine()
-            if (effectivePersona.isNotBlank()) appendLine(effectivePersona)
-            appendLine()
-            memory?.let {
-                appendLine("프로젝트 정보:")
-                appendLine(it)
-                appendLine()
-            }
-            if (contextHistory.isNotEmpty()) {
-                appendLine("이전 대화:")
-                contextHistory.forEach { t -> appendLine("Q: ${t.question}\nA: ${t.answer.take(200)}...") }
-                appendLine()
-            }
-            appendLine("질문: $question")
-            appendLine()
-            if (searchResult != null) {
-                appendLine("검색 결과:")
-                appendLine(searchResult)
-                appendLine()
-                appendLine("위 검색 결과만을 바탕으로 답변하세요.")
-                appendLine()
-                appendLine(buildAnswerGuidelines(verbose = true))
-            } else {
-                appendLine("검색 결과가 없습니다. 아래 형식으로 안내하세요:")
-                appendLine("1. '$notFoundMsg'로 시작")
-                appendLine("2. 질문 유형별 재시도 팁 제공:")
-                appendLine("   - 코드 위치: '함수명/클래스명 어디있어?' 형태로 질문")
-                appendLine("   - PR 이력: 'KMA-XXXX 무슨 작업이야?' 형태로 질문")
-                appendLine("   - Confluence 문서: 수식어 빼고 핵심 주제어만 간결하게 질문")
-            }
-        }
-
-        val answer = executor.execute(
-            prompt("summary") { user(summaryPrompt) }, model
-        ).joinToString("") { it.content }
-
-        if (sessionId != null && conversationStore != null) {
-            conversationStore.append(sessionId, question, answer)
-            val summarizer: suspend (String) -> String = { p ->
-                executor.execute(prompt("compress") { user(p) }, model).joinToString("") { it.content }
-            }
-            conversationStore.compress(sessionId, summarizer)
-        } else {
-            history.addLast(question to answer)
-            if (history.size > 5) history.removeFirst()
-        }
-
-        return AnswerResult(answer, "MANUAL", searchResult != null)
+        return StepResult(subQuestion, toolName ?: "fallback", searchResult)
     }
 
     internal suspend fun executeParallel(
