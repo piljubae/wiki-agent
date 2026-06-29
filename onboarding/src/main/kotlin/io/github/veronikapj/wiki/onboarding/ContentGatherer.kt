@@ -4,6 +4,7 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.PrHistoryTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -21,12 +22,14 @@ internal class ContentGatherer(
     private val codeRepo: String?,
     private val codeBranch: String,
     private val wikiPageId: String?,
+    private val prHistoryTool: PrHistoryTool? = null,
 ) {
     private val log = LoggerFactory.getLogger(ContentGatherer::class.java)
 
     enum class Provenance(val emoji: String, val display: String) {
         WIKI("📄", "위키"),
         CODE("💻", "코드"),
+        PR("🔀", "PR 이력"),
         CONFLUENCE("🔗", "연관문서"),
         GITHUB_FILE("📁", "소스파일"),
     }
@@ -57,24 +60,32 @@ internal class ContentGatherer(
 
     // ── 질문 라이브 검색 ──
 
-    fun gatherForQuestion(question: String, step: CurriculumStep?): List<GatheredContent> {
+    fun gatherForQuestion(question: String, step: CurriculumStep?, includeDeep: Boolean = false): List<GatheredContent> {
         val out = mutableListOf<GatheredContent>()
 
-        // 현재 단계의 위키 섹션(맥락)
+        // Tier 1: 현재 단계의 위키 섹션 (맥락)
         if (step != null) {
             step.sources.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.let { src ->
                 runCatching { wikiSection(src) }.getOrNull()?.let { out += it }
             }
         }
-        runBlocking {
-            val codeDeferred = async(Dispatchers.IO) {
-                runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
+
+        // Tier 2: 코드 + PR + 추가 Confluence (사용자가 더 파고들 때만)
+        if (includeDeep) {
+            runBlocking {
+                val codeDeferred = async(Dispatchers.IO) {
+                    runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
+                }
+                val prDeferred = async(Dispatchers.IO) {
+                    runCatching { prContent(question) }.onFailure { log.warn("question prHistory failed: {}", it.message) }.getOrNull()
+                }
+                val confDeferred = async(Dispatchers.IO) {
+                    runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()
+                }
+                codeDeferred.await()?.let { out += it }
+                prDeferred.await()?.let { out += it }
+                confDeferred.await()?.let { out += it }
             }
-            val confDeferred = async(Dispatchers.IO) {
-                runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()
-            }
-            codeDeferred.await()?.let { out += it }
-            confDeferred.await()?.let { out += it }
         }
         return out
     }
@@ -93,6 +104,14 @@ internal class ContentGatherer(
         val text = confluenceTool.confluenceSearch(q)
         if (text.isBlank()) return null
         return GatheredContent(q, Provenance.CONFLUENCE, text.truncated())
+    }
+
+    private fun prContent(query: String?): GatheredContent? {
+        val tool = prHistoryTool ?: return null
+        val q = query?.takeIf { it.isNotBlank() } ?: return null
+        val text = tool.prHistory(q)
+        if (text.isBlank()) return null
+        return GatheredContent(q, Provenance.PR, text.truncated())
     }
 
     private fun fileContent(source: ContentSource): GatheredContent? {
