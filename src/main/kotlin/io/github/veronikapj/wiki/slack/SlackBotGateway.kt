@@ -739,7 +739,7 @@ class SlackBotGateway(
             }
 
             val forcedTool = threadForcedTool[threadTs]
-                ?: if (userId != null && OnboardingSessionStore.isActive(userId)) "onboarding" else null
+                ?: if (userId != null && OnboardingSessionStore.isActiveInThread(userId, threadTs)) "onboarding" else null
             if (!handleAssistantQueryAsync(channel, threadTs, query, forcedTool, userId = userId)) {
                 slackClient.chatPostMessage { it.channel(channel).threadTs(threadTs).text("요청이 많아 잠시 후 다시 시도해주세요.") }
             }

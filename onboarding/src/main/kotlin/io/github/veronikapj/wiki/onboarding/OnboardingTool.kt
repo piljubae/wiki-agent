@@ -110,14 +110,14 @@ class OnboardingTool(
 
     // ── Main entry point ──
 
-    fun handle(userId: String, message: String, conversationContext: String = ""): String {
+    fun handle(userId: String, message: String, conversationContext: String = "", threadTs: String = ""): String {
         tracker?.record("Onboarding")
         val intent = classifyIntent(message)
         log.info("Onboarding intent for user={}: {} (message={})", userId, intent, message.take(50))
 
         return when (intent) {
             Intent.START -> handleStart(userId)
-            Intent.LEVEL_RESPONSE -> handleLevelResponse(userId, message)
+            Intent.LEVEL_RESPONSE -> handleLevelResponse(userId, message, threadTs)
             Intent.NEXT -> handleNext(userId)
             Intent.SKIP -> handleSkip(userId)
             Intent.PROGRESS -> handleProgress(userId)
@@ -149,7 +149,7 @@ class OnboardingTool(
         return handleStart(userId)
     }
 
-    private fun handleLevelResponse(userId: String, message: String): String {
+    private fun handleLevelResponse(userId: String, message: String, threadTs: String): String {
         val cur = curriculum ?: return "커리큘럼 파일을 불러올 수 없습니다. ($curriculumPath)"
 
         val level = parseLevelResponse(message.trim())
@@ -158,7 +158,7 @@ class OnboardingTool(
         val steps = buildStepsForLevel(level)
         if (steps.isEmpty()) return "커리큘럼에 단계가 없습니다."
 
-        val session = OnboardingSessionStore.create(userId, level, steps)
+        val session = OnboardingSessionStore.create(userId, level, steps, threadTs)
         val firstStep = cur.phases.firstOrNull { it.id == session.currentStepId }
             ?: return "첫 번째 단계를 찾을 수 없습니다."
 

@@ -43,6 +43,7 @@ data class OnboardingSession(
     val currentStepId: String?,
     val steps: List<StepStatus>,
     val memos: List<String>,
+    val threadTs: String = "",
 )
 
 object OnboardingSessionStore {
@@ -87,6 +88,7 @@ object OnboardingSessionStore {
         userId: String,
         level: UserLevel?,
         steps: List<StepStatus>,
+        threadTs: String = "",
     ): OnboardingSession {
         val currentStepId = steps.firstOrNull { it.status == StepStatusType.PENDING }?.id
         val session = OnboardingSession(
@@ -96,6 +98,7 @@ object OnboardingSessionStore {
             currentStepId = currentStepId,
             steps = steps,
             memos = emptyList(),
+            threadTs = threadTs,
         )
         save(session)
         return session
@@ -155,6 +158,12 @@ object OnboardingSessionStore {
         return session.currentStepId != null
     }
 
+    /** 진행 중 세션이 해당 스레드에서 시작된 것일 때만 true. 새 스레드가 온보딩으로 강제되는 것을 막는다. */
+    fun isActiveInThread(userId: String, threadTs: String): Boolean {
+        val session = load(userId) ?: return false
+        return session.currentStepId != null && session.threadTs.isNotBlank() && session.threadTs == threadTs
+    }
+
     // ── MD serialization ──
     // Step lines: - [marker] name [id|phase] (date) ← 현재
     // Single-line memos only.
@@ -171,6 +180,7 @@ object OnboardingSessionStore {
             appendLine("- 도메인: ${session.level.domain}")
         }
         appendLine("- 시작일: ${session.startedAt}")
+        if (session.threadTs.isNotBlank()) appendLine("- 스레드: ${session.threadTs}")
         appendLine()
 
         // Progress section
@@ -200,6 +210,7 @@ object OnboardingSessionStore {
         var compose: String? = null
         var domain: String? = null
         var startedAt: String? = null
+        var threadTs = ""
         var currentStepId: String? = null
         val steps = mutableListOf<StepStatus>()
         val memos = mutableListOf<String>()
@@ -220,6 +231,7 @@ object OnboardingSessionStore {
                     if (trimmed.startsWith("- Compose:")) compose = trimmed.substringAfter("- Compose:").trim()
                     if (trimmed.startsWith("- 도메인:")) domain = trimmed.substringAfter("- 도메인:").trim()
                     if (trimmed.startsWith("- 시작일:")) startedAt = trimmed.substringAfter("- 시작일:").trim()
+                    if (trimmed.startsWith("- 스레드:")) threadTs = trimmed.substringAfter("- 스레드:").trim()
                 }
                 "진행 현황" -> {
                     val stepMatch = STEP_PATTERN.matchEntire(trimmed) ?: continue
@@ -263,6 +275,7 @@ object OnboardingSessionStore {
             currentStepId = currentStepId,
             steps = steps,
             memos = memos,
+            threadTs = threadTs,
         )
     }
 
