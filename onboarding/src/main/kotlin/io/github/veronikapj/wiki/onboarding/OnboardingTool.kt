@@ -8,6 +8,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.PrHistoryTool
 import io.github.veronikapj.wiki.search.tool.SourceTracker
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
@@ -26,6 +27,7 @@ class OnboardingTool(
     private val codeRepo: String? = null,
     private val codeBranch: String = "develop",
     private val tracker: SourceTracker? = null,
+    private val prHistoryTool: PrHistoryTool? = null,
 ) {
     private val log = LoggerFactory.getLogger(OnboardingTool::class.java)
 
@@ -48,6 +50,7 @@ class OnboardingTool(
             codeRepo = codeRepo,
             codeBranch = codeBranch,
             wikiPageId = wikiPageId,
+            prHistoryTool = prHistoryTool,
         )
     }
 
@@ -56,6 +59,9 @@ class OnboardingTool(
     private enum class Intent {
         START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, JUMP, RESET, QUESTION
     }
+
+    private fun wantsDeepDive(message: String): Boolean =
+        DEEP_DIVE_KEYWORDS.any { message.contains(it, ignoreCase = true) }
 
     private fun classifyIntent(message: String): Intent {
         val trimmed = message.trim()
@@ -222,7 +228,8 @@ class OnboardingTool(
             cur.phases.firstOrNull { it.id == session.currentStepId }
         } else null
 
-        val gathered = gatherer.gatherForQuestion(message, currentStep)
+        val deep = wantsDeepDive(message)
+        val gathered = gatherer.gatherForQuestion(message, currentStep, includeDeep = deep)
         val contentBlock = ContentGatherer.formatBlocks(gathered)
 
         val contextBlock = buildString {
@@ -250,6 +257,9 @@ class OnboardingTool(
             appendLine("컬리는 한국의 신선식품 이커머스 플랫폼이며, 프로젝트명은 '$projectName'입니다.")
             appendLine("온보딩 대상은 $projectName (Android 앱) 코드베이스입니다. 이 온보딩 도구 자체(wiki-agent)의 구조나 파일을 설명하지 마세요.")
             appendLine("아래 자료를 바탕으로 질문에 친절하고 정확하게 답변하세요. 자료에 없는 파일 경로·클래스명은 추측하지 마세요.")
+            if (!deep) {
+                appendLine("이번 답변은 온보딩 위키 자료 중심입니다. 코드·PR 세부 구현은 포함하지 마세요.")
+            }
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
             if (contextBlock.isNotBlank()) {
                 appendLine()
@@ -257,6 +267,10 @@ class OnboardingTool(
             }
             appendLine()
             appendLine("사용자 질문: $message")
+            if (!deep) {
+                appendLine()
+                appendLine("답변 맨 끝에 다음 안내를 한 줄 덧붙이세요: \"_코드·PR까지 보려면 '코드 보여줘'처럼 다시 물어봐 주세요._\"")
+            }
         }
 
         val answer = callLLM(questionPrompt)
@@ -447,6 +461,11 @@ class OnboardingTool(
         private val NEXT_KEYWORDS = setOf("다음", "넘어가기", "다음 단계", "next")
         private val SKIP_KEYWORDS = setOf("건너뛰기", "스킵", "skip")
         private val JUMP_NUMBER_PATTERN = Regex("""^(\d+)\s*번?$""")
+
+        private val DEEP_DIVE_KEYWORDS = listOf(
+            "코드", "소스", "구현", "예시", "예제", "샘플", "PR", "풀리퀘", "커밋",
+            "더 자세히", "자세히", "실제로", "동작 방식", "어떻게 동작", "깊이",
+        )
 
         private val PHASE_NAMES = mapOf(
             1 to "환경 셋업 & 프로젝트 구조",

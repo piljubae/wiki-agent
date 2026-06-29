@@ -304,6 +304,7 @@ fun main() {
             codeRepo = config.github.codeRepos.firstOrNull(),
             codeBranch = config.github.codeSearch.branch,
             tracker = sourceTracker,
+            prHistoryTool = prHistoryTool,
         )
         log.info("Onboarding enabled")
     }

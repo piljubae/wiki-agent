@@ -256,7 +256,7 @@ phases:
     }
 
     @Test
-    fun `질문 시 codeSearch 라이브 검색이 호출되고 메모가 기록된다`() {
+    fun `심화 키워드 질문 시 codeSearch가 호출되고 메모가 기록된다`() {
         val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
         every { codeSearchTool.codeSearch(any()) } returns "ProductViewModel 위치: feature/product"
         val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
@@ -272,13 +272,51 @@ phases:
         val userId = uniqueUserId()
         tool.handle(userId, "B, A, A")
 
-        val result = tool.handle(userId, "ProductViewModel 어디있어?")
+        val result = tool.handle(userId, "ProductViewModel 코드 어디있어?")
 
         assertTrue(result.contains("feature/product"), "LLM 답변이 반환되어야 합니다. 실제: $result")
-        verify { codeSearchTool.codeSearch("ProductViewModel 어디있어?") }
+        verify { codeSearchTool.codeSearch("ProductViewModel 코드 어디있어?") }
 
         val session = OnboardingSessionStore.load(userId)!!
         assertTrue(session.memos.any { it.contains("ProductViewModel") }, "질문이 메모로 기록되어야 합니다. 실제: ${session.memos}")
+    }
+
+    @Test
+    fun `심화 키워드 없는 질문은 codeSearch를 호출하지 않는다`() {
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
+
+        // Curriculum without code sources for this test
+        val noCurriculumPath = "$testDir/no-code-curriculum.yaml"
+        val noCurriculumYaml = """
+lastUpdated: "2026-06-02"
+phases:
+  - id: step-1
+    name: "테스트 단계 1"
+    phase: 1
+    day: "Day 1"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources: []
+        """.trimIndent()
+        File(noCurriculumPath).writeText(noCurriculumYaml)
+
+        val tool = OnboardingTool(
+            curriculumPath = noCurriculumPath,
+            executor = createMockExecutor("위키 기반 답변입니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A")
+
+        tool.handle(userId, "이 단계가 뭐야?")
+
+        verify(exactly = 0) { codeSearchTool.codeSearch(any()) }
+        verify(exactly = 0) { confluenceTool.confluenceSearch(any()) }
     }
 
     @Test
