@@ -171,6 +171,24 @@ class ConfluenceSearchAgentTest {
     }
 
     @Test
+    fun `strictSpaces는 스페이스를 한정하고 확장·global fallback을 건너뛴다`() = runTest {
+        val mockClient = mockk<ConfluenceClient>()
+        // ProductApp 제목 검색 1건 (threshold=3 미만) → 평소면 확장+fallback 트리거될 상황
+        coEvery { mockClient.searchByTitle("질문", listOf("ProductApp"), any(), any()) } returns listOf(
+            ConfluencePageRef("1", "온보딩 가이드", "url1", titleMatched = true),
+        )
+        coEvery { mockClient.searchByText("질문", listOf("ProductApp"), any(), any()) } returns emptyList()
+
+        val agent = ConfluenceSearchAgent(mockClient, spaces = listOf("ProductApp", "PSD"), sufficientThreshold = 3)
+        val results = agent.searchStructured("질문", strictSpaces = listOf("ProductApp"))
+
+        assertTrue(results.any { it.pageId == "1" })
+        // 확장 검색(emptyList 스페이스)·global fallback(emptyList 텍스트 검색)은 호출되지 않아야 함
+        coVerify(exactly = 0) { mockClient.searchByTitle(any(), emptyList(), any(), any()) }
+        coVerify(exactly = 0) { mockClient.searchByText(any(), emptyList(), any(), any()) }
+    }
+
+    @Test
     fun `no re-ranking when originalQuestion is blank`() = runTest {
         val mockClient = mockk<ConfluenceClient>()
         coEvery { mockClient.searchByTitle("위클리", listOf("DEV"), any(), any()) } returns listOf(

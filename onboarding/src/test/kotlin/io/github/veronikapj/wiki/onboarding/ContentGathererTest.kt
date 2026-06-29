@@ -2,6 +2,8 @@ package io.github.veronikapj.wiki.onboarding
 
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.search.SearchResult
+import io.github.veronikapj.wiki.search.SearchStage
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.mockk.coEvery
@@ -21,6 +23,7 @@ class ContentGathererTest {
         codeClient: GitHubCodeClient? = mockk(relaxed = true),
         codeRepo: String? = "kurly/kurly-android",
         wikiPageId: String? = "5912232879",
+        onboardingSpace: String? = null,
     ) = ContentGatherer(
         confluenceClient = confluenceClient,
         confluenceTool = confluenceTool,
@@ -29,6 +32,7 @@ class ContentGathererTest {
         codeRepo = codeRepo,
         codeBranch = "develop",
         wikiPageId = wikiPageId,
+        onboardingSpace = onboardingSpace,
     )
 
     private fun step(vararg sources: ContentSource) = CurriculumStep(
@@ -146,6 +150,42 @@ class ContentGathererTest {
     }
 
     @Test
+    fun `gatherForQuestion은 onboardingSpace가 있으면 스코프 검색 후 플랫폼 라벨을 붙인다`() {
+        val confluenceTool = mockk<ConfluenceTool>()
+        val codeSearchTool = mockk<CodeSearchTool>()
+        every { codeSearchTool.codeSearch(any()) } returns ""  // 코드 결과 없음 → confluence만 검증
+        every { confluenceTool.searchScopedStructured("배포 절차", listOf("ProductApp")) } returns listOf(
+            SearchResult("1", "QA 및 배포 프로세스", "url1", "develop 머지 후 QA", SearchStage.TITLE_MATCH),
+            SearchResult("2", "v3.78 Release Note Android/iOS", "url2", "정기 배포", SearchStage.TITLE_MATCH),
+            SearchResult("3", "컬리앱(iOS) 장애 보고서", "url3", "상품상세 스크롤", SearchStage.TEXT_MATCH),
+        )
+        val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = "ProductApp")
+
+        val result = g.gatherForQuestion("배포 절차", step = null)
+
+        verify { confluenceTool.searchScopedStructured("배포 절차", listOf("ProductApp")) }
+        val byLabel = result.associateBy { it.label }
+        assertEquals(ContentGatherer.Platform.ANDROID, byLabel["QA 및 배포 프로세스"]!!.platform)
+        assertEquals(ContentGatherer.Platform.SHARED, byLabel["v3.78 Release Note Android/iOS"]!!.platform)
+        assertEquals(ContentGatherer.Platform.IOS, byLabel["컬리앱(iOS) 장애 보고서"]!!.platform)
+    }
+
+    @Test
+    fun `gatherForQuestion은 onboardingSpace가 null이면 기존 confluenceSearch 경로를 쓴다`() {
+        val confluenceTool = mockk<ConfluenceTool>()
+        val codeSearchTool = mockk<CodeSearchTool>()
+        every { codeSearchTool.codeSearch(any()) } returns ""
+        every { confluenceTool.confluenceSearch("질문") } returns "위키 결과"
+        val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = null)
+
+        val result = g.gatherForQuestion("질문", step = null)
+
+        verify { confluenceTool.confluenceSearch("질문") }
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.CONFLUENCE, result[0].provenance)
+    }
+
+    @Test
     fun `gatherForQuestion에서 한 도구가 예외를 던져도 나머지는 수집된다`() {
         val codeSearchTool = mockk<CodeSearchTool>()
         val confluenceTool = mockk<ConfluenceTool>()
@@ -157,6 +197,51 @@ class ContentGathererTest {
 
         assertEquals(1, result.size)
         assertEquals(ContentGatherer.Provenance.CONFLUENCE, result[0].provenance)
+    }
+
+    @Test
+    fun `classifyPlatform - 제목에 iOS만 있으면 IOS`() {
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("[iOS] App Intent 기술검토", ""))
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("2026.06.22 (iOS)", ""))
+    }
+
+    @Test
+    fun `classifyPlatform - Android와 iOS 둘 다면 SHARED`() {
+        assertEquals(ContentGatherer.Platform.SHARED,
+            ContentGatherer.classifyPlatform("v3.78.0 Release Note Android/iOS", ""))
+    }
+
+    @Test
+    fun `classifyPlatform - 토큰 없으면 기본 ANDROID`() {
+        assertEquals(ContentGatherer.Platform.ANDROID,
+            ContentGatherer.classifyPlatform("프로젝트 온보딩 가이드", "환경 셋업과 모듈 맵"))
+    }
+
+    @Test
+    fun `classifyPlatform - 제목엔 없고 스니펫에 iOS 토큰이면 IOS`() {
+        assertEquals(ContentGatherer.Platform.IOS,
+            ContentGatherer.classifyPlatform("상품상세 장애 보고서", "원인은 kurly-ios 아이폰 빌드의 UICollectionView 조정"))
+    }
+
+    @Test
+    fun `classifyPlatform - kiosk는 ios 단어경계 오탐이 아니다`() {
+        assertEquals(ContentGatherer.Platform.ANDROID,
+            ContentGatherer.classifyPlatform("kiosk 결제 플로우", ""))
+    }
+
+    @Test
+    fun `formatBlocks는 플랫폼 마커를 붙인다`() {
+        val block = ContentGatherer.formatBlocks(listOf(
+            ContentGatherer.GatheredContent("Android 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.ANDROID),
+            ContentGatherer.GatheredContent("iOS 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.IOS),
+            ContentGatherer.GatheredContent("공용 문서", ContentGatherer.Provenance.CONFLUENCE, "본문", ContentGatherer.Platform.SHARED),
+        ))
+        assertTrue(block.contains("[🍎 iOS 참조]"))
+        assertTrue(block.contains("[🔀 Android·iOS 공통]"))
+        // ANDROID 항목 헤더엔 마커 없음
+        assertTrue(block.contains("연관문서: Android 문서"))
     }
 
     @Test

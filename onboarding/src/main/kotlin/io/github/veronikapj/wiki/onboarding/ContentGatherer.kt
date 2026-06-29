@@ -21,6 +21,7 @@ internal class ContentGatherer(
     private val codeRepo: String?,
     private val codeBranch: String,
     private val wikiPageId: String?,
+    private val onboardingSpace: String? = null,
 ) {
     private val log = LoggerFactory.getLogger(ContentGatherer::class.java)
 
@@ -31,10 +32,13 @@ internal class ContentGatherer(
         GITHUB_FILE("📁", "소스파일"),
     }
 
+    enum class Platform { ANDROID, IOS, SHARED }
+
     data class GatheredContent(
         val label: String,
         val provenance: Provenance,
         val text: String,
+        val platform: Platform = Platform.ANDROID,
     )
 
     // ── 단계 콘텐츠 ──
@@ -71,12 +75,30 @@ internal class ContentGatherer(
                 runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
             }
             val confDeferred = async(Dispatchers.IO) {
-                runCatching { confluenceContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrNull()
+                runCatching { confluenceQuestionContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrDefault(emptyList())
             }
             codeDeferred.await()?.let { out += it }
-            confDeferred.await()?.let { out += it }
+            out += confDeferred.await()
         }
         return out
+    }
+
+    /** 질문 경로 전용: onboardingSpace가 있으면 스코프 검색 + 플랫폼 라벨링, 없으면 기존 전체 검색 */
+    private fun confluenceQuestionContent(query: String): List<GatheredContent> {
+        val q = query.takeIf { it.isNotBlank() } ?: return emptyList()
+        val space = onboardingSpace?.takeIf { it.isNotBlank() }
+            ?: return confluenceContent(q)?.let { listOf(it) } ?: emptyList()
+        return confluenceTool.searchScopedStructured(q, listOf(space)).take(QUESTION_CONFLUENCE_LIMIT).map { r ->
+            GatheredContent(
+                label = r.title,
+                provenance = Provenance.CONFLUENCE,
+                text = buildString {
+                    if (r.snippet.isNotBlank()) appendLine(r.snippet)
+                    append("(${r.url})")
+                }.truncated(),
+                platform = classifyPlatform(r.title, r.snippet),
+            )
+        }
     }
 
     // ── 소스별 수집 ──
@@ -187,10 +209,36 @@ internal class ContentGatherer(
     companion object {
         private const val MAX_SOURCES = 6
         private const val MAX_CHARS = 4000
+        // 질문 경로 Confluence 결과 상한 — 프롬프트 비대화 방지 (각 블록은 MAX_CHARS로 별도 절단)
+        private const val QUESTION_CONFLUENCE_LIMIT = 4
+
+        // 라벨이 없어 제목+스니펫 토큰으로 플랫폼 분류. ANDROID가 기본값(android 토큰 불필요).
+        private val IOS_TOKENS = Regex(
+            """\b(ios|swift|swiftui|uikit|xcode|cocoapods|testflight|kurly-ios)\b|아이폰""",
+            RegexOption.IGNORE_CASE)
+        private val ANDROID_TOKENS = Regex(
+            """\b(android|kotlin|compose|gradle|hilt|jetpack|kurly-android)\b|안드로이드""",
+            RegexOption.IGNORE_CASE)
+
+        fun classifyPlatform(title: String, snippet: String): Platform {
+            val text = "$title\n$snippet"
+            val ios = IOS_TOKENS.containsMatchIn(text)
+            val android = ANDROID_TOKENS.containsMatchIn(text)
+            return when {
+                ios && android -> Platform.SHARED
+                ios -> Platform.IOS
+                else -> Platform.ANDROID
+            }
+        }
 
         fun formatBlocks(items: List<GatheredContent>): String =
             items.joinToString("\n\n") { gc ->
-                "=== ${gc.provenance.emoji} ${gc.provenance.display}: ${gc.label} ===\n${gc.text}"
+                val marker = when (gc.platform) {
+                    Platform.IOS -> " [🍎 iOS 참조]"
+                    Platform.SHARED -> " [🔀 Android·iOS 공통]"
+                    Platform.ANDROID -> ""
+                }
+                "=== ${gc.provenance.emoji} ${gc.provenance.display}$marker: ${gc.label} ===\n${gc.text}"
             }
     }
 }
