@@ -1,5 +1,9 @@
 package io.github.veronikapj.wiki.search.tool
 
+import io.github.veronikapj.wiki.github.GitHubCodeClient
+import io.github.veronikapj.wiki.rag.ChromaClient
+import io.mockk.mockk
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -136,6 +140,47 @@ class CodeSearchToolTest {
     fun `슬래시 없는 식별자 쿼리 — 리터럴 패턴 없음`() {
         val result = CodeSearchTool.extractLiteralPatterns("BannerViewModel 클릭 이벤트")
         assertTrue(result.isEmpty(), "식별자/한글만 있으면 비어야 함: $result")
+    }
+
+    // ── readFile: 로컬 클론에서 파일 전문 읽기 ──
+
+    private fun toolWithLocalRepo(repoPath: String) = CodeSearchTool(
+        chromaClient = mockk(relaxed = true),
+        llmExpandClient = mockk(relaxed = true),
+        codeClient = mockk(relaxed = true),
+        codeRepos = listOf("o/r"),
+        localRepoPath = repoPath,
+    )
+
+    @Test
+    fun `readFile은 로컬 레포의 파일 전문을 읽어 반환한다`() {
+        val tmp = File.createTempFile("wiki-readfile", "").let { f ->
+            f.delete(); File(f.absolutePath + "-dir").also { it.mkdirs() }
+        }
+        try {
+            File(tmp, "sub").mkdirs()
+            File(tmp, "sub/Foo.kt").writeText("class Foo(val a: Int) { fun bar() = a }")
+            val tool = toolWithLocalRepo(tmp.absolutePath)
+
+            val result = tool.readFile("sub/Foo.kt")
+
+            assertTrue(result.contains("class Foo(val a: Int)"), result)
+            assertTrue(result.contains("sub/Foo.kt"), result)
+        } finally {
+            tmp.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `readFile은 없는 파일이면 안내 메시지를 반환한다`() {
+        val tmp = File(System.getProperty("java.io.tmpdir"), "wiki-readfile-empty-${System.nanoTime()}").also { it.mkdirs() }
+        try {
+            val tool = toolWithLocalRepo(tmp.absolutePath)
+            val result = tool.readFile("does/not/exist.kt")
+            assertTrue(result.contains("찾을 수 없습니다"), result)
+        } finally {
+            tmp.deleteRecursively()
+        }
     }
 
     @Test
