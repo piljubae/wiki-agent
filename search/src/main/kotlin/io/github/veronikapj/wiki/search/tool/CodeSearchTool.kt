@@ -225,6 +225,9 @@ class CodeSearchTool(
         // 1위 코드 청크 본문 노출 상한(자). 함수 로직 질문에 본문 전체를 보여주되 토큰 폭증은 방지.
         private const val TOP_BODY_LIMIT = 3000
 
+        // readFile 파일 전문 노출 상한(자). 클래스/인터페이스 전문은 보되 토큰 폭증 방지.
+        private const val READFILE_MAX = 8000
+
         // grep 1위 히트의 본문 윈도우 최대 줄 수(중괄호 균형이 안 맞을 때의 안전장치).
         private const val GREP_WINDOW_MAX_LINES = 80
 
@@ -500,5 +503,34 @@ class CodeSearchTool(
                 }.trim()
             }
         }.getOrElse { "코드 통계 조회 중 오류: ${it.message}" }
+    }
+
+    @Tool("readFile")
+    @LLMDescription(
+        "저장소 파일의 전문을 경로로 읽습니다. 클래스 전체 구현(생성자 주입 UseCase 등)이나 " +
+        "Retrofit 서비스 인터페이스의 전체 엔드포인트(@GET/@POST)처럼 스니펫이 아닌 파일 전체가 필요할 때 사용하세요. " +
+        "codeSearch로 파일 경로를 찾은 뒤 readFile로 전문을 읽으면 같은 검색 반복을 피할 수 있습니다."
+    )
+    fun readFile(
+        @LLMDescription("레포 루트 기준 상대 경로. 예: features/src/main/java/com/kurly/.../ProductDetailViewModel.kt")
+        path: String,
+    ): String = runBlocking {
+        tracker?.record("ReadFile")
+        val p = path.trim().removePrefix("/")
+        if (p.isBlank()) return@runBlocking "경로가 비어 있습니다."
+        // 1) 로컬 클론 우선 (전문, 빠름)
+        localRepoPath?.let { File(it, p) }?.takeIf { it.isFile }?.let {
+            return@runBlocking runCatching { formatFile(p, it.readText()) }
+                .getOrElse { e -> "파일 읽기 오류($p): ${e.message}" }
+        }
+        // 2) GitHub fallback (첫 레포)
+        val repo = codeRepos.firstOrNull() ?: return@runBlocking "파일을 찾을 수 없습니다: $p"
+        val content = runCatching { codeClient.fetchFileContent(repo, p, branch) }.getOrNull()
+        if (content.isNullOrBlank()) "파일을 찾을 수 없습니다: $p" else formatFile(p, content)
+    }
+
+    private fun formatFile(path: String, content: String): String {
+        val body = if (content.length <= READFILE_MAX) content else content.take(READFILE_MAX) + "\n…(이하 생략)"
+        return "파일: $path\n```\n$body\n```"
     }
 }

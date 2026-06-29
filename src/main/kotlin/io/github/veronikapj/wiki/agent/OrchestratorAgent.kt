@@ -761,8 +761,10 @@ class OrchestratorAgent(
 
         val effectivePersona = userId?.let { userPersonaStore?.get(it) }?.description
             ?: defaultPersona.description
+        // 반복 한도 소진 시 합성에 쓸 도구 호출 기록 (run 전체에서 누적)
+        val toolTranscript = java.util.Collections.synchronizedList(mutableListOf<String>())
         for ((index, model) in fallbackModels.withIndex()) {
-            val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory, effectivePersona).run(question) }
+            val result = runCatching { buildAgent(model, contextHistory, listener, summary, memory, effectivePersona, toolTranscript).run(question) }
             val ex = result.exceptionOrNull()
             if (ex == null) {
                 val answer = result.getOrThrow()
@@ -783,6 +785,23 @@ class OrchestratorAgent(
             // 반복 한도 소진은 "장애"가 아니라 "정답을 못 좁힌 것" — raw 예외 메시지 대신 사용자 친화 안내로 응답.
             val isMaxIterations = ex is AIAgentMaxNumberOfIterationsReachedException ||
                 ex.message?.contains("number of steps") == true
+            // 반복 한도 소진이면 사과 대신, 모은 검색 결과로 최선의 답변을 1회 합성한다.
+            if (isMaxIterations) {
+                val transcript = synchronized(toolTranscript) { toolTranscript.toList() }
+                if (transcript.isNotEmpty()) {
+                    val synth = runCatching {
+                        executor.execute(
+                            prompt("synthesis") { user(buildSynthesisPrompt(question, transcript)) }, model
+                        ).joinToString("") { it.content }.trim()
+                    }.getOrNull()
+                    if (!synth.isNullOrBlank()) {
+                        if (sessionId != null && conversationStore != null) {
+                            conversationStore.append(sessionId, question, synth)
+                        }
+                        return AnswerResult(synth, "KOOG", true)
+                    }
+                }
+            }
             val friendly = if (isMaxIterations) {
                 "여러 번 검색했지만 정확한 위치를 특정하지 못했습니다. 질문을 더 구체적으로 주시면 다시 찾아보겠습니다. " +
                     "예: 정확한 클래스/함수명, 또는 API 경로 전체(`api.kurly.com/v1/...`)를 알려주세요."
@@ -801,6 +820,7 @@ class OrchestratorAgent(
         summary: String? = null,
         memory: String? = null,
         effectivePersona: String = "",
+        toolCollector: MutableList<String>? = null,
     ): AIAgent<String, String> {
         val systemPrompt = buildString {
             val sources = listOfNotNull(
@@ -836,6 +856,7 @@ class OrchestratorAgent(
             }
             if (codeSearchTool != null) {
                 appendLine("클래스/함수 위치나 구현 방법 질문은 codeSearch를 사용하세요.")
+                appendLine("클래스 전문(생성자 주입 목록 등)이나 인터페이스 전체 엔드포인트가 필요하면, codeSearch로 경로를 찾은 뒤 readFile(path)로 파일 전문을 읽으세요. 같은 codeSearch를 변형 반복하지 말고 readFile로 확인하세요.")
             }
             if (codeFlowTool != null) {
                 appendLine("코드 흐름 질문에는 findCallers(역방향)/traceChain(순방향 체인)/findImpact(임팩트 분석)을 사용하세요.")
@@ -883,18 +904,20 @@ class OrchestratorAgent(
                 if (prHistoryTool != null) tool(prHistoryTool::prHistory)
                 if (codeSearchTool != null) tool(codeSearchTool::codeSearch)
                 if (codeSearchTool != null) tool(codeSearchTool::codeStats)
+                if (codeSearchTool != null) tool(codeSearchTool::readFile)
                 if (codeFlowTool != null) tool(codeFlowTool::findCallers)
                 if (codeFlowTool != null) tool(codeFlowTool::traceChain)
                 if (codeFlowTool != null) tool(codeFlowTool::findImpact)
             },
             installFeatures = {
-                if (listener != null) install(SearchProgressFeature(listener))
+                if (listener != null || toolCollector != null) install(SearchProgressFeature(listener, toolCollector))
             },
         )
     }
 
     private class SearchProgressFeature(
-        private val listener: SearchProgressListener,
+        private val listener: SearchProgressListener?,
+        private val collector: MutableList<String>? = null,
     ) : AIAgentGraphFeature<SearchProgressFeature.Config, Unit> {
 
         class Config : FeatureConfig()
@@ -905,11 +928,20 @@ class OrchestratorAgent(
 
         override fun install(config: Config, pipeline: AIAgentGraphPipeline): Unit {
             pipeline.interceptToolCallStarting(this) { ctx: ToolCallStartingContext ->
-                listener.onSearchStarted(ctx.toolName)
+                listener?.onSearchStarted(ctx.toolName)
             }
             pipeline.interceptToolCallCompleted(this) { ctx: ToolCallCompletedContext ->
-                listener.onSearchCompleted(ctx.toolName)
+                listener?.onSearchCompleted(ctx.toolName)
+                // 반복 한도 소진 시 합성에 쓰기 위해 도구 호출 결과를 모은다.
+                collector?.let { c ->
+                    val entry = "[${ctx.toolName}] ${ctx.toolArgs} → ${ctx.toolResult.toString().take(TOOL_RESULT_CAP)}"
+                    synchronized(c) { c.add(entry) }
+                }
             }
+        }
+
+        companion object {
+            private const val TOOL_RESULT_CAP = 1500
         }
     }
 
@@ -938,6 +970,22 @@ class OrchestratorAgent(
             words.zipWithNext { a, b -> bigrams.add("$a $b") }
             val result = (bigrams + words).distinct()
             return result.take(6)
+        }
+
+        /** 반복 한도 소진 시, 그동안 모은 도구 호출 기록으로 최선의 답변을 만들기 위한 프롬프트. */
+        internal fun buildSynthesisPrompt(question: String, transcript: List<String>): String = buildString {
+            appendLine("당신은 코드/문서 검색 결과 종합 봇입니다.")
+            appendLine("아래는 질문에 답하기 위해 이미 수행한 검색들의 결과입니다. 추가 검색은 불가능합니다.")
+            appendLine("이 결과만으로 질문에 최대한 답하세요. 확실한 부분은 단정하고, 불확실하면 '추정' 표시 + 다음 확인 방법을 안내하세요.")
+            appendLine("검색 결과에 없는 내용을 지어내지 마세요.")
+            appendLine()
+            appendLine("질문: $question")
+            appendLine()
+            appendLine("=== 수집된 검색 결과 ===")
+            transcript.forEach { appendLine(it) }
+            appendLine("=== 끝 ===")
+            appendLine()
+            append(buildAnswerGuidelines(verbose = false))
         }
 
         fun buildAnswerGuidelines(verbose: Boolean = true): String = buildString {

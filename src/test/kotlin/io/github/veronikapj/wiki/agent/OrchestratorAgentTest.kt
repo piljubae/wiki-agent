@@ -175,6 +175,22 @@ class OrchestratorAgentTest {
     }
 
     @Test
+    fun `buildSynthesisPrompt includes the question and gathered tool transcript`() {
+        val prompt = OrchestratorAgent.buildSynthesisPrompt(
+            question = "상품 상세에서 호출하는 api 리스트 알려줘",
+            transcript = listOf(
+                "[codeSearch] class ProductDetailViewModel @Inject constructor(useCase: GetProductDetailUseCase)",
+                "[readFile] interface ProductService { @GET(\"v3/products/{id}\") }",
+            ),
+        )
+        assertContains(prompt, "상품 상세에서 호출하는 api 리스트")
+        assertContains(prompt, "ProductDetailViewModel")
+        assertContains(prompt, "ProductService")
+        // 추가 검색 없이 모은 결과로 답하라는 지시가 있어야 함
+        assertContains(prompt, "검색")
+    }
+
+    @Test
     fun `extractKeywordsAsSynonyms returns empty for all-stopword query`() {
         val result = OrchestratorAgent.extractKeywordsAsSynonyms("문서 찾아줘 알려줘")
         assertTrue(result.isEmpty())
