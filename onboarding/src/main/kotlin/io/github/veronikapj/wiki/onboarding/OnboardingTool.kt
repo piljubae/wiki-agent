@@ -94,6 +94,9 @@ class OnboardingTool(
 
         // JUMP: 숫자만 (e.g. "5", "12") 또는 "N번" 또는 "다시 보여/알려" + step 이름
         if (JUMP_NUMBER_PATTERN.matches(trimmed)) return Intent.JUMP
+        // 심화 키워드(코드/예시/PR 등)가 있으면 단계 점프가 아니라 Tier 2 질문으로 처리.
+        // ("코드 보여줘" 같은 안내 문구가 JUMP의 "보여줘" 매칭에 잡혀 새는 것을 방지)
+        if (wantsDeepDive(trimmed)) return Intent.QUESTION
         if (trimmed.contains("다시 보여") || trimmed.contains("다시 알려") || trimmed.contains("보여줘")) {
             return Intent.JUMP
         }

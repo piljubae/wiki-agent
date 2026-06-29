@@ -328,6 +328,27 @@ phases:
     }
 
     @Test
+    fun `코드 보여줘는 JUMP가 아니라 심화 질문으로 codeSearch를 호출한다`() {
+        // Tier1 안내문이 "'코드 보여줘'처럼 물어보세요"라고 유도하므로, 이 문구는
+        // 단계 점프(JUMP, "보여줘" 매칭)가 아니라 Tier2 질문으로 라우팅돼야 한다.
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        every { codeSearchTool.codeSearch(any()) } returns "예시 코드"
+        val tool = OnboardingTool(
+            curriculumPath = curriculumPath,
+            executor = createMockExecutor("코드 설명입니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = mockk<ConfluenceTool>(relaxed = true),
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 + step-1
+
+        tool.handle(userId, "코드 보여줘")
+
+        verify { codeSearchTool.codeSearch("코드 보여줘") }
+    }
+
+    @Test
     fun `온보딩 초기화 시 세션이 삭제되고 레벨 체크부터 다시 시작한다`() {
         val tool = createTool()
         val userId = uniqueUserId()
