@@ -11,10 +11,12 @@ import io.github.veronikapj.wiki.search.tool.ConfluenceTool
 import io.github.veronikapj.wiki.search.tool.GitHubWikiTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeTool
 import io.github.veronikapj.wiki.knowledge.KnowledgeStore
+import io.github.veronikapj.wiki.onboarding.OnboardingTool
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -260,6 +262,31 @@ class OrchestratorAgentTest {
             promptText.contains("[1. "),
             "단일 질문 요약 프롬프트에 '[1. ' 섹션 라벨이 없어야 한다. 실제 프롬프트:\n${promptText.take(500)}"
         )
+    }
+
+    /**
+     * Regression: Koog 에이전트 경로(useManualLoop=false)에서도 forceTool="onboarding"이면
+     * OnboardingTool.handle()를 호출하고 그 결과를 그대로 반환해야 한다.
+     * (이전: Koog 경로에서 forceTool이 무시되어 온보딩 SSOT 파이프라인이 통째로 우회됨)
+     */
+    @Test
+    fun `koog path honors forceTool onboarding by delegating to OnboardingTool`() = runTest {
+        val onboardingTool = mockk<OnboardingTool>()
+        every { onboardingTool.handle(any(), any(), any()) } returns "온보딩 가이드 응답"
+
+        val confluenceTool = ConfluenceTool(mockk<ConfluenceSearchAgent>(relaxed = true))
+
+        val agent = OrchestratorAgent(
+            confluenceTool = confluenceTool,
+            onboardingTool = onboardingTool,
+            executor = mockExecutor,
+            // useManualLoop = false (기본값) → Koog 경로
+        )
+
+        val result = agent.answer("온보딩 시작", forceTool = "onboarding", userId = "U123")
+
+        assertEquals("온보딩 가이드 응답", result.answer)
+        verify { onboardingTool.handle("U123", "온보딩 시작", any()) }
     }
 
     @Test
