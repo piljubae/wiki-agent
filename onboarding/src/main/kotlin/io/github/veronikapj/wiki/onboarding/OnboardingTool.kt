@@ -480,6 +480,7 @@ class OnboardingTool(
         private val DEEP_DIVE_KEYWORDS = listOf(
             "코드", "소스", "구현", "예시", "예제", "샘플", "PR", "풀리퀘", "커밋",
             "더 자세히", "자세히", "실제로", "동작 방식", "어떻게 동작", "깊이",
+            "보여줘", "보여 줘", "보여줄래", "보여주",  // "X 보여줘" = 구체 산출물 요청 → 심화
         )
 
         private val PHASE_NAMES = mapOf(

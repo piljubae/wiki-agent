@@ -365,6 +365,26 @@ phases:
     }
 
     @Test
+    fun `보여줘 질문은 심화(Tier2)로 codeSearch를 호출한다`() {
+        // "보여줘"는 구체 산출물(코드/스킬/예시) 요청 → Tier2 심화로 라우팅돼야 한다.
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        every { codeSearchTool.codeSearch(any()) } returns "스킬 코드 자료"
+        val tool = OnboardingTool(
+            curriculumPath = curriculumPath,
+            executor = createMockExecutor("스킬 설명입니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = mockk<ConfluenceTool>(relaxed = true),
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 + step-1
+
+        tool.handle(userId, "관련 claude 스킬 보여줘")
+
+        verify { codeSearchTool.codeSearch("관련 claude 스킬 보여줘") }
+    }
+
+    @Test
     fun `온보딩 초기화 시 세션이 삭제되고 레벨 체크부터 다시 시작한다`() {
         val tool = createTool()
         val userId = uniqueUserId()
