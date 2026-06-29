@@ -31,6 +31,19 @@ class EmbeddingClientTest {
     }
 
     @Test
+    fun `expandQuery caps runaway LLM output to word limit`() {
+        // LLM이 "한 줄로"를 무시하고 수백 단어를 뱉는 폭주 케이스
+        val runaway = (1..500).joinToString(" ") { "키워드$it" }
+        val client = LlmExpandClient(llmFn = { runaway })
+        val expanded = runBlocking { client.expandQuery("MarketingService") }
+        val wordCount = expanded.split(Regex("\\s+")).count { it.isNotBlank() }
+        // 원본 쿼리(1) + 상한(MAX_EXPANSION_WORDS) 이내여야 함
+        assertTrue(wordCount <= 1 + LlmExpandClient.MAX_EXPANSION_WORDS,
+            "expandQuery output not capped: $wordCount words")
+        assertTrue(expanded.startsWith("MarketingService"))
+    }
+
+    @Test
     fun `GoogleEmbeddingClient buildEmbedRequest formats JSON correctly`() {
         val client = GoogleEmbeddingClient(apiKey = "test-key")
         val json = client.buildEmbedRequest("hello world", "text-embedding-004")

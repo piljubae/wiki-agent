@@ -96,4 +96,53 @@ class CodeSearchToolTest {
         val keywords = CodeSearchTool.extractEnglishKeywords(expanded).split(" ")
         assertEquals(keywords.distinct(), keywords, "중복 없어야 함")
     }
+
+    // ── extractLiteralPatterns: API 경로/문자열 리터럴을 grep 패턴으로 직접 추출 ──
+
+    @Test
+    fun `호스트 prefix가 붙은 API 경로 — 경로만 grep 패턴으로`() {
+        val result = CodeSearchTool.extractLiteralPatterns("api.kurly.com/v3/home/notices")
+        assertTrue(result.contains("v3/home/notices"), "호스트 제거된 경로가 있어야 함: $result")
+    }
+
+    @Test
+    fun `bare 경로와 한글 혼합 — 경로 추출`() {
+        val result = CodeSearchTool.extractLiteralPatterns("v1/popups 호출하는 곳 찾아줘")
+        assertTrue(result.contains("v1/popups"), "경로가 있어야 함: $result")
+    }
+
+    @Test
+    fun `여러 경로 동시 추출`() {
+        val result = CodeSearchTool.extractLiteralPatterns(
+            "api.kurly.com/v3/home/notices\napi.kurly.com/v1/popups",
+        )
+        assertTrue(result.contains("v3/home/notices"), "$result")
+        assertTrue(result.contains("v1/popups"), "$result")
+    }
+
+    @Test
+    fun `어노테이션 안의 경로 리터럴도 추출`() {
+        val result = CodeSearchTool.extractLiteralPatterns("@GET(\"v1/popups\")")
+        assertTrue(result.contains("v1/popups"), "$result")
+    }
+
+    @Test
+    fun `http 스킴 URL — 스킴과 호스트 제거 후 경로`() {
+        val result = CodeSearchTool.extractLiteralPatterns("http://api.kurly.com/v1/popups")
+        assertTrue(result.contains("v1/popups"), "$result")
+    }
+
+    @Test
+    fun `슬래시 없는 식별자 쿼리 — 리터럴 패턴 없음`() {
+        val result = CodeSearchTool.extractLiteralPatterns("BannerViewModel 클릭 이벤트")
+        assertTrue(result.isEmpty(), "식별자/한글만 있으면 비어야 함: $result")
+    }
+
+    @Test
+    fun `정규식 메타문자가 포함된 경로는 ERE 이스케이프`() {
+        // 첫 세그먼트(v2)에 점이 없어 호스트로 오인되지 않으면서, 뒤 세그먼트의 '.'은 이스케이프 대상
+        val result = CodeSearchTool.extractLiteralPatterns("v2/items.json")
+        // '.'은 grep -E에서 임의문자이므로 이스케이프돼야 리터럴 매칭됨
+        assertTrue(result.any { it == """v2/items\.json""" }, "$result")
+    }
 }
