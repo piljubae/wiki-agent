@@ -40,3 +40,7 @@ chroma/
 chroma_data/
 chroma.log
 logs/*.log
+
+# Runtime / local tooling artifacts
+call_graph.db
+.antigravitycli/
