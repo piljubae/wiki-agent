@@ -335,4 +335,17 @@ phases:
         // 레벨 체크 메시지로 재시작
         assertTrue(result.contains("경험 수준"), "초기화 후 레벨 체크가 표시되어야 합니다. 실제: $result")
     }
+
+    @Test
+    fun `초기화 substring 질문은 RESET이 아니어서 세션을 지우지 않는다`() {
+        val tool = createTool()
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 생성
+        assertTrue(OnboardingSessionStore.exists(userId))
+
+        // "초기화"를 포함하지만 명백한 질문 — RESET이면 안 됨
+        tool.handle(userId, "캐시 초기화는 어떻게 해?")
+
+        assertTrue(OnboardingSessionStore.exists(userId), "초기화 substring 질문이 세션을 삭제하면 안 됩니다")
+    }
 }

@@ -75,10 +75,8 @@ class OnboardingTool(
         // SKIP: exact matches
         if (trimmed in SKIP_KEYWORDS) return Intent.SKIP
 
-        // RESET: "초기화" 또는 "리셋" 포함 (안내문의 "온보딩 초기화"와 일치)
-        if (trimmed.contains("초기화") || trimmed.contains("리셋")) {
-            return Intent.RESET
-        }
+        // RESET: 정확히 일치할 때만 (substring 오탐으로 세션 파괴 방지)
+        if (trimmed in RESET_KEYWORDS) return Intent.RESET
 
         // START: contains "온보딩" + ("시작" or "이어")
         if (trimmed.contains("온보딩") && (trimmed.contains("시작") || trimmed.contains("이어"))) {
@@ -460,6 +458,7 @@ class OnboardingTool(
 
         private val NEXT_KEYWORDS = setOf("다음", "넘어가기", "다음 단계", "next")
         private val SKIP_KEYWORDS = setOf("건너뛰기", "스킵", "skip")
+        private val RESET_KEYWORDS = setOf("초기화", "리셋", "온보딩 초기화", "온보딩 리셋")
         private val JUMP_NUMBER_PATTERN = Regex("""^(\d+)\s*번?$""")
 
         private val DEEP_DIVE_KEYWORDS = listOf(
