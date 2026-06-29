@@ -41,6 +41,9 @@ class OnboardingTool(
             ?.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.pageId
     }
 
+    /** 온보딩 SSOT 스페이스 (curriculum.yaml의 최상위 space 필드). 빈 문자열은 미설정으로 취급. */
+    private val onboardingSpace: String? by lazy { curriculum?.space?.takeIf { it.isNotBlank() } }
+
     private val gatherer: ContentGatherer by lazy {
         ContentGatherer(
             confluenceClient = confluenceClient,
@@ -51,6 +54,7 @@ class OnboardingTool(
             codeBranch = codeBranch,
             wikiPageId = wikiPageId,
             prHistoryTool = prHistoryTool,
+            onboardingSpace = onboardingSpace,
         )
     }
 
@@ -259,6 +263,7 @@ class OnboardingTool(
                 appendLine("이번 답변은 온보딩 위키 자료 중심입니다. 코드·PR 세부 구현은 포함하지 마세요.")
             }
             appendLine("모르는 내용은 모른다고 하고, 관련 문서나 담당자를 안내하세요.")
+            appendLine(IOS_REFERENCE_RULE)
             if (contextBlock.isNotBlank()) {
                 appendLine()
                 appendLine(contextBlock)
@@ -454,6 +459,10 @@ class OnboardingTool(
     }
 
     companion object {
+        const val IOS_REFERENCE_RULE =
+            "- [🍎 iOS 참조]·[🔀 Android·iOS 공통] 표시 자료는 iOS 또는 공통 플랫폼 내용입니다. " +
+            "Android 온보딩 답변의 권위 있는 출처로 쓰지 말고, 필요 시 \"(iOS 참조)\"로만 인용하세요. SSOT는 📄 위키 자료입니다."
+
         private val LEVEL_PATTERN = Regex("""^[ABCabc][,\s]+[ABab][,\s]+[ABab]$""")
 
         private val NEXT_KEYWORDS = setOf("다음", "넘어가기", "다음 단계", "next")

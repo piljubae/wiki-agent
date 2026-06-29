@@ -4,6 +4,7 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import io.github.veronikapj.wiki.search.ConfluenceSearchAgent
 import io.github.veronikapj.wiki.search.QueryUnderstanding
+import io.github.veronikapj.wiki.search.SearchResult
 import kotlinx.coroutines.runBlocking
 
 class ConfluenceTool(
@@ -33,6 +34,13 @@ class ConfluenceTool(
                 query,
             )
         }
+    }
+
+    /** 온보딩 등 스페이스 한정이 필요한 호출용 — 확장·global fallback 없이 구조화 결과 반환.
+     *  originalQuestion=query로 전달해 질문 키워드 기반 re-ranking을 적용한다. */
+    fun searchScopedStructured(query: String, spaces: List<String>): List<SearchResult> = runBlocking {
+        tracker?.record("Confluence")
+        searchAgent.searchStructured(query, originalQuestion = query, strictSpaces = spaces)
     }
 
     suspend fun confluenceSearchSuspend(

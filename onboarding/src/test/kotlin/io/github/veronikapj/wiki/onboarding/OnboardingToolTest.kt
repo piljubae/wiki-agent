@@ -94,6 +94,14 @@ phases:
     }
 
     @Test
+    fun `IOS_REFERENCE_RULE은 마커와 SSOT 안내를 포함한다`() {
+        val rule = OnboardingTool.IOS_REFERENCE_RULE
+        assertTrue(rule.contains("🍎 iOS 참조"))
+        assertTrue(rule.contains("🔀 Android·iOS 공통"))
+        assertTrue(rule.contains("SSOT"))
+    }
+
+    @Test
     fun `온보딩 시작 시 레벨 체크 메시지가 반환된다`() {
         val tool = createTool()
         val userId = uniqueUserId()
