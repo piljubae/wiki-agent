@@ -57,6 +57,7 @@ class PrHistoryToolTest {
         assertTrue(result.contains("배너 DSP"), result)
         assertTrue(result.contains("📄 기획서"), result)
         assertTrue(result.contains("기획 본문 내용"), result)
+        assertTrue(result.contains("PR #10"), result)
     }
 
     @Test
