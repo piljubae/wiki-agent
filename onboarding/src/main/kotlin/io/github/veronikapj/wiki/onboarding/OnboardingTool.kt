@@ -97,8 +97,12 @@ class OnboardingTool(
         // 심화 키워드(코드/예시/PR 등)가 있으면 단계 점프가 아니라 Tier 2 질문으로 처리.
         // ("코드 보여줘" 같은 안내 문구가 JUMP의 "보여줘" 매칭에 잡혀 새는 것을 방지)
         if (wantsDeepDive(trimmed)) return Intent.QUESTION
+        // "보여줘/다시 보여/다시 알려"는 실제 단계를 가리킬 때만 JUMP (handleJump가 해석 가능한 경우).
+        // 단계 이름이 없는 "관련 claude 스킬 보여줘" 류는 일반 질문으로 답한다.
         if (trimmed.contains("다시 보여") || trimmed.contains("다시 알려") || trimmed.contains("보여줘")) {
-            return Intent.JUMP
+            if (curriculum?.phases?.any { trimmed.contains(it.name, ignoreCase = true) } == true) {
+                return Intent.JUMP
+            }
         }
 
         return Intent.QUESTION
