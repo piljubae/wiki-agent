@@ -55,6 +55,14 @@ object OnboardingSessionStore {
     fun exists(userId: String): Boolean =
         sessionFile(userId).exists()
 
+    fun delete(userId: String): Boolean {
+        val file = sessionFile(userId)
+        if (!file.exists()) return false
+        return runCatching { file.delete() }
+            .onFailure { e -> log.error("Failed to delete session for {}: {}", userId, e.message) }
+            .getOrDefault(false)
+    }
+
     fun load(userId: String): OnboardingSession? {
         val file = sessionFile(userId)
         if (!file.exists()) return null

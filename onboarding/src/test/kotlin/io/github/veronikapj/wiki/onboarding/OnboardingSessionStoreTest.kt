@@ -132,4 +132,22 @@ class OnboardingSessionStoreTest {
 
         assertFalse(OnboardingSessionStore.isActive(userId))
     }
+
+    @Test
+    fun `delete는 세션 파일을 제거하고 이후 load는 null이다`() {
+        val userId = uniqueUserId()
+        OnboardingSessionStore.create(userId, testLevel, oneStep())
+        assertTrue(OnboardingSessionStore.exists(userId))
+
+        val deleted = OnboardingSessionStore.delete(userId)
+
+        assertTrue(deleted)
+        assertFalse(OnboardingSessionStore.exists(userId))
+        assertNull(OnboardingSessionStore.load(userId))
+    }
+
+    @Test
+    fun `delete는 세션이 없으면 false를 반환한다`() {
+        assertFalse(OnboardingSessionStore.delete(uniqueUserId()))
+    }
 }
