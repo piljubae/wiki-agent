@@ -54,7 +54,7 @@ class OnboardingTool(
     // ── Intent classification ──
 
     private enum class Intent {
-        START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, JUMP, QUESTION
+        START, LEVEL_RESPONSE, NEXT, SKIP, PROGRESS, JUMP, RESET, QUESTION
     }
 
     private fun classifyIntent(message: String): Intent {
@@ -68,6 +68,11 @@ class OnboardingTool(
 
         // SKIP: exact matches
         if (trimmed in SKIP_KEYWORDS) return Intent.SKIP
+
+        // RESET: "초기화" 또는 "리셋" 포함 (안내문의 "온보딩 초기화"와 일치)
+        if (trimmed.contains("초기화") || trimmed.contains("리셋")) {
+            return Intent.RESET
+        }
 
         // START: contains "온보딩" + ("시작" or "이어")
         if (trimmed.contains("온보딩") && (trimmed.contains("시작") || trimmed.contains("이어"))) {
@@ -102,6 +107,7 @@ class OnboardingTool(
             Intent.SKIP -> handleSkip(userId)
             Intent.PROGRESS -> handleProgress(userId)
             Intent.JUMP -> handleJump(userId, message)
+            Intent.RESET -> handleReset(userId)
             Intent.QUESTION -> handleQuestion(userId, message, conversationContext)
         }
     }
@@ -121,6 +127,11 @@ class OnboardingTool(
                 "특정 단계를 다시 보려면 \"OO 다시 보여줘\"라고 말해주세요."
         }
         return LEVEL_CHECK_MESSAGE
+    }
+
+    private fun handleReset(userId: String): String {
+        OnboardingSessionStore.delete(userId)
+        return handleStart(userId)
     }
 
     private fun handleLevelResponse(userId: String, message: String): String {

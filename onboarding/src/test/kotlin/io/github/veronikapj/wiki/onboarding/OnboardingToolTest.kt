@@ -280,4 +280,21 @@ phases:
         val session = OnboardingSessionStore.load(userId)!!
         assertTrue(session.memos.any { it.contains("ProductViewModel") }, "질문이 메모로 기록되어야 합니다. 실제: ${session.memos}")
     }
+
+    @Test
+    fun `온보딩 초기화 시 세션이 삭제되고 레벨 체크부터 다시 시작한다`() {
+        val tool = createTool()
+        val userId = uniqueUserId()
+
+        // 진행 중 세션 생성 (B,A,A → step-1)
+        tool.handle(userId, "B, A, A")
+        assertTrue(OnboardingSessionStore.exists(userId))
+
+        val result = tool.handle(userId, "온보딩 초기화")
+
+        // 세션 삭제됨
+        assertFalse(OnboardingSessionStore.exists(userId))
+        // 레벨 체크 메시지로 재시작
+        assertTrue(result.contains("경험 수준"), "초기화 후 레벨 체크가 표시되어야 합니다. 실제: $result")
+    }
 }
