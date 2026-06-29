@@ -142,8 +142,15 @@ class CodeSearchTool(
             } else null
 
             // 로컬 grep 보완: LLM 패턴 우선, 실패 시 expandedQuery에서 휴리스틱 추출
-            val grepPatterns = llmGrepPatterns.ifEmpty { buildGrepPatterns(expandedQuery) }
-            log.info("grep patterns ({}): {}", if (llmGrepPatterns.isNotEmpty()) "LLM" else "heuristic", grepPatterns.take(10))
+            // 사용자가 준 경로/문자열 리터럴을 최우선 패턴으로, 그다음 LLM 패턴 우선,
+            // 실패 시 expandedQuery에서 휴리스틱 추출.
+            val literalPatterns = extractLiteralPatterns(query)
+            val basePatterns = llmGrepPatterns.ifEmpty { buildGrepPatterns(expandedQuery) }
+            val grepPatterns = (literalPatterns + basePatterns).distinct()
+            log.info("grep patterns (literal={}, {}): {}",
+                literalPatterns.size,
+                if (llmGrepPatterns.isNotEmpty()) "LLM" else "heuristic",
+                grepPatterns.take(10))
             val grepSection = localRepoPath
                 ?.takeIf { grepPatterns.isNotEmpty() }
                 ?.let { repoPath ->
@@ -226,6 +233,35 @@ class CodeSearchTool(
             "display", "get", "set", "add", "remove", "update", "delete",
             "configure", "enumerate", "fetch",
         )
+
+        /**
+         * 쿼리에 포함된 API 경로/문자열 리터럴을 grep 패턴으로 직접 추출.
+         * 예) "api.kurly.com/v3/home/notices" → "v3/home/notices"
+         *     "v1/popups 호출"               → "v1/popups"
+         *     "@GET(\"v1/popups\")"          → "v1/popups"
+         *
+         * 사용자가 정확한 경로 문자열을 줄 때, LLM이 추측한 식별자 대신
+         * 그 리터럴을 직접 grep해 정답(@GET("...") 등)을 바로 찾도록 한다.
+         * 스킴(http://)·호스트(점 포함 도메인) prefix는 제거하고,
+         * 결과는 grep -E(POSIX ERE)용으로 정규식 메타문자를 이스케이프한다.
+         */
+        internal fun extractLiteralPatterns(query: String): List<String> {
+            return query.replace(Regex("https?://"), "")
+                .split(Regex("""[\s"'()<>|,]+"""))
+                .map { it.trim().trim('/') }
+                .filter { it.contains('/') && it.matches(Regex("[A-Za-z0-9._/-]+")) }
+                .map { token ->
+                    // 호스트(api.kurly.com 등 점 포함 첫 세그먼트) prefix 제거 → 경로만
+                    if (token.substringBefore('/').contains('.')) token.substringAfter('/') else token
+                }
+                .filter { it.contains('/') && it.length >= 3 }
+                .distinct()
+                .map { ereEscape(it) }
+        }
+
+        /** grep -E(POSIX ERE)용 정규식 메타문자 이스케이프. */
+        private fun ereEscape(s: String): String =
+            Regex("""[.+*?\[\](){}|^$\\]""").replace(s) { "\\${it.value}" }
 
         /** expandedQuery에서 영문 키워드만 추출 → GitHub Code Search용 */
         internal fun extractEnglishKeywords(expandedQuery: String): String {

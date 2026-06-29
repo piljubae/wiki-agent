@@ -29,11 +29,20 @@ class LlmExpandClient(
     suspend fun expandQuery(query: String): String {
         val prompt = """
             아래 검색어의 동의어, 영어 표현, 관련 개념을 공백으로 구분해서 한 줄로 반환하세요.
-            원래 검색어도 포함. 추가 설명 없이 단어/구절만 출력.
+            원래 검색어도 포함. 추가 설명 없이 단어/구절만 출력. 최대 ${MAX_EXPANSION_WORDS}개 단어.
 
             검색어: $query
         """.trimIndent()
-        return runCatching { "$query ${llmFn(prompt)}" }.getOrDefault(query)
+        // LLM이 "한 줄로" 지시를 무시하고 수백~수천 단어를 뱉는 폭주를 방지:
+        // 임베딩 입력·grep 키워드 오염을 막기 위해 단어 수를 상한선으로 자른다.
+        return runCatching {
+            val capped = llmFn(prompt)
+                .split(Regex("\\s+"))
+                .filter { it.isNotBlank() }
+                .take(MAX_EXPANSION_WORDS)
+                .joinToString(" ")
+            "$query $capped"
+        }.getOrDefault(query)
     }
 
     /**
@@ -59,6 +68,11 @@ class LlmExpandClient(
                 .filter { it.isNotBlank() && it.length >= 3 && !it.contains(" ") }
                 .take(10)
         }.getOrDefault(emptyList())
+    }
+
+    companion object {
+        /** expandQuery 결과 단어 수 상한 — LLM 폭주 시 임베딩/grep 오염 방지. */
+        const val MAX_EXPANSION_WORDS = 40
     }
 }
 

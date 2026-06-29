@@ -4,6 +4,7 @@ package io.github.veronikapj.wiki.agent
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
+import ai.koog.agents.core.agent.exception.AIAgentMaxNumberOfIterationsReachedException
 import ai.koog.agents.core.agent.entity.AIAgentStorageKey
 import ai.koog.agents.core.feature.AIAgentGraphFeature
 import ai.koog.agents.core.feature.config.FeatureConfig
@@ -777,7 +778,16 @@ class OrchestratorAgent(
                 continue
             }
             log.error("All models failed: {}", ex.message)
-            return AnswerResult("검색 중 오류가 발생했습니다: ${ex.message}", "ERROR", false)
+            // 반복 한도 소진은 "장애"가 아니라 "정답을 못 좁힌 것" — raw 예외 메시지 대신 사용자 친화 안내로 응답.
+            val isMaxIterations = ex is AIAgentMaxNumberOfIterationsReachedException ||
+                ex.message?.contains("number of steps") == true
+            val friendly = if (isMaxIterations) {
+                "여러 번 검색했지만 정확한 위치를 특정하지 못했습니다. 질문을 더 구체적으로 주시면 다시 찾아보겠습니다. " +
+                    "예: 정확한 클래스/함수명, 또는 API 경로 전체(`api.kurly.com/v1/...`)를 알려주세요."
+            } else {
+                "검색 중 오류가 발생했습니다: ${ex.message}"
+            }
+            return AnswerResult(friendly, "ERROR", false)
         }
         error("unreachable")
     }
@@ -809,7 +819,8 @@ class OrchestratorAgent(
             appendLine("2. 각 하위 작업에 필요한 Tool을 호출하세요.")
             appendLine("3. 호출 결과가 나오면, 모든 정보를 종합하여 질문자에게 체계적으로 답변하세요.")
             appendLine("4. 한 번의 Tool 호출로 전체를 해결하려 하지 말고, 여러 번 호출하여 단계별로 정보를 수집하세요.")
-            appendLine("5. 10회 반복 제한을 지키되, 모든 하위 작업이 완료되기 전까지는 최종 답변을 미루고 검색을 지속하세요.")
+            appendLine("5. 동일하거나 거의 같은 검색(쿼리만 살짝 바꾼 반복)을 하지 마세요. 같은 도구를 3회 이상 호출해도 원하는 결과가 없으면, 더 검색하지 말고 지금까지 찾은 단서로 답변을 작성하세요(추정 위치·다음 확인 방법 포함).")
+            appendLine("6. 검색 횟수에는 한도가 있습니다. 정답을 못 찾았더라도 무한 반복하지 말고, 모은 정보로 반드시 최종 답변을 내세요.")
             appendLine()
 
             if (knowledgeTool != null) {
