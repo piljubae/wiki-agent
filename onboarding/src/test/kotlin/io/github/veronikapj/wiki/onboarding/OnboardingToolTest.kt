@@ -264,7 +264,7 @@ phases:
     }
 
     @Test
-    fun `질문 시 codeSearch 라이브 검색이 호출되고 메모가 기록된다`() {
+    fun `심화 키워드 질문 시 codeSearch가 호출되고 메모가 기록된다`() {
         val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
         every { codeSearchTool.codeSearch(any()) } returns "ProductViewModel 위치: feature/product"
         val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
@@ -280,12 +280,101 @@ phases:
         val userId = uniqueUserId()
         tool.handle(userId, "B, A, A")
 
-        val result = tool.handle(userId, "ProductViewModel 어디있어?")
+        val result = tool.handle(userId, "ProductViewModel 코드 어디있어?")
 
         assertTrue(result.contains("feature/product"), "LLM 답변이 반환되어야 합니다. 실제: $result")
-        verify { codeSearchTool.codeSearch("ProductViewModel 어디있어?") }
+        verify { codeSearchTool.codeSearch("ProductViewModel 코드 어디있어?") }
 
         val session = OnboardingSessionStore.load(userId)!!
         assertTrue(session.memos.any { it.contains("ProductViewModel") }, "질문이 메모로 기록되어야 합니다. 실제: ${session.memos}")
+    }
+
+    @Test
+    fun `심화 키워드 없는 질문은 codeSearch를 호출하지 않는다`() {
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
+
+        // Curriculum without code sources for this test
+        val noCurriculumPath = "$testDir/no-code-curriculum.yaml"
+        val noCurriculumYaml = """
+lastUpdated: "2026-06-02"
+phases:
+  - id: step-1
+    name: "테스트 단계 1"
+    phase: 1
+    day: "Day 1"
+    skippable: true
+    levelFilter:
+      skipWhen:
+        android: "C"
+    sources: []
+        """.trimIndent()
+        File(noCurriculumPath).writeText(noCurriculumYaml)
+
+        val tool = OnboardingTool(
+            curriculumPath = noCurriculumPath,
+            executor = createMockExecutor("위키 기반 답변입니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = confluenceTool,
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A")
+
+        tool.handle(userId, "이 단계가 뭐야?")
+
+        verify(exactly = 0) { codeSearchTool.codeSearch(any()) }
+        verify(exactly = 0) { confluenceTool.confluenceSearch(any()) }
+    }
+
+    @Test
+    fun `코드 보여줘는 JUMP가 아니라 심화 질문으로 codeSearch를 호출한다`() {
+        // Tier1 안내문이 "'코드 보여줘'처럼 물어보세요"라고 유도하므로, 이 문구는
+        // 단계 점프(JUMP, "보여줘" 매칭)가 아니라 Tier2 질문으로 라우팅돼야 한다.
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        every { codeSearchTool.codeSearch(any()) } returns "예시 코드"
+        val tool = OnboardingTool(
+            curriculumPath = curriculumPath,
+            executor = createMockExecutor("코드 설명입니다."),
+            model = mockk<LLModel>(relaxed = true),
+            confluenceTool = mockk<ConfluenceTool>(relaxed = true),
+            codeSearchTool = codeSearchTool,
+        )
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 + step-1
+
+        tool.handle(userId, "코드 보여줘")
+
+        verify { codeSearchTool.codeSearch("코드 보여줘") }
+    }
+
+    @Test
+    fun `온보딩 초기화 시 세션이 삭제되고 레벨 체크부터 다시 시작한다`() {
+        val tool = createTool()
+        val userId = uniqueUserId()
+
+        // 진행 중 세션 생성 (B,A,A → step-1)
+        tool.handle(userId, "B, A, A")
+        assertTrue(OnboardingSessionStore.exists(userId))
+
+        val result = tool.handle(userId, "온보딩 초기화")
+
+        // 세션 삭제됨
+        assertFalse(OnboardingSessionStore.exists(userId))
+        // 레벨 체크 메시지로 재시작
+        assertTrue(result.contains("경험 수준"), "초기화 후 레벨 체크가 표시되어야 합니다. 실제: $result")
+    }
+
+    @Test
+    fun `초기화 substring 질문은 RESET이 아니어서 세션을 지우지 않는다`() {
+        val tool = createTool()
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 생성
+        assertTrue(OnboardingSessionStore.exists(userId))
+
+        // "초기화"를 포함하지만 명백한 질문 — RESET이면 안 됨
+        tool.handle(userId, "캐시 초기화는 어떻게 해?")
+
+        assertTrue(OnboardingSessionStore.exists(userId), "초기화 substring 질문이 세션을 삭제하면 안 됩니다")
     }
 }

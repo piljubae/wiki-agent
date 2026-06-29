@@ -75,12 +75,52 @@ class OrchestratorAgent(
         userId: String? = null,
     ): AnswerResult {
         log.info("OrchestratorAgent answering: '{}'", question)
+
+        // 온보딩 forceTool은 경로(Koog/수동)와 무관하게 최상단에서 처리한다.
+        // OnboardingTool.handle()은 자기완결 결과를 반환하므로 검색/요약 파이프라인을 거치지 않는다.
+        if (forceTool == "onboarding") {
+            return handleOnboarding(question, listener, sessionId, userId)
+        }
+
         return if (useManualLoop) answerWithManualLoop(question, listener, sessionId, forceAllTools, forceTool, userId)
         else {
             if (forceAllTools) log.warn("forceAllTools=true is not supported in Koog agent path, ignored")
             if (forceTool != null) log.warn("forceTool='{}' is not supported in Koog agent path, ignored", forceTool)
             answerWithKoogAgent(question, listener, sessionId, userId)
         }
+    }
+
+    /** 온보딩 가이드 결과를 직접 반환 (검색/요약 경유 안 함). Koog·수동루프 양쪽 경로 공통. */
+    private suspend fun handleOnboarding(
+        question: String,
+        listener: SearchProgressListener?,
+        sessionId: String?,
+        userId: String?,
+    ): AnswerResult {
+        if (onboardingTool == null) {
+            log.warn("forceTool=onboarding but onboardingTool is null")
+            return AnswerResult("온보딩 기능이 현재 비활성화되어 있습니다.", "MANUAL", false)
+        }
+        listener?.onSearchStarted("onboarding")
+        val conversationContext = if (sessionId != null && conversationStore != null) {
+            conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
+        } else ""
+
+        val onboardingAnswer = runCatching {
+            onboardingTool!!.handle(userId ?: "", question, conversationContext)
+        }.getOrElse { e ->
+            log.error("Onboarding failed: {}", e.message)
+            "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"
+        }
+        listener?.onSearchCompleted("onboarding")
+
+        if (sessionId != null && conversationStore != null) {
+            conversationStore.append(sessionId, question, onboardingAnswer)
+        } else {
+            history.addLast(question to onboardingAnswer)
+            if (history.size > 5) history.removeFirst()
+        }
+        return AnswerResult(onboardingAnswer, "MANUAL", false)
     }
 
     // In-memory history fallback when no conversationStore/sessionId
@@ -227,33 +267,7 @@ class OrchestratorAgent(
             return AnswerResult(advisorAnswer, "MANUAL", false)
         }
 
-        // onboarding: 온보딩 가이드 결과를 직접 반환 (summaryPrompt 경유 안 함)
-        if (toolName == "onboarding" && onboardingTool == null) {
-            log.warn("forceTool=onboarding but onboardingTool is null")
-            return AnswerResult("온보딩 기능이 현재 비활성화되어 있습니다.", "MANUAL", false)
-        }
-        if (toolName == "onboarding" && onboardingTool != null) {
-            listener?.onSearchStarted("onboarding")
-            val conversationContext = if (sessionId != null && conversationStore != null) {
-                conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
-            } else ""
-
-            val onboardingAnswer = runCatching {
-                onboardingTool!!.handle(userId ?: "", question, conversationContext)
-            }.getOrElse { e ->
-                log.error("Onboarding failed: {}", e.message)
-                "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"
-            }
-            listener?.onSearchCompleted("onboarding")
-
-            if (sessionId != null && conversationStore != null) {
-                conversationStore.append(sessionId, question, onboardingAnswer)
-            } else {
-                history.addLast(question to onboardingAnswer)
-                if (history.size > 5) history.removeFirst()
-            }
-            return AnswerResult(onboardingAnswer, "MANUAL", false)
-        }
+        // onboarding forceTool은 answer() 최상단의 handleOnboarding()에서 처리됨 (Koog·수동루프 공통)
 
         // 3단계: 검색 결과 + 히스토리로 최종 답변
         val summaryPrompt = buildString {

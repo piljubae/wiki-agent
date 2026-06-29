@@ -4,6 +4,7 @@ import io.github.veronikapj.wiki.confluence.ConfluenceClient
 import io.github.veronikapj.wiki.github.GitHubCodeClient
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.PrHistoryTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -21,6 +22,7 @@ internal class ContentGatherer(
     private val codeRepo: String?,
     private val codeBranch: String,
     private val wikiPageId: String?,
+    private val prHistoryTool: PrHistoryTool? = null,
     private val onboardingSpace: String? = null,
 ) {
     private val log = LoggerFactory.getLogger(ContentGatherer::class.java)
@@ -28,6 +30,7 @@ internal class ContentGatherer(
     enum class Provenance(val emoji: String, val display: String) {
         WIKI("📄", "위키"),
         CODE("💻", "코드"),
+        PR("🔀", "PR 이력"),
         CONFLUENCE("🔗", "연관문서"),
         GITHUB_FILE("📁", "소스파일"),
     }
@@ -61,24 +64,35 @@ internal class ContentGatherer(
 
     // ── 질문 라이브 검색 ──
 
-    fun gatherForQuestion(question: String, step: CurriculumStep?): List<GatheredContent> {
+    fun gatherForQuestion(question: String, step: CurriculumStep?, includeDeep: Boolean = false): List<GatheredContent> {
         val out = mutableListOf<GatheredContent>()
 
-        // 현재 단계의 위키 섹션(맥락)
+        // Tier 1: 현재 단계의 위키 섹션 (맥락)
         if (step != null) {
             step.sources.firstOrNull { it.type == SourceType.CONFLUENCE_PAGE }?.let { src ->
                 runCatching { wikiSection(src) }.getOrNull()?.let { out += it }
             }
         }
-        runBlocking {
-            val codeDeferred = async(Dispatchers.IO) {
-                runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
+
+        // Tier 1: 질문 키워드와 매칭되는 SSOT 섹션 (현재 단계 밖 주제도 위키로 답)
+        out += wikiSectionsForQuestion(question, out.map { it.label }.toSet())
+
+        // Tier 2: 코드 + PR + 추가 Confluence (사용자가 더 파고들 때만)
+        if (includeDeep) {
+            runBlocking {
+                val codeDeferred = async(Dispatchers.IO) {
+                    runCatching { codeContent(question) }.onFailure { log.warn("question codeSearch failed: {}", it.message) }.getOrNull()
+                }
+                val prDeferred = async(Dispatchers.IO) {
+                    runCatching { prContent(question) }.onFailure { log.warn("question prHistory failed: {}", it.message) }.getOrNull()
+                }
+                val confDeferred = async(Dispatchers.IO) {
+                    runCatching { confluenceQuestionContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrDefault(emptyList())
+                }
+                codeDeferred.await()?.let { out += it }
+                prDeferred.await()?.let { out += it }
+                out += confDeferred.await()
             }
-            val confDeferred = async(Dispatchers.IO) {
-                runCatching { confluenceQuestionContent(question) }.onFailure { log.warn("question confluenceSearch failed: {}", it.message) }.getOrDefault(emptyList())
-            }
-            codeDeferred.await()?.let { out += it }
-            out += confDeferred.await()
         }
         return out
     }
@@ -117,6 +131,14 @@ internal class ContentGatherer(
         return GatheredContent(q, Provenance.CONFLUENCE, text.truncated())
     }
 
+    private fun prContent(query: String?): GatheredContent? {
+        val tool = prHistoryTool ?: return null
+        val q = query?.takeIf { it.isNotBlank() } ?: return null
+        val text = tool.prHistory(q)
+        if (text.isBlank()) return null
+        return GatheredContent(q, Provenance.PR, text.truncated())
+    }
+
     private fun fileContent(source: ContentSource): GatheredContent? {
         val client = codeClient ?: return null
         val path = source.path?.takeIf { it.isNotBlank() } ?: return null
@@ -142,6 +164,15 @@ internal class ContentGatherer(
             return null
         }
         return GatheredContent(matched.title, Provenance.WIKI, matched.content.truncated())
+    }
+
+    private fun wikiSectionsForQuestion(question: String, exclude: Set<String>): List<GatheredContent> {
+        val tokens = question.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }
+        if (tokens.isEmpty()) return emptyList()
+        return loadWikiSections()
+            .filter { sec -> sec.title !in exclude && tokens.any { sec.title.contains(it, ignoreCase = true) } }
+            .take(MAX_QUESTION_SECTIONS)
+            .map { GatheredContent(it.title, Provenance.WIKI, it.content.truncated()) }
     }
 
     @Synchronized
@@ -209,6 +240,8 @@ internal class ContentGatherer(
     companion object {
         private const val MAX_SOURCES = 6
         private const val MAX_CHARS = 4000
+        private const val MAX_QUESTION_SECTIONS = 3
+
         // 질문 경로 Confluence 결과 상한 — 프롬프트 비대화 방지 (각 블록은 MAX_CHARS로 별도 절단)
         private const val QUESTION_CONFLUENCE_LIMIT = 4
 

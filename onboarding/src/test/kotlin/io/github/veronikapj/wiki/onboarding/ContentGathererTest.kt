@@ -6,6 +6,7 @@ import io.github.veronikapj.wiki.search.SearchResult
 import io.github.veronikapj.wiki.search.SearchStage
 import io.github.veronikapj.wiki.search.tool.CodeSearchTool
 import io.github.veronikapj.wiki.search.tool.ConfluenceTool
+import io.github.veronikapj.wiki.search.tool.PrHistoryTool
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -23,6 +24,7 @@ class ContentGathererTest {
         codeClient: GitHubCodeClient? = mockk(relaxed = true),
         codeRepo: String? = "kurly/kurly-android",
         wikiPageId: String? = "5912232879",
+        prHistoryTool: PrHistoryTool? = mockk(relaxed = true),
         onboardingSpace: String? = null,
     ) = ContentGatherer(
         confluenceClient = confluenceClient,
@@ -32,6 +34,7 @@ class ContentGathererTest {
         codeRepo = codeRepo,
         codeBranch = "develop",
         wikiPageId = wikiPageId,
+        prHistoryTool = prHistoryTool,
         onboardingSpace = onboardingSpace,
     )
 
@@ -135,18 +138,18 @@ class ContentGathererTest {
     }
 
     @Test
-    fun `gatherForQuestion은 질문으로 codeSearch와 confluenceSearch를 호출한다`() {
+    fun `gatherForQuestion(deep)은 질문으로 codeSearch와 confluenceSearch를 호출한다`() {
         val codeSearchTool = mockk<CodeSearchTool>()
         val confluenceTool = mockk<ConfluenceTool>()
         every { codeSearchTool.codeSearch("UseCase 어디있어") } returns "domain layer"
         every { confluenceTool.confluenceSearch("UseCase 어디있어") } returns "아키텍처 문서"
         val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool)
 
-        val result = g.gatherForQuestion("UseCase 어디있어", step = null)
+        val result = g.gatherForQuestion("UseCase 어디있어", step = null, includeDeep = true)
 
-        assertEquals(2, result.size)
         verify { codeSearchTool.codeSearch("UseCase 어디있어") }
         verify { confluenceTool.confluenceSearch("UseCase 어디있어") }
+        assertTrue(result.any { it.provenance == ContentGatherer.Provenance.CODE })
     }
 
     @Test
@@ -161,7 +164,8 @@ class ContentGathererTest {
         )
         val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = "ProductApp")
 
-        val result = g.gatherForQuestion("배포 절차", step = null)
+        // 스코프 confluence는 Tier 2(includeDeep) 경로에 속한다
+        val result = g.gatherForQuestion("배포 절차", step = null, includeDeep = true)
 
         verify { confluenceTool.searchScopedStructured("배포 절차", listOf("ProductApp")) }
         val byLabel = result.associateBy { it.label }
@@ -178,7 +182,7 @@ class ContentGathererTest {
         every { confluenceTool.confluenceSearch("질문") } returns "위키 결과"
         val g = gatherer(confluenceTool = confluenceTool, codeSearchTool = codeSearchTool, onboardingSpace = null)
 
-        val result = g.gatherForQuestion("질문", step = null)
+        val result = g.gatherForQuestion("질문", step = null, includeDeep = true)
 
         verify { confluenceTool.confluenceSearch("질문") }
         assertEquals(1, result.size)
@@ -186,17 +190,88 @@ class ContentGathererTest {
     }
 
     @Test
-    fun `gatherForQuestion에서 한 도구가 예외를 던져도 나머지는 수집된다`() {
+    fun `gatherForQuestion(deep)에서 한 도구가 예외를 던져도 나머지는 수집된다`() {
         val codeSearchTool = mockk<CodeSearchTool>()
         val confluenceTool = mockk<ConfluenceTool>()
         every { codeSearchTool.codeSearch(any()) } throws RuntimeException("fail")
         every { confluenceTool.confluenceSearch(any()) } returns "위키 결과"
-        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool)
+        val prHistoryTool = mockk<PrHistoryTool>(relaxed = true)
+        every { prHistoryTool.prHistory(any()) } returns ""
+        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool,
+            prHistoryTool = prHistoryTool)
 
-        val result = g.gatherForQuestion("q", step = null)
+        val result = g.gatherForQuestion("q", step = null, includeDeep = true)
 
         assertEquals(1, result.size)
         assertEquals(ContentGatherer.Provenance.CONFLUENCE, result[0].provenance)
+    }
+
+    @Test
+    fun `gatherForQuestion(tier1)은 codeSearch와 confluenceSearch를 호출하지 않는다`() {
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true)
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true)
+        val prHistoryTool = mockk<PrHistoryTool>(relaxed = true)
+        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool, prHistoryTool = prHistoryTool)
+
+        g.gatherForQuestion("UseCase 어디있어", step = null, includeDeep = false)
+
+        verify(exactly = 0) { codeSearchTool.codeSearch(any()) }
+        verify(exactly = 0) { confluenceTool.confluenceSearch(any()) }
+        verify(exactly = 0) { prHistoryTool.prHistory(any()) }
+    }
+
+    @Test
+    fun `gatherForQuestion(deep)은 prHistory를 호출해 PR provenance로 수집한다`() {
+        val prHistoryTool = mockk<PrHistoryTool>()
+        every { prHistoryTool.prHistory("배너 클릭 이벤트") } returns "PR #1234: 배너 클릭 이벤트 추가"
+        val codeSearchTool = mockk<CodeSearchTool>(relaxed = true).also { every { it.codeSearch(any()) } returns "" }
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true).also { every { it.confluenceSearch(any()) } returns "" }
+        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool, prHistoryTool = prHistoryTool)
+
+        val result = g.gatherForQuestion("배너 클릭 이벤트", step = null, includeDeep = true)
+
+        verify { prHistoryTool.prHistory("배너 클릭 이벤트") }
+        assertEquals(ContentGatherer.Provenance.PR, result.single().provenance)
+    }
+
+    @Test
+    fun `gatherForQuestion(deep)은 prHistoryTool이 null이면 PR 없이 수집한다`() {
+        val codeSearchTool = mockk<CodeSearchTool>().also { every { it.codeSearch(any()) } returns "코드" }
+        val confluenceTool = mockk<ConfluenceTool>(relaxed = true).also { every { it.confluenceSearch(any()) } returns "" }
+        val g = gatherer(codeSearchTool = codeSearchTool, confluenceTool = confluenceTool, prHistoryTool = null)
+
+        val result = g.gatherForQuestion("q", step = null, includeDeep = true)
+
+        assertTrue(result.none { it.provenance == ContentGatherer.Provenance.PR })
+        assertTrue(result.any { it.provenance == ContentGatherer.Provenance.CODE })
+    }
+
+    @Test
+    fun `gatherForQuestion(tier1)은 질문 키워드와 매칭되는 SSOT 섹션을 위키로 수집한다`() {
+        val confluenceClient = mockk<ConfluenceClient>()
+        coEvery { confluenceClient.fetchPageRawHtml("5912232879") } returns
+            "<h2>브랜치 네이밍</h2><p>feature/KMA-xxxx 규칙</p>" +
+            "<h2>코드 리뷰</h2><p>리뷰 기준</p>"
+        val g = gatherer(confluenceClient = confluenceClient)
+
+        val result = g.gatherForQuestion("브랜치 네이밍 규칙 알려줘", step = null, includeDeep = false)
+
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.WIKI, result[0].provenance)
+        assertEquals("브랜치 네이밍", result[0].label)
+    }
+
+    @Test
+    fun `gatherForQuestion(tier1)은 매칭 SSOT 섹션을 최대 3개로 제한한다`() {
+        val confluenceClient = mockk<ConfluenceClient>()
+        coEvery { confluenceClient.fetchPageRawHtml("5912232879") } returns
+            "<h2>가이드 1</h2><p>a</p><h2>가이드 2</h2><p>b</p>" +
+            "<h2>가이드 3</h2><p>c</p><h2>가이드 4</h2><p>d</p>"
+        val g = gatherer(confluenceClient = confluenceClient)
+
+        val result = g.gatherForQuestion("가이드", step = null, includeDeep = false)
+
+        assertEquals(3, result.size)
     }
 
     @Test
