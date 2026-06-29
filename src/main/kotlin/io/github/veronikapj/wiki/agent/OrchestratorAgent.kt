@@ -107,8 +107,10 @@ class OrchestratorAgent(
             conversationStore.load(sessionId, maxTurns = 3).joinToString("\n") { "${it.question}: ${it.answer}" }
         } else ""
 
+        // sessionId는 "assistant-<threadTs>" 형식 — 온보딩을 시작 스레드에 바인딩하기 위해 threadTs 추출
+        val threadTs = sessionId?.removePrefix("assistant-") ?: ""
         val onboardingAnswer = runCatching {
-            onboardingTool!!.handle(userId ?: "", question, conversationContext)
+            onboardingTool!!.handle(userId ?: "", question, conversationContext, threadTs)
         }.getOrElse { e ->
             log.error("Onboarding failed: {}", e.message)
             "온보딩 가이드 생성 중 오류가 발생했습니다: ${e.message}"

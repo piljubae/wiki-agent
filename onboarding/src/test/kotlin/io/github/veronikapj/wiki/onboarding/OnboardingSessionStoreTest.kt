@@ -122,6 +122,33 @@ class OnboardingSessionStoreTest {
     }
 
     @Test
+    fun `isActiveInThread는 세션의 threadTs와 일치할 때만 true다`() {
+        val userId = uniqueUserId()
+        OnboardingSessionStore.create(userId, testLevel, oneStep(), threadTs = "T1")
+
+        assertTrue(OnboardingSessionStore.isActiveInThread(userId, "T1"))
+        assertFalse(OnboardingSessionStore.isActiveInThread(userId, "T2"))
+    }
+
+    @Test
+    fun `threadTs는 MD round-trip 시 보존된다`() {
+        val userId = uniqueUserId()
+        OnboardingSessionStore.create(userId, testLevel, oneStep(), threadTs = "T-99")
+        val loaded = OnboardingSessionStore.load(userId)
+        assertNotNull(loaded)
+        assertEquals("T-99", loaded.threadTs)
+    }
+
+    @Test
+    fun `완료된 세션은 threadTs가 일치해도 isActiveInThread가 false다`() {
+        val userId = uniqueUserId()
+        OnboardingSessionStore.create(userId, testLevel, oneStep(), threadTs = "T1")
+        OnboardingSessionStore.advanceStep(userId)
+
+        assertFalse(OnboardingSessionStore.isActiveInThread(userId, "T1"))
+    }
+
+    @Test
     fun `비활성 세션은 isActive가 false를 반환한다`() {
         val userId = uniqueUserId()
         OnboardingSessionStore.create(userId, testLevel, oneStep())
