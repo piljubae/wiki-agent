@@ -349,6 +349,22 @@ phases:
     }
 
     @Test
+    fun `단계 이름 없는 보여줘는 JUMP가 아니라 질문으로 답한다`() {
+        // "관련 claude 스킬 보여줘"처럼 단계 이름도 심화 키워드도 없는 "보여줘" 질문은
+        // JUMP("해당 단계를 찾을 수 없습니다")로 새면 안 되고 QUESTION으로 답해야 한다.
+        val tool = createTool() // executor → "LLM 가이드 응답입니다."
+        val userId = uniqueUserId()
+        tool.handle(userId, "B, A, A") // 세션 + step-1
+
+        val result = tool.handle(userId, "관련 claude 스킬 보여줘")
+
+        assertFalse(
+            result.contains("해당 단계를 찾을 수 없습니다"),
+            "단계 이름 없는 '보여줘' 질문이 JUMP로 새면 안 됩니다. 실제: $result",
+        )
+    }
+
+    @Test
     fun `온보딩 초기화 시 세션이 삭제되고 레벨 체크부터 다시 시작한다`() {
         val tool = createTool()
         val userId = uniqueUserId()
