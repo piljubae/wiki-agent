@@ -22,6 +22,7 @@ import io.github.veronikapj.wiki.context.ProjectMemory
 import io.github.veronikapj.wiki.config.EmbeddingMode
 import io.github.veronikapj.wiki.config.SecretLoader
 import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.jira.JiraClient
 import io.github.veronikapj.wiki.context.ConversationStore
 import io.github.veronikapj.wiki.llm.LLMExecutorBuilder
 import io.github.veronikapj.wiki.rag.ChromaClient
@@ -119,6 +120,14 @@ fun main() {
         log.info("Confluence enabled: baseUrl={}, spaces={}", config.confluence.baseUrl, config.confluence.spaces)
     } else {
         log.info("Confluence disabled (baseUrl or token not set)")
+    }
+
+    // Jira 클라이언트 생성
+    val jiraToken = SecretLoader.resolveNullable("JIRA_TOKEN", null)?.takeIf { it.isNotBlank() } ?: confluenceToken
+    var jiraClient: JiraClient? = null
+    if (config.confluence.baseUrl.isNotBlank() && jiraToken.isNotBlank()) {
+        jiraClient = JiraClient(baseUrl = config.confluence.baseUrl, token = jiraToken)
+        log.info("Jira enabled: baseUrl={}", config.confluence.baseUrl)
     }
 
     // Knowledge Base 초기화
@@ -234,7 +243,12 @@ fun main() {
             localRepoSync = config.github.codeSearch.localRepoPath?.let { LocalRepoSync(it) },
             bm25Index = bm25Index,
         )
-        prHistoryTool = PrHistoryTool(codeChromaClient, codeLlmExpandClient, sourceTracker, embeddingFn = searchEmbeddingFn)
+        prHistoryTool = PrHistoryTool(
+            codeChromaClient, codeLlmExpandClient, sourceTracker,
+            embeddingFn = searchEmbeddingFn,
+            jiraClient = jiraClient,
+            confluenceClient = confluenceClient,
+        )
         codeSearchTool = CodeSearchTool(
             chromaClient = codeChromaClient,
             llmExpandClient = codeLlmExpandClient,
