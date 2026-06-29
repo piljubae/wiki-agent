@@ -70,6 +70,9 @@ internal class ContentGatherer(
             }
         }
 
+        // Tier 1: 질문 키워드와 매칭되는 SSOT 섹션 (현재 단계 밖 주제도 위키로 답)
+        out += wikiSectionsForQuestion(question, out.map { it.label }.toSet())
+
         // Tier 2: 코드 + PR + 추가 Confluence (사용자가 더 파고들 때만)
         if (includeDeep) {
             runBlocking {
@@ -141,6 +144,15 @@ internal class ContentGatherer(
         return GatheredContent(matched.title, Provenance.WIKI, matched.content.truncated())
     }
 
+    private fun wikiSectionsForQuestion(question: String, exclude: Set<String>): List<GatheredContent> {
+        val tokens = question.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }
+        if (tokens.isEmpty()) return emptyList()
+        return loadWikiSections()
+            .filter { sec -> sec.title !in exclude && tokens.any { sec.title.contains(it, ignoreCase = true) } }
+            .take(MAX_QUESTION_SECTIONS)
+            .map { GatheredContent(it.title, Provenance.WIKI, it.content.truncated()) }
+    }
+
     @Synchronized
     private fun loadWikiSections(): List<WikiSection> {
         wikiSectionsCache?.let { return it }
@@ -206,6 +218,7 @@ internal class ContentGatherer(
     companion object {
         private const val MAX_SOURCES = 6
         private const val MAX_CHARS = 4000
+        private const val MAX_QUESTION_SECTIONS = 3
 
         fun formatBlocks(items: List<GatheredContent>): String =
             items.joinToString("\n\n") { gc ->

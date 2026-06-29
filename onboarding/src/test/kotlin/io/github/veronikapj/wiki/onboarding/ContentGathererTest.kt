@@ -206,6 +206,34 @@ class ContentGathererTest {
     }
 
     @Test
+    fun `gatherForQuestion(tier1)은 질문 키워드와 매칭되는 SSOT 섹션을 위키로 수집한다`() {
+        val confluenceClient = mockk<ConfluenceClient>()
+        coEvery { confluenceClient.fetchPageRawHtml("5912232879") } returns
+            "<h2>브랜치 네이밍</h2><p>feature/KMA-xxxx 규칙</p>" +
+            "<h2>코드 리뷰</h2><p>리뷰 기준</p>"
+        val g = gatherer(confluenceClient = confluenceClient)
+
+        val result = g.gatherForQuestion("브랜치 네이밍 규칙 알려줘", step = null, includeDeep = false)
+
+        assertEquals(1, result.size)
+        assertEquals(ContentGatherer.Provenance.WIKI, result[0].provenance)
+        assertEquals("브랜치 네이밍", result[0].label)
+    }
+
+    @Test
+    fun `gatherForQuestion(tier1)은 매칭 SSOT 섹션을 최대 3개로 제한한다`() {
+        val confluenceClient = mockk<ConfluenceClient>()
+        coEvery { confluenceClient.fetchPageRawHtml("5912232879") } returns
+            "<h2>가이드 1</h2><p>a</p><h2>가이드 2</h2><p>b</p>" +
+            "<h2>가이드 3</h2><p>c</p><h2>가이드 4</h2><p>d</p>"
+        val g = gatherer(confluenceClient = confluenceClient)
+
+        val result = g.gatherForQuestion("가이드", step = null, includeDeep = false)
+
+        assertEquals(3, result.size)
+    }
+
+    @Test
     fun `formatBlocks는 provenance 헤더를 붙인다`() {
         val block = ContentGatherer.formatBlocks(listOf(
             ContentGatherer.GatheredContent("ProductViewModel", ContentGatherer.Provenance.CODE, "class P"),
