@@ -15,6 +15,7 @@ dependencies {
     // :search를 쓰는 소비자가 별도 의존 선언 없이 컴파일된다.
     api(project(":confluence"))
     api(project(":github"))
+    api(project(":jira"))
     api(project(":rag"))
     api("ai.koog:koog-agents-jvm:0.8.0")
 

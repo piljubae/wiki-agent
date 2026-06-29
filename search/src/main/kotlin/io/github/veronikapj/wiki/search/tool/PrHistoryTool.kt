@@ -2,8 +2,15 @@ package io.github.veronikapj.wiki.search.tool
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
+import io.github.veronikapj.wiki.confluence.ConfluenceClient
+import io.github.veronikapj.wiki.jira.JiraClient
 import io.github.veronikapj.wiki.rag.ChromaClient
+import io.github.veronikapj.wiki.rag.ChromaQueryResult
 import io.github.veronikapj.wiki.rag.LlmExpandClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
@@ -13,6 +20,8 @@ class PrHistoryTool(
     private val tracker: SourceTracker? = null,
     private val collectionName: String = "code_prs",
     private val embeddingFn: (suspend (String) -> List<Float>)? = null,
+    private val jiraClient: JiraClient? = null,
+    private val confluenceClient: ConfluenceClient? = null,
 ) {
 
     @Tool("prHistory")
@@ -67,7 +76,7 @@ class PrHistoryTool(
                 deduped.take(5)
             }
 
-            buildString {
+            val prBlock = buildString {
                 appendLine("*\"$query\"* 관련 PR 이력 (${results.size}건):\n")
                 results.forEachIndexed { i, r ->
                     val repo = r.metadata["repo"] ?: ""
@@ -83,6 +92,13 @@ class PrHistoryTool(
                     appendLine()
                 }
             }.trim()
+
+            val enrichment = if (jiraClient != null) {
+                runCatching { buildJiraEnrichment(results) }
+                    .getOrElse { log.warn("Jira enrichment failed: {}", it.message); "" }
+            } else ""
+
+            if (enrichment.isBlank()) prBlock else "$prBlock\n\n$enrichment"
         }.getOrElse { "PR 이력 검색 중 오류: ${it.message}" }
     }
 
@@ -98,7 +114,63 @@ class PrHistoryTool(
             .distinct()
             .toList()
 
+    /** 반환 PR들에서 Jira 키(상위 3) 추출 → 병렬 fetch → 티켓+대표 Confluence 페이지 발췌 블록 생성. */
+    private suspend fun buildJiraEnrichment(results: List<ChromaQueryResult>): String {
+        val jira = jiraClient ?: return ""
+        val keys = results.flatMap { r ->
+            val fromMeta = r.metadata["ticket"]?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+            val fromDoc = TICKET_REGEX.findAll(r.document).map { it.value }.toList()
+            fromMeta + fromDoc
+        }.distinct().take(MAX_TICKETS)
+        if (keys.isEmpty()) return ""
+
+        val issues = coroutineScope {
+            keys.map { k -> async(Dispatchers.IO) { runCatching { jira.getIssue(k) }.getOrNull() } }.awaitAll()
+        }.filterNotNull()
+        if (issues.isEmpty()) return ""
+
+        return buildString {
+            appendLine("=== 🎫 연결된 Jira 티켓 ===")
+            issues.forEach { issue ->
+                appendLine()
+                append("🎫 ${issue.key} (${issue.type}, ${issue.status}")
+                if (issue.assignee.isNotBlank()) append(", 담당: ${issue.assignee}")
+                appendLine(")")
+                if (issue.summary.isNotBlank()) appendLine("요약: ${issue.summary}")
+                if (issue.description.isNotBlank()) appendLine("내용: ${issue.description.take(DESC_EXCERPT)}")
+                if (issue.recentComments.isNotEmpty()) {
+                    appendLine("최근 코멘트:")
+                    issue.recentComments.take(MAX_COMMENTS).forEach { appendLine("- ${it.take(COMMENT_EXCERPT)}") }
+                }
+                val ref = issue.confluenceRefs.firstOrNull()
+                if (ref != null && confluenceClient != null) {
+                    val excerpt = runCatching { htmlToExcerpt(confluenceClient.fetchPageRawHtml(ref.pageId)) }
+                        .getOrDefault("")
+                    if (excerpt.isNotBlank()) {
+                        appendLine("📄 기획서: ${ref.title.ifBlank { ref.url }} (${ref.url})")
+                        appendLine("   $excerpt")
+                    }
+                }
+            }
+        }.trim()
+    }
+
+    private fun htmlToExcerpt(html: String): String =
+        html.replace(Regex("<[^>]+>"), " ")
+            .replace("&lt;", "<").replace("&gt;", ">")
+            .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(PAGE_EXCERPT)
+
     companion object {
         private val log = LoggerFactory.getLogger(PrHistoryTool::class.java)
+        private const val MAX_TICKETS = 3
+        private const val MAX_COMMENTS = 3
+        private const val DESC_EXCERPT = 600
+        private const val COMMENT_EXCERPT = 200
+        private const val PAGE_EXCERPT = 800
+        private val TICKET_REGEX = Regex("""[A-Z]+-\d+""")
     }
 }
