@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  설치: 이 파일의 USERNAME 을 실제 홈 경로로 바꿔
+  ~/Library/LaunchAgents/com.pilju.codefreeze-seed.plist 로 복사한 뒤
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pilju.codefreeze-seed.plist
+  제거:
+    launchctl bootout gui/$(id -u)/com.pilju.codefreeze-seed
+  매월 1일 09:07 실행.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pilju.codefreeze-seed</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/USERNAME/projects/wiki-agent/scripts/codefreeze/codefreeze-seed.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>7</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/USERNAME/.config/codefreeze/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/USERNAME/.config/codefreeze/launchd.err.log</string>
+</dict>
+</plist>
